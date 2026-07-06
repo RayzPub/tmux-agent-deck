@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>TMUX AGENT DECK // AI Control Deck</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+  <!-- Xterm.js -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <!-- Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+</head>
+<body class="dashboard-body">
+  <!-- Scanline and grid overlays -->
+  <div class="scanline"></div>
+  <div class="cyber-grid"></div>
+
+  <!-- Header -->
+  <header class="cyber-header">
+    <div class="logo-area">
+      <button id="sidebarToggle" class="sidebar-toggle-btn" title="Toggle Sidebar">
+        <i data-lucide="menu"></i>
+      </button>
+      <div class="cyber-logo-icon"></div>
+      <h1 class="logo-text">TMUX <span class="accent-text">// AGENT-DECK</span></h1>
+    </div>
+    <div class="sys-info">
+      <div class="sys-stat hidden-mobile">
+        <span class="stat-label">HOST_IP:</span>
+        <span class="stat-val" id="hostIp">127.0.0.1</span>
+      </div>
+      <div class="sys-stat">
+        <span class="stat-label">STATUS:</span>
+        <span class="stat-val online"><span class="pulse-dot"></span><span class="stat-text">ONLINE</span></span>
+      </div>
+
+      <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
+        <i data-lucide="bell"></i>
+        <span>PUSH: OFF</span>
+      </button>
+      <button id="themeToggleBtn" class="header-btn" title="Toggle Theme Style">
+        <i data-lucide="sun"></i>
+        <span>MINIMAL</span>
+      </button>
+      <button id="reloadBtn" class="header-btn" title="Reload Deck">
+        <i data-lucide="refresh-cw"></i>
+        <span>RELOAD</span>
+      </button>
+      <button id="logoutBtn" class="header-btn" title="Logout Core">
+        <i data-lucide="log-out"></i>
+        <span>DISCONNECT</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="main-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <!-- Sidebar Navigation Tabs -->
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" id="tabSessionsBtn">
+          <i data-lucide="terminal"></i>
+          <span>SESSIONS</span>
+        </button>
+        <button class="sidebar-tab" id="tabFilesBtn">
+          <i data-lucide="folder-tree"></i>
+          <span>EXPLORER</span>
+        </button>
+      </div>
+
+      <!-- SESSIONS PANEL -->
+      <div id="sessionsContent" class="sidebar-panel-content">
+        <div class="panel-header">
+          <h2><i data-lucide="terminal"></i> SESSIONS</h2>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="session-count" id="sessionCount">0</span>
+            <button id="closeSidebarBtn" class="close-sidebar-btn" title="Close Sidebar">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button id="newSessionBtn" class="cyber-btn-outline w-full">
+            <i data-lucide="plus"></i>
+            <span>CREATE SESSION</span>
+          </button>
+        </div>
+
+        <div class="session-list" id="sessionList">
+          <!-- Sessions will be loaded here dynamically -->
+          <div class="loading-placeholder">
+            <div class="cyber-spinner"></div>
+            <span>SCANNING SESSIONS...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE EXPLORER PANEL -->
+      <div id="filesContent" class="sidebar-panel-content hidden">
+        <div class="panel-header">
+          <h2><i data-lucide="folder-tree"></i> EXPLORER</h2>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="closeSidebarBtnFiles" class="close-sidebar-btn" title="Close Sidebar">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="workspace-selector-actions" style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(10, 12, 22, 0.7); padding: 8px 16px;">
+          <div class="input-wrapper" style="flex: 1; position: relative; display: flex; align-items: center;">
+            <i data-lucide="folder-git-2" class="input-icon" style="position: absolute; left: 10px; width: 14px; height: 14px; color: var(--text-secondary);"></i>
+            <select id="explorerWorkspaceSelect" class="cyber-select" style="width: 100%; padding: 6px 10px 6px 34px; font-size: 12px; height: 28px; line-height: 1; background: rgba(7, 9, 18, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-bottom: 2px solid var(--text-muted); color: #fff; border-radius: 4px; outline: none; font-family: var(--font-mono); letter-spacing: 1px;">
+              <!-- populated dynamically -->
+            </select>
+          </div>
+          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline" title="New Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;">
+            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+          </button>
+          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline" title="Delete Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;">
+            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+          </button>
+        </div>
+
+        <div class="file-explorer-actions">
+          <button id="refreshFilesBtn" class="cyber-btn-outline" title="Refresh Explorer">
+            <i data-lucide="refresh-cw"></i>
+          </button>
+          <button id="collapseAllBtn" class="cyber-btn-outline" title="Collapse All Folders">
+            <i data-lucide="fold-horizontal"></i>
+          </button>
+          <button id="gitDiffWorkspaceBtn" class="cyber-btn-outline" title="View Git Diff">
+            <i data-lucide="git-compare"></i>
+          </button>
+          <span class="current-path-label" id="currentPathLabel">/</span>
+        </div>
+
+        <div class="file-tree-container" id="fileTreeContainer">
+          <!-- Dynamic file tree will load here -->
+          <div class="loading-placeholder">
+            <div class="cyber-spinner"></div>
+            <span>SCANNING FILES...</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Terminal Viewer / Workspace -->
+    <main class="terminal-workspace">
+      <!-- Workspace Tab Bar -->
+      <div class="workspace-tabs hidden" id="workspaceTabs">
+        <!-- Tabs will be rendered here dynamically -->
+      </div>
+
+      <!-- Welcome Panel (when no session is attached) -->
+      <section class="welcome-panel" id="welcomePanel">
+        <!-- New 3D Grid background elements -->
+        <div class="welcome-grid-container">
+          <div class="welcome-grid-3d" id="welcomeGrid3D"></div>
+          <div class="welcome-grid-overlay"></div>
+        </div>
+        <div class="welcome-scanline"></div>
+        <div class="welcome-pulse-glow"></div>
+
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        
+        <div class="welcome-content">
+          <div class="cyber-terminal-graphic">
+            <span class="graphic-cursor">>_</span>
+          </div>
+          <h2>终端工作区已就绪</h2>
+          <p class="slogan-title">
+            <i data-lucide="monitor"></i> 电脑 · 
+            <i data-lucide="smartphone"></i> 手机 · 
+            随时随地极客编程
+          </p>
+          <p class="slogan-desc">请从侧边栏选择已有的 tmux 会话，或新建会话以建立终端连接通道。</p>
+        </div>
+      </section>
+
+      <!-- Active Terminal (when session attached) -->
+      <section class="terminal-panel hidden" id="terminalPanel">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+
+        <!-- Terminal Header -->
+        <div class="terminal-header">
+          <div class="terminal-title">
+            <i data-lucide="monitor" class="terminal-icon"></i>
+            <span><span class="hidden-mobile">SESSION: </span><span class="highlight-text" id="activeSessionName">N/A</span></span>
+          </div>
+          <div class="terminal-controls">
+            <button id="copyTerminalBtn" class="terminal-control-btn" title="Copy Selection (Ctrl+C)">
+              <i data-lucide="clipboard-copy"></i>
+              <span>COPY</span>
+            </button>
+            <button id="pasteTerminalBtn" class="terminal-control-btn" title="Paste from Clipboard (Ctrl+V)">
+              <i data-lucide="clipboard-paste"></i>
+              <span>PASTE</span>
+            </button>
+            <button id="fitTerminalBtn" class="terminal-control-btn" title="Fit Terminal Output">
+              <i data-lucide="maximize-2"></i>
+              <span>FIT</span>
+            </button>
+            <button id="detachBtn" class="terminal-control-btn danger" title="Detach Session">
+              <i data-lucide="external-link"></i>
+              <span>DETACH</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Output Node -->
+        <div class="terminal-container-wrapper">
+          <div id="terminal-container"></div>
+        </div>
+      </section>
+
+      <!-- Active Editor Panel (when editing files) -->
+      <section class="editor-panel hidden" id="editorPanel">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+
+        <!-- Editor Header -->
+        <div class="editor-header">
+          <div class="editor-title">
+            <i data-lucide="file-code" class="editor-icon"></i>
+            <span>EDITING: <span class="highlight-text" id="activeFilePath">N/A</span></span>
+          </div>
+          <div class="editor-controls">
+            <span class="editor-status-msg" id="editorStatusMsg"></span>
+            <button id="saveFileBtn" class="terminal-control-btn" title="Save File (Ctrl+S)">
+              <i data-lucide="save"></i>
+              <span>SAVE</span>
+            </button>
+            <button id="closeEditorBtn" class="terminal-control-btn danger" title="Close Editor">
+              <i data-lucide="x"></i>
+              <span>CLOSE</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Editor Content -->
+        <div class="editor-container-wrapper">
+          <textarea id="editorTextarea" spellcheck="false" autocomplete="off" class="editor-textarea" placeholder="Load file contents..."></textarea>
+        </div>
+      </section>
+
+      <!-- Git Diff Panel (when viewing git diffs) -->
+      <section class="editor-panel hidden" id="diffPanel">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+
+        <!-- Diff Header -->
+        <div class="editor-header">
+          <div class="editor-title">
+            <i data-lucide="git-compare" class="editor-icon" style="color: var(--neon-orange);"></i>
+            <span>GIT DIFF: <span class="highlight-text" id="activeDiffPath">All Changes</span></span>
+          </div>
+          <div class="editor-controls">
+            <span class="editor-status-msg" id="diffStatusMsg"></span>
+            <button id="refreshDiffBtn" class="terminal-control-btn" title="Refresh Diff">
+              <i data-lucide="refresh-cw"></i>
+              <span>REFRESH</span>
+            </button>
+            <button id="closeDiffBtn" class="terminal-control-btn danger" title="Close Diff">
+              <i data-lucide="x"></i>
+              <span>CLOSE</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Diff Content -->
+        <div class="editor-container-wrapper" style="overflow: auto; background: rgba(5, 7, 13, 0.95); padding: 16px; display: block;">
+          <div id="diffContentContainer" class="diff-viewer-content">
+            <!-- Diff output parsed as lines will be rendered here -->
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Create Session Modal -->
+  <div class="modal-overlay hidden" id="sessionModal">
+    <div class="modal-card">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      <div class="auth-glow"></div>
+
+      <div class="modal-header">
+        <h3><i data-lucide="plus-circle"></i> INITIALIZE SESSION</h3>
+        <button class="modal-close" id="closeModalBtn"><i data-lucide="x"></i></button>
+      </div>
+      
+      <form id="createSessionForm" class="modal-form">
+        <div class="input-group">
+          <label for="newSessionName">
+            <span class="label-tech-text">// SESSION_IDENTIFIER</span>
+          </label>
+          <div class="input-wrapper">
+            <i data-lucide="terminal" class="input-icon"></i>
+            <input 
+              type="text" 
+              id="newSessionName" 
+              placeholder="e.g. dev-server, db-monitor" 
+              required
+              pattern="^[a-zA-Z0-9_-]+$"
+              title="Only letters, numbers, underscores and dashes are allowed"
+            >
+            <div class="input-indicator"></div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="sessionWorkspaceSelect">
+            <span class="label-tech-text">// WORKSPACE</span>
+          </label>
+          <div class="input-wrapper">
+            <i data-lucide="folder-git-2" class="input-icon" style="color: var(--text-secondary);"></i>
+            <select id="sessionWorkspaceSelect" class="cyber-select" style="padding-left: 48px;">
+              <!-- populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <div id="newWorkspaceFields" class="hidden" style="display: flex; flex-direction: column; gap: 15px; border: 1px dashed rgba(0, 240, 255, 0.2); padding: 15px; border-radius: 4px; background: rgba(0, 240, 255, 0.02); margin-top: -10px;">
+          <span style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);">// INITIALIZE NEW WORKSPACE</span>
+          <div class="input-group" style="margin-bottom: 0;">
+            <label for="modalNewWorkspaceName">
+              <span class="label-tech-text" style="font-size: 9px;">WORKSPACE NAME</span>
+            </label>
+            <div class="input-wrapper">
+              <i data-lucide="tag" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
+              <input 
+                type="text" 
+                id="modalNewWorkspaceName" 
+                placeholder="e.g. workspace-name" 
+                style="padding: 10px 10px 10px 40px; font-size: 14px;"
+              >
+            </div>
+          </div>
+          <div class="input-group" style="margin-bottom: 0;">
+            <label for="modalNewWorkspacePath">
+              <span class="label-tech-text" style="font-size: 9px;">ABSOLUTE DIRECTORY PATH</span>
+            </label>
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <div class="input-wrapper" style="flex: 1;">
+                <i data-lucide="folder" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
+                <input 
+                  type="text" 
+                  id="modalNewWorkspacePath" 
+                  placeholder="e.g. /home/ubuntu/project-x" 
+                  style="padding: 10px 10px 10px 40px; font-size: 14px; width: 100%;"
+                >
+              </div>
+              <button type="button" class="cyber-btn-outline" id="browseModalWorkspacePathBtn" style="padding: 8px 12px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono);" title="Browse Folders">
+                <i data-lucide="folder-search" style="width: 16px; height: 16px;"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>
+            <span class="label-tech-text">// INITIAL_AGENT_TUNNEL</span>
+          </label>
+          <div class="agent-cards-container">
+            <label class="agent-card-option">
+              <input type="radio" name="sessionAgent" value="default" checked>
+              <div class="agent-card-inner">
+                <i data-lucide="terminal"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">SHELL</span>
+                  <span class="agent-desc">Standard bash</span>
+                </div>
+              </div>
+            </label>
+            <label class="agent-card-option">
+              <input type="radio" name="sessionAgent" value="agy">
+              <div class="agent-card-inner">
+                <i data-lucide="bot"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">AGY</span>
+                  <span class="agent-desc">Antigravity AI</span>
+                </div>
+              </div>
+            </label>
+            <label class="agent-card-option">
+              <input type="radio" name="sessionAgent" value="claude">
+              <div class="agent-card-inner">
+                <i data-lucide="message-square"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">CLAUDE</span>
+                  <span class="agent-desc">Claude CLI</span>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="cyber-btn-outline" id="cancelModalBtn">ABORT</button>
+          <button type="submit" class="cyber-btn">EXECUTE</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Create Workspace Modal -->
+  <div class="modal-overlay hidden" id="workspaceModal">
+    <div class="modal-card">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      <div class="auth-glow"></div>
+
+      <div class="modal-header">
+        <h3><i data-lucide="folder-plus"></i> INITIALIZE WORKSPACE</h3>
+        <button class="modal-close" id="closeWorkspaceModalBtn"><i data-lucide="x"></i></button>
+      </div>
+      
+      <form id="createWorkspaceForm" class="modal-form">
+        <div class="input-group">
+          <label for="newWorkspaceNameInput">
+            <span class="label-tech-text">// WORKSPACE_NAME</span>
+          </label>
+          <div class="input-wrapper">
+            <i data-lucide="tag" class="input-icon"></i>
+            <input 
+              type="text" 
+              id="newWorkspaceNameInput" 
+              placeholder="e.g. project-x, config-files" 
+              required
+            >
+            <div class="input-indicator"></div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="newWorkspacePathInput">
+            <span class="label-tech-text">// WORKSPACE_ABSOLUTE_PATH</span>
+          </label>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <div class="input-wrapper" style="flex: 1;">
+              <i data-lucide="folder" class="input-icon"></i>
+              <input 
+                type="text" 
+                id="newWorkspacePathInput" 
+                placeholder="e.g. /home/ubuntu/project-x" 
+                required
+                style="width: 100%;"
+              >
+              <div class="input-indicator"></div>
+            </div>
+            <button type="button" class="cyber-btn-outline" id="browseNewWorkspacePathBtn" style="padding: 15px 15px; height: 50px; display: flex; align-items: center; justify-content: center;" title="Browse Folders">
+              <i data-lucide="folder-search" style="width: 18px; height: 18px;"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="cyber-btn-outline" id="cancelWorkspaceModalBtn">ABORT</button>
+          <button type="submit" class="cyber-btn">CREATE</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Sidebar Overlay for mobile -->
+  <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
+
+  <!-- Mobile Controls Wrapper -->
+  <div class="mobile-bottom-controls hidden-desktop">
+    <!-- Mobile Command Input Bar -->
+    <div class="mobile-input-bar" id="mobileInputBar">
+      <input type="text" id="mobileCommandInput" class="mobile-cmd-input" placeholder="Type or dictate command...">
+      <button id="mobileSendBtn" class="mobile-send-btn" title="Send to Terminal">
+        <i data-lucide="send"></i>
+      </button>
+    </div>
+
+    <!-- Mobile Keyboard Helper Bar -->
+    <div class="mobile-keyboard-bar" id="mobileKeyboardBar">
+      <button class="helper-key" data-key="esc">ESC</button>
+      <button class="helper-key" data-key="tab">TAB</button>
+      <button class="helper-key modifier-key" id="ctrlKeyBtn" data-key="ctrl">CTRL</button>
+      <button class="helper-key modifier-key" data-key="copy" title="Copy Selection"><i data-lucide="clipboard-copy"></i></button>
+      <button class="helper-key modifier-key" data-key="paste" title="Paste"><i data-lucide="clipboard-paste"></i></button>
+      <button class="helper-key" data-key="tmux-prefix">C-b</button>
+      <button class="helper-key" data-key="ctrl-c">C-c</button>
+      <button class="helper-key enter-key" data-key="enter">ENTER</button>
+      <button class="helper-key arrow-key" data-key="up"><i data-lucide="chevron-up"></i></button>
+      <button class="helper-key arrow-key" data-key="down"><i data-lucide="chevron-down"></i></button>
+      <button class="helper-key arrow-key" data-key="left"><i data-lucide="chevron-left"></i></button>
+      <button class="helper-key arrow-key" data-key="right"><i data-lucide="chevron-right"></i></button>
+      <button class="helper-key keyboard-toggle" id="keyboardToggleBtn" data-key="keyboard-toggle" title="Show Keyboard">
+        <i data-lucide="keyboard"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Directory Picker Modal -->
+  <div class="modal-overlay hidden" id="dirPickerModal" style="z-index: 1000;">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      <div class="auth-glow"></div>
+
+      <div class="modal-header">
+        <h3><i data-lucide="folder-search"></i> SELECT DIRECTORY</h3>
+        <button class="modal-close" id="closeDirPickerBtn"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-form">
+        <div class="input-group" style="margin-bottom: 10px;">
+          <div class="input-wrapper">
+            <i data-lucide="folder" class="input-icon" style="width: 14px; height: 14px;"></i>
+            <input type="text" id="dirPickerCurrentPath" style="font-size: 12px; padding: 10px 10px 10px 40px; font-family: var(--font-mono); width: 100%;" readonly>
+          </div>
+        </div>
+
+        <div id="dirPickerList" class="file-tree-container" style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.3); border-radius: 4px; padding: 5px; display: flex; flex-direction: column; gap: 4px;">
+          <!-- Subdirectories listed here dynamically -->
+        </div>
+
+        <div class="modal-actions" style="margin-top: 15px;">
+          <button type="button" class="cyber-btn-outline" id="cancelDirPickerBtn">CANCEL</button>
+          <button type="button" class="cyber-btn" id="confirmDirPickerBtn">CHOOSE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Client Script -->
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Cyberpunk TMUX Agent Deck - CLI Notify Utility
+# Usage: deck-notify "Title" "Message body" ["/optional/target/url"]
+
+# Resolve the physical directory of this script, even if it is a symlink
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if [ -L "$SCRIPT_PATH" ]; then
+    SCRIPT_PATH=$(readlink -f "$SCRIPT_PATH")
+fi
+DIR="$( cd "$( dirname "$SCRIPT_PATH" )" && pwd )"
+ENV_FILE="$DIR/../.env"
+
+# Load configuration from .env
+if [ -f "$ENV_FILE" ]; then
+    # Parse variables safely supporting values with special characters
+    PASSWORD=$(grep -E "^PASSWORD=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
+    PORT=$(grep -E "^PORT=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
+    HTTPS_PORT=$(grep -E "^HTTPS_PORT=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
+    SSL_CERT_PATH=$(grep -E "^SSL_CERT_PATH=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
+    SSL_KEY_PATH=$(grep -E "^SSL_KEY_PATH=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
+fi
+
+PORT=${PORT:-80}
+HTTPS_PORT=${HTTPS_PORT:-443}
+
+SCHEME="http"
+TARGET_PORT="$PORT"
+CURL_OPTS=""
+
+if [ -n "$SSL_CERT_PATH" ] && [ -n "$SSL_KEY_PATH" ] && [ -f "$SSL_CERT_PATH" ] && [ -f "$SSL_KEY_PATH" ]; then
+    SCHEME="https"
+    TARGET_PORT="$HTTPS_PORT"
+    CURL_OPTS="-k"
+fi
+
+TITLE="$1"
+BODY="$2"
+URL="$3"
+
+if [ -z "$TITLE" ] || [ -z "$BODY" ]; then
+    echo "Usage: deck-notify <title> <body> [target_url]"
+    echo "Example: deck-notify 'Build Finished' 'Production bundle completed successfully'"
+    exit 1
+fi
+
+# Get session name from tmux if running inside it
+TMUX_SESSION=""
+if command -v tmux >/dev/null 2>&1; then
+    TMUX_SESSION=$(tmux display-message -p '#S' 2>/dev/null)
+    # If not inside a tmux session (e.g. running outside tmux), set it to empty
+    if [[ "$TMUX_SESSION" == *"no server running"* || "$TMUX_SESSION" == *"no current client"* ]]; then
+        TMUX_SESSION=""
+    fi
+fi
+
+# Send local API request to trigger push notification
+RESPONSE=$(curl -s $CURL_OPTS -w "%{http_code}" -o /tmp/deck-notify-res.txt -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PASSWORD" \
+  -d "{\"title\":\"$TITLE\", \"body\":\"$BODY\", \"url\":\"$URL\", \"session\":\"$TMUX_SESSION\"}" \
+  "$SCHEME://127.0.0.1:$TARGET_PORT/api/push/trigger")
+
+if [ "$RESPONSE" -eq 200 ]; then
+    echo "✓ Push notification sent successfully: $TITLE"
+else
+    echo "✗ Failed to send push notification. Server returned HTTP $RESPONSE"
+    cat /tmp/deck-notify-res.txt
+    exit 1
+fi

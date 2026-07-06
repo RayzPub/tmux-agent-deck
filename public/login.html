@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CYBERNETIC CORE - Access Control</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+  <!-- Style Sheet -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="cyberpunk-auth-body">
+  <!-- Scanning Line Effect -->
+  <div class="scanline"></div>
+  
+  <!-- Cyber Background Grid -->
+  <div class="cyber-grid"></div>
+
+  <!-- Login Container -->
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-glow"></div>
+      
+      <!-- Tech Corners -->
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+
+      <!-- Header -->
+      <div class="auth-header">
+        <div class="cyber-badge">SYSTEM SECURE</div>
+        <h1 class="glitch-text" data-text="TMUX ACCESS">TMUX ACCESS</h1>
+        <p class="auth-subtitle">ENTER DECRYPT KEY FOR CONSOLE CONTROL</p>
+      </div>
+
+      <!-- Form -->
+      <form id="loginForm" class="auth-form">
+        <div class="input-group">
+          <label for="password">
+            <span class="label-tech-text">// SECURITY_TOKEN</span>
+          </label>
+          <div class="input-wrapper">
+            <i data-lucide="key-round" class="input-icon"></i>
+            <input 
+              type="password" 
+              id="password" 
+              placeholder="••••••••••••••" 
+              required 
+              autocomplete="current-password"
+              autofocus
+            >
+            <div class="input-indicator"></div>
+          </div>
+        </div>
+
+        <button type="submit" class="cyber-btn" id="loginBtn">
+          <span class="btn-text">AUTHENTICATE</span>
+          <span class="btn-glitch"></span>
+          <i data-lucide="shield-check" class="btn-icon"></i>
+        </button>
+      </form>
+
+      <!-- Alert -->
+      <div id="errorAlert" class="auth-alert hidden">
+        <div class="alert-border"></div>
+        <i data-lucide="alert-triangle" class="alert-icon"></i>
+        <div class="alert-content">
+          <span class="alert-title">ACCESS DENIED</span>
+          <span class="alert-message">INCORRECT DECRYPTION KEY</span>
+        </div>
+      </div>
+      
+      <!-- Footer Metadata -->
+      <div class="auth-footer">
+        <div class="footer-item">
+          <span class="pulse-dot"></span>
+          <span class="footer-text">HOST: ACTIVE</span>
+        </div>
+        <div class="footer-item">
+          <span class="footer-text">PORT: 3000</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Check if already authenticated, if so, redirect
+    fetch('/api/auth-status')
+      .then(res => res.json())
+      .then(data => {
+        if (data.authenticated) {
+          window.location.href = '/';
+        }
+      });
+
+    // Handle Form Submit
+    const form = document.getElementById('loginForm');
+    const passwordInput = document.getElementById('password');
+    const loginBtn = document.getElementById('loginBtn');
+    const errorAlert = document.getElementById('errorAlert');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      // Reset UI state
+      errorAlert.classList.add('hidden');
+      loginBtn.classList.add('loading');
+      loginBtn.disabled = true;
+
+      const password = passwordInput.value;
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          // Success
+          loginBtn.querySelector('.btn-text').innerText = 'AUTHORIZED';
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 800);
+        } else {
+          // Failed
+          throw new Error(data.error || 'Authentication failed');
+        }
+      } catch (err) {
+        console.error(err);
+        // Show neon alert
+        errorAlert.classList.remove('hidden');
+        passwordInput.value = '';
+        passwordInput.focus();
+        
+        // Add shake animation to the card
+        const card = document.querySelector('.auth-card');
+        card.classList.add('shake-anim');
+        setTimeout(() => {
+          card.classList.remove('shake-anim');
+        }, 500);
+      } finally {
+        loginBtn.classList.remove('loading');
+        loginBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
