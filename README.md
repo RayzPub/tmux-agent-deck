@@ -8,18 +8,18 @@
 
 <table>
   <tr>
-    <td align="center"><b>🔒 登录认证界面</b></td>
-    <td align="center"><b>🖥️ 终端控制大厅 / AI Agent</b></td>
+    <td align="center"><b>1. 创建Agent会话</b></td>
+    <td align="center"><b>2. 🖥️ 终端控制大厅 / AI Agent</b></td>
   </tr>
   <tr>
-    <td><img src="docs/images/login_preview.png" alt="登录认证界面" width="400"/></td>
-    <td><img src="docs/images/deck_preview.png" alt="终端控制大厅" width="400"/></td>
+    <td><img src="docs/images/login_preview.png" alt="创建Agent会话" width="400"/></td>
+    <td><img src="docs/images/deck_preview.png" alt="🖥️ 终端控制大厅 / AI Agent" width="400"/></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><b>📂 文件管理器 / File Explorer</b></td>
+    <td align="center" colspan="2"><b>3. 📂 文件浏览器</b></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="docs/images/file_preview.png" alt="文件管理器" width="800"/></td>
+    <td align="center" colspan="2"><img src="docs/images/file_preview.png" alt="文件浏览器" width="800"/></td>
   </tr>
 </table>
 
