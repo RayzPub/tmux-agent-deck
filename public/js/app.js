@@ -1193,19 +1193,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Connection state tracking
       let reconnectingToast = null;
+      let isFirstConnect = true;
 
       const showConnectionToast = (message, type = 'warning') => {
         if (reconnectingToast) {
           reconnectingToast.querySelector('.toast-message').textContent = message;
           reconnectingToast.className = `connection-toast ${type}`;
+          const spinner = reconnectingToast.querySelector('.cyber-spinner');
+          if (spinner) {
+            spinner.style.display = (type === 'warning') ? 'block' : 'none';
+          }
           return;
         }
         reconnectingToast = document.createElement('div');
         reconnectingToast.className = `connection-toast ${type}`;
+        reconnectingToast.style.cursor = 'pointer';
         reconnectingToast.innerHTML = `
-          <div class="cyber-spinner" style="width: 14px; height: 14px; border-width: 1px;"></div>
+          <div class="cyber-spinner" style="width: 14px; height: 14px; border-width: 1px; display: ${type === 'warning' ? 'block' : 'none'};"></div>
           <span class="toast-message">${message}</span>
         `;
+        
+        reconnectingToast.addEventListener('click', () => {
+          if (reconnectingToast.classList.contains('error')) {
+            showConnectionToast('Reconnecting...', 'warning');
+            sessionSocket.connect();
+          }
+        });
+        
         document.body.appendChild(reconnectingToast);
       };
 
@@ -1219,11 +1233,35 @@ document.addEventListener('DOMContentLoaded', () => {
       sessionSocket.on('connect', () => {
         hideConnectionToast();
         console.log(`Socket connected for session: ${sessionName}`);
-        reportFocusStatus();
+        
+        if (!isFirstConnect) {
+          console.log(`Socket reconnected (manual/auto) for session: ${sessionName}`);
+          sessionTerm.clear();
+          setTimeout(() => {
+            sessionFitAddon.fit();
+            sessionSocket.emit('init-terminal', {
+              sessionName: sessionName,
+              cols: sessionTerm.cols,
+              rows: sessionTerm.rows
+            });
+            if (sessionName === currentSession) {
+              sessionTerm.focus();
+            }
+            reportFocusStatus();
+          }, 100);
+        } else {
+          isFirstConnect = false;
+          reportFocusStatus();
+        }
       });
 
       sessionSocket.on('disconnect', (reason) => {
         console.log(`Socket disconnected for session: ${sessionName}, reason: ${reason}`);
+        if (reason === 'io client disconnect') {
+          // Client manually disconnected (e.g. session deleted), clear toast
+          hideConnectionToast();
+          return;
+        }
         if (reason === 'io server disconnect') {
           // Server intentionally disconnected, need manual reconnect
           showConnectionToast('Server disconnected. Tap to reconnect.', 'error');
@@ -1231,23 +1269,6 @@ document.addEventListener('DOMContentLoaded', () => {
           // Network issue, auto-reconnecting
           showConnectionToast('Reconnecting...', 'warning');
         }
-      });
-
-      sessionSocket.on('reconnect', (attemptNumber) => {
-        console.log(`Socket reconnected after ${attemptNumber} attempts for session: ${sessionName}`);
-        hideConnectionToast();
-        // Re-initialize terminal on successful reconnect - clear and re-attach
-        sessionTerm.clear();
-        setTimeout(() => {
-          sessionFitAddon.fit();
-          sessionSocket.emit('init-terminal', {
-            sessionName: sessionName,
-            cols: sessionTerm.cols,
-            rows: sessionTerm.rows
-          });
-          sessionTerm.focus();
-          reportFocusStatus();
-        }, 100);
       });
 
       sessionSocket.on('reconnect_attempt', (attemptNumber) => {
@@ -2046,35 +2067,8 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionCache.forEach((cached, name) => {
           if (cached.socket && !cached.socket.connected) {
             console.log(`Reconnecting session: ${name}`);
-            // Show a brief reconnecting toast
-            const toast = document.createElement('div');
-            toast.className = 'connection-toast warning';
-            toast.innerHTML = `
-              <div class="cyber-spinner" style="width: 14px; height: 14px; border-width: 1px;"></div>
-              <span class="toast-message">Resuming ${name}...</span>
-            `;
-            document.body.appendChild(toast);
-
             // Force reconnect
             cached.socket.connect();
-
-            // Set up one-time reconnect handler to dismiss toast
-            cached.socket.once('connect', () => {
-              toast.remove();
-              // Clear and re-init terminal
-              cached.term.clear();
-              setTimeout(() => {
-                cached.fitAddon.fit();
-                cached.socket.emit('init-terminal', {
-                  sessionName: name,
-                  cols: cached.term.cols,
-                  rows: cached.term.rows
-                });
-                if (name === currentSession) {
-                  cached.term.focus();
-                }
-              }, 100);
-            });
           }
         });
       }
