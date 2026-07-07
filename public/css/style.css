@@ -2578,6 +2578,58 @@ body.light-minimalist .label-tech-text {
   text-shadow: none;
 }
 
+/* Auth / Login Page Overrides in Light Theme */
+body.light-minimalist.cyberpunk-auth-body {
+  background: var(--bg-core);
+}
+
+body.light-minimalist .auth-card {
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+}
+
+body.light-minimalist .auth-glow {
+  display: none;
+}
+
+body.light-minimalist .glitch-text {
+  color: #0f172a;
+  text-shadow: none;
+}
+
+body.light-minimalist .cyber-badge {
+  color: #4f46e5;
+  border-color: #cbd5e1;
+  background: rgba(79, 70, 229, 0.05);
+  box-shadow: none;
+}
+
+body.light-minimalist .input-indicator {
+  background: #4f46e5;
+}
+
+body.light-minimalist .input-wrapper input:focus ~ .input-icon {
+  color: #4f46e5;
+  filter: none;
+}
+
+body.light-minimalist .auth-footer {
+  border-top: 1px solid #cbd5e1;
+}
+
+body.light-minimalist .auth-alert {
+  background: rgba(249, 115, 22, 0.05);
+  border: 1px solid rgba(249, 115, 22, 0.2);
+}
+
+/* Blending 3D Grid Overlay into the dark background on login page */
+.cyberpunk-auth-body .welcome-grid-overlay {
+  background: linear-gradient(to bottom, #06070a 0%, transparent 55%);
+}
+
+body.light-minimalist.cyberpunk-auth-body .welcome-grid-overlay {
+  background: linear-gradient(to bottom, var(--bg-core) 0%, transparent 55%);
+}
+
 /* Buttons */
 body.light-minimalist .cyber-btn {
   background: #0f172a;
