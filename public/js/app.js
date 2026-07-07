@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Workspace & Session Cache State
   let workspacesList = [];
-  let currentWorkspacePath = '';
+  let currentWorkspacePath = localStorage.getItem('lastWorkspacePath') || '';
   let sessionListCache = [];
 
   // Directory Picker elements
@@ -320,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
       workspacesList = await response.json();
       
       // Populate explorer workspace select
-      explorerWorkspaceSelect.innerHTML = '<option value="">[DEFAULT WORKSPACE]</option>';
+      explorerWorkspaceSelect.innerHTML = '<option value="">Default</option>';
       workspacesList.forEach(w => {
         const opt = document.createElement('option');
         opt.value = w.path;
@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
       explorerWorkspaceSelect.value = currentWorkspacePath;
 
       // Populate session workspace select
-      sessionWorkspaceSelect.innerHTML = '<option value="">// DEFAULT (HOME / PROJECT ROOT)</option>';
+      sessionWorkspaceSelect.innerHTML = '<option value="">Default</option>';
       workspacesList.forEach(w => {
         const opt = document.createElement('option');
         opt.value = w.path;
@@ -340,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const createNewOpt = document.createElement('option');
       createNewOpt.value = '__new__';
-      createNewOpt.textContent = workspacesList.length === 0 ? '// NO WORKSPACES FOUND - INITIALIZE ONE' : '// CREATE NEW WORKSPACE...';
+      createNewOpt.textContent = workspacesList.length === 0 ? 'Initialize Workspace' : 'Create Workspace';
       sessionWorkspaceSelect.appendChild(createNewOpt);
 
       if (workspacesList.length === 0) {
@@ -1002,9 +1002,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Render Session Cards
   function renderSessions(sessions) {
-    sessionCount.textContent = sessions.length;
+    // Filter sessions to only those in the current workspace context
+    const activeWs = workspacesList.find(w => w.path === currentWorkspacePath);
+    const activeWorkspaceName = activeWs ? activeWs.name : '';
+
+    const filteredSessions = sessions.filter(session => {
+      // 1. If session has explicit workspaceName set, compare names
+      if (session.workspaceName) {
+        if (activeWorkspaceName) {
+          return session.workspaceName.toLowerCase() === activeWorkspaceName.toLowerCase();
+        }
+        return false;
+      }
+      
+      // 2. Otherwise fall back to matching path
+      if (session.path) {
+        if (currentWorkspacePath) {
+          return session.path === currentWorkspacePath;
+        } else {
+          // If we are on default workspace, verify if this session path belongs to any registered workspace
+          const belongsToSomeWorkspace = workspacesList.some(w => w.path === session.path);
+          return !belongsToSomeWorkspace;
+        }
+      }
+
+      // 3. Fallback: if no path, only show on default workspace
+      return !currentWorkspacePath;
+    });
+
+    sessionCount.textContent = filteredSessions.length;
     
-    if (sessions.length === 0) {
+    if (filteredSessions.length === 0) {
       sessionList.innerHTML = `
         <div class="loading-placeholder">
           <span>NO SESSIONS FOUND</span>
@@ -1014,7 +1042,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     sessionList.innerHTML = '';
-    sessions.forEach(session => {
+    filteredSessions.forEach(session => {
       const card = document.createElement('div');
       card.className = `session-card ${currentSession === session.name ? 'active' : ''}`;
       
@@ -1145,12 +1173,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Auto-scope Explorer to session's working directory
     const sessionObj = sessionListCache.find(s => s.name === sessionName);
-    if (sessionObj && sessionObj.path) {
-      const matchingWs = workspacesList.find(w => w.path === sessionObj.path);
+    if (sessionObj) {
+      let matchingWs = null;
+      if (sessionObj.workspaceName) {
+        matchingWs = workspacesList.find(w => w.name.toLowerCase() === sessionObj.workspaceName.toLowerCase());
+      }
+      if (!matchingWs && sessionObj.path) {
+        matchingWs = workspacesList.find(w => w.path === sessionObj.path);
+      }
+      
       if (matchingWs) {
         currentWorkspacePath = matchingWs.path;
         explorerWorkspaceSelect.value = matchingWs.path;
-      } else {
+        localStorage.setItem('lastWorkspacePath', currentWorkspacePath);
+        refreshFileTree();
+      } else if (sessionObj.path) {
         currentWorkspacePath = sessionObj.path;
         let optionExists = Array.from(explorerWorkspaceSelect.options).some(opt => opt.value === sessionObj.path);
         if (!optionExists) {
@@ -1160,8 +1197,9 @@ document.addEventListener('DOMContentLoaded', () => {
           explorerWorkspaceSelect.appendChild(tempOpt);
         }
         explorerWorkspaceSelect.value = sessionObj.path;
+        localStorage.setItem('lastWorkspacePath', currentWorkspacePath);
+        refreshFileTree();
       }
-      refreshFileTree();
     }
 
     // Update sidebar UI selection
@@ -1665,6 +1703,46 @@ document.addEventListener('DOMContentLoaded', () => {
     if (closeSidebarBtnFiles) {
       closeSidebarBtnFiles.addEventListener('click', closeSidebar);
     }
+
+    // Swipe to open/close sidebar on mobile (only when terminal is not active to prevent gesture conflicts)
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      if (window.innerWidth > 768) return;
+      
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+      
+      // Horizontal swipe threshold of 60px, must be mostly horizontal
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
+        const isSidebarOpen = sidebar.classList.contains('open');
+        const isTerminalVisible = !terminalPanel.classList.contains('hidden');
+
+        if (deltaX > 0) {
+          // Swipe Right (Left-to-right) -> Open Sidebar
+          // Only trigger if starting from the left edge of the screen (< 50px) and terminal is not active
+          if (!isSidebarOpen && touchStartX < 50 && !isTerminalVisible) {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.remove('hidden');
+          }
+        } else {
+          // Swipe Left (Right-to-left) -> Close Sidebar
+          if (isSidebarOpen) {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.add('hidden');
+          }
+        }
+      }
+    }, { passive: true });
   }
 
   // Close sidebar drawer on selection or creation (on mobile)
@@ -1747,6 +1825,16 @@ document.addEventListener('DOMContentLoaded', () => {
     closeSidebarOnMobile();
     sessionModal.classList.remove('hidden');
     newSessionNameInput.value = '';
+    
+    // Auto-select and lock/disable the workspace dropdown in the modal
+    sessionWorkspaceSelect.value = currentWorkspacePath || '';
+    const activeWs = workspacesList.find(w => w.path === currentWorkspacePath);
+    const activeWorkspaceName = activeWs ? activeWs.name : 'Default Workspace';
+    const badgeEl = document.getElementById('modalActiveWorkspaceName');
+    if (badgeEl) {
+      badgeEl.textContent = activeWorkspaceName;
+    }
+    
     newSessionNameInput.focus();
   });
 
@@ -1770,36 +1858,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
     const agent = selectedAgentRadio ? selectedAgentRadio.value : 'default';
 
-    let workspacePath = sessionWorkspaceSelect.value;
-    const wsName = modalNewWorkspaceName.value.trim();
-    const wsPath = modalNewWorkspacePath.value.trim();
-
-    if (sessionWorkspaceSelect.value === '__new__') {
-      if (!wsName || !wsPath) {
-        alert('Please fill out all workspace fields.');
-        return;
-      }
-      try {
-        const wsResponse = await fetch('/api/workspaces', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ name: wsName, path: wsPath })
-        });
-        if (!wsResponse.ok) {
-          const wsData = await wsResponse.json();
-          alert('Failed to initialize workspace: ' + (wsData.error || 'Unknown error'));
-          return;
-        }
-        workspacePath = wsPath;
-        await loadWorkspaces();
-      } catch (wsErr) {
-        console.error(wsErr);
-        alert('Network error when attempting to create workspace');
-        return;
-      }
-    }
+    const workspacePath = sessionWorkspaceSelect.value;
+    const activeWs = workspacesList.find(w => w.path === workspacePath);
+    const workspaceName = activeWs ? activeWs.name : '';
 
     try {
       const response = await fetch('/api/sessions', {
@@ -1807,7 +1868,7 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ name, agent, workspacePath })
+        body: JSON.stringify({ name, agent, workspacePath, workspaceName })
       });
 
       if (response.ok) {
@@ -1955,8 +2016,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   explorerWorkspaceSelect.addEventListener('change', () => {
     currentWorkspacePath = explorerWorkspaceSelect.value;
+    localStorage.setItem('lastWorkspacePath', currentWorkspacePath);
     updateDeleteWorkspaceBtnState();
     refreshFileTree();
+    renderSessions(sessionListCache);
   });
 
   explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
@@ -1979,8 +2042,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (response.ok) {
         currentWorkspacePath = ''; // Reset to default workspace
+        localStorage.setItem('lastWorkspacePath', '');
         await loadWorkspaces();
         refreshFileTree();
+        loadSessions(); // Reload sessions to filter on default workspace
       } else {
         const data = await response.json();
         alert('Failed to delete workspace: ' + (data.error || 'Unknown error'));
@@ -2022,8 +2087,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response.ok) {
         closeWorkspaceModal();
         currentWorkspacePath = wsPath;
+        localStorage.setItem('lastWorkspacePath', currentWorkspacePath);
         await loadWorkspaces();
         refreshFileTree();
+        renderSessions(sessionListCache);
       } else {
         const data = await response.json();
         alert('Failed to create workspace: ' + (data.error || 'Unknown error'));
@@ -2276,6 +2343,188 @@ document.addEventListener('DOMContentLoaded', () => {
       welcomeGrid3D.style.transform = 'rotateX(30deg) rotateY(0deg) translate3d(0, 0, 0)';
     });
   }
+
+  // Helper to convert a native select into a styled custom dropdown
+  function convertSelectToCustom(selectEl) {
+    if (!selectEl) return;
+    if (selectEl.dataset.customSelectInit) return;
+    selectEl.dataset.customSelectInit = 'true';
+
+    const container = document.createElement('div');
+    container.className = 'cyber-custom-select-container';
+    
+    selectEl.classList.add('cyber-select-hidden');
+    selectEl.parentNode.insertBefore(container, selectEl.nextSibling);
+
+    const triggerBtn = document.createElement('button');
+    triggerBtn.type = 'button';
+    triggerBtn.className = 'cyber-custom-select-trigger';
+    
+    const selectedText = document.createElement('span');
+    selectedText.className = 'selected-text';
+    
+    const chevronSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    chevronSvg.setAttribute('width', '12');
+    chevronSvg.setAttribute('height', '12');
+    chevronSvg.setAttribute('viewBox', '0 0 24 24');
+    chevronSvg.setAttribute('fill', 'none');
+    chevronSvg.setAttribute('stroke', 'currentColor');
+    chevronSvg.setAttribute('stroke-width', '2');
+    chevronSvg.setAttribute('stroke-linecap', 'round');
+    chevronSvg.setAttribute('stroke-linejoin', 'round');
+    chevronSvg.setAttribute('class', 'chevron-icon');
+    
+    const chevronPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
+    chevronSvg.appendChild(chevronPath);
+    
+    triggerBtn.appendChild(selectedText);
+    triggerBtn.appendChild(chevronSvg);
+    container.appendChild(triggerBtn);
+
+    const computed = window.getComputedStyle(selectEl);
+    const layoutProps = [
+      'height', 'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight',
+      'fontSize', 'fontFamily', 'fontWeight', 'letterSpacing', 'borderRadius'
+    ];
+    layoutProps.forEach(prop => {
+      const val = selectEl.style[prop] || computed[prop];
+      if (val && val !== 'auto' && val !== '0px') {
+        triggerBtn.style[prop] = val;
+      }
+    });
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'cyber-custom-select-dropdown';
+    container.appendChild(dropdown);
+
+    function syncSelectedText() {
+      const selectedIndex = selectEl.selectedIndex;
+      if (selectedIndex < 0) {
+        selectedText.innerHTML = '<span style="color: var(--text-secondary);">Select Option</span>';
+        return;
+      }
+      const opt = selectEl.options[selectedIndex];
+      const text = opt.textContent;
+      
+      if (opt.value === '') {
+        selectedText.innerHTML = `<span style="color: var(--text-secondary);">${text}</span>`;
+      } else if (opt.value === '__new__') {
+        selectedText.innerHTML = `<span style="color: var(--neon-pink);">${text}</span>`;
+      } else {
+        const match = text.match(/^(.+?)\s*\((.+?)\)$/);
+        if (match) {
+          selectedText.innerHTML = `
+            <span style="display: flex; align-items: center; gap: 6px; overflow: hidden; width: 100%;">
+              <span style="color: var(--neon-cyan); font-weight: bold; flex-shrink: 0;">${match[1]}</span>
+              <span style="color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${match[2]}</span>
+            </span>
+          `;
+        } else {
+          selectedText.innerHTML = `<span style="color: var(--neon-cyan);">${text}</span>`;
+        }
+      }
+    }
+
+    function rebuildOptions() {
+      dropdown.innerHTML = '';
+      Array.from(selectEl.options).forEach((opt, idx) => {
+        const optEl = document.createElement('div');
+        optEl.className = 'cyber-custom-select-option';
+        optEl.dataset.value = opt.value;
+        optEl.dataset.index = idx;
+        
+        const isSelected = opt.value === selectEl.value;
+        if (isSelected) {
+          optEl.classList.add('selected');
+        }
+        
+        const text = opt.textContent;
+        if (opt.value === '') {
+          optEl.innerHTML = `<span>${text}</span>`;
+        } else if (opt.value === '__new__') {
+          optEl.classList.add('special-option');
+          optEl.innerHTML = `
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px; height:12px;"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              ${text}
+            </span>
+          `;
+        } else {
+          const match = text.match(/^(.+?)\s*\((.+?)\)$/);
+          if (match) {
+            optEl.innerHTML = `
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span class="ws-opt-name" style="color: var(--text-primary); font-weight: 500;">${match[1]}</span>
+                <span class="ws-opt-path" style="color: var(--text-secondary); opacity: 0.6; font-size: 9px;">${match[2]}</span>
+              </div>
+            `;
+          } else {
+            optEl.innerHTML = `<span>${text}</span>`;
+          }
+        }
+
+        optEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectEl.value = opt.value;
+          selectEl.dispatchEvent(new Event('change'));
+          container.classList.remove('open');
+          syncSelectedText();
+          Array.from(dropdown.querySelectorAll('.cyber-custom-select-option')).forEach(o => {
+            o.classList.toggle('selected', o.dataset.value === opt.value);
+          });
+        });
+
+        dropdown.appendChild(optEl);
+      });
+    }
+
+    triggerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = container.classList.contains('open');
+      document.querySelectorAll('.cyber-custom-select-container').forEach(c => {
+        c.classList.remove('open');
+      });
+      if (!isOpen) {
+        container.classList.add('open');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!container.contains(e.target)) {
+        container.classList.remove('open');
+      }
+    });
+
+    const observer = new MutationObserver(() => {
+      rebuildOptions();
+      syncSelectedText();
+    });
+    observer.observe(selectEl, { childList: true });
+
+    const desc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    if (desc) {
+      Object.defineProperty(selectEl, 'value', {
+        get() {
+          return desc.get.call(this);
+        },
+        set(val) {
+          desc.set.call(this, val);
+          syncSelectedText();
+          Array.from(dropdown.querySelectorAll('.cyber-custom-select-option')).forEach(o => {
+            o.classList.toggle('selected', o.dataset.value === val);
+          });
+        }
+      });
+    }
+
+    rebuildOptions();
+    syncSelectedText();
+  }
+
+  // Convert the selects to styled custom dropdowns
+  convertSelectToCustom(explorerWorkspaceSelect);
+  convertSelectToCustom(sessionWorkspaceSelect);
 
   // Initial Load
   loadWorkspaces().then(() => {

@@ -68,11 +68,39 @@
   <div class="main-container">
     <!-- Sidebar -->
     <aside class="sidebar">
+      <!-- Top Workspace Selector Context (Enlarged & Emphasized Panel) -->
+      <div class="workspace-selector-actions" style="display: flex; flex-direction: column; gap: 10px; border-bottom: 2px solid var(--neon-cyan); box-shadow: 0 4px 20px rgba(0, 240, 255, 0.08); background: linear-gradient(180deg, rgba(16, 20, 38, 0.8) 0%, rgba(10, 12, 22, 0.95) 100%); padding: 16px 16px; margin-bottom: 16px;">
+        <!-- Tech Label Header -->
+        <div class="workspace-tech-header" style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);">
+          // WORKSPACE
+        </div>
+        <!-- Select & Buttons Row -->
+        <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+          <div class="input-wrapper" style="flex: 1; min-width: 0; position: relative; display: flex; align-items: center;">
+            <i data-lucide="folder-git-2" class="input-icon" style="position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-secondary);"></i>
+            <select id="explorerWorkspaceSelect" class="cyber-select" style="width: 100%; padding: 8px 10px 8px 36px; font-size: 13px; height: 34px; line-height: 1; background: rgba(7, 9, 18, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-bottom: 2px solid var(--text-muted); color: #fff; border-radius: 4px; outline: none; font-family: var(--font-mono); letter-spacing: 1px;">
+              <!-- populated dynamically -->
+            </select>
+          </div>
+          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline" title="New Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
+            <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
+          </button>
+          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline" title="Delete Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
+            <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+          </button>
+          <!-- Mobile close sidebar button (visible on mobile only) -->
+          <button id="closeSidebarBtn" class="close-sidebar-btn cyber-btn-outline" title="Close Sidebar" style="padding: 6px; display: none; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-color: var(--neon-pink); flex-shrink: 0;">
+            <i data-lucide="x" style="width: 16px; height: 16px; color: var(--neon-pink);"></i>
+          </button>
+        </div>
+      </div>
+
       <!-- Sidebar Navigation Tabs -->
-      <div class="sidebar-tabs">
+      <div class="sidebar-tabs" style="border-top: none;">
         <button class="sidebar-tab active" id="tabSessionsBtn">
           <i data-lucide="terminal"></i>
-          <span>SESSIONS</span>
+          <span>AGENTS</span>
+          <span class="session-count" id="sessionCount" style="margin-left: 4px; font-size: 9px; background: rgba(0, 240, 255, 0.15); color: var(--neon-cyan); padding: 1px 6px; border-radius: 10px; font-family: var(--font-mono);">0</span>
         </button>
         <button class="sidebar-tab" id="tabFilesBtn">
           <i data-lucide="folder-tree"></i>
@@ -82,57 +110,28 @@
 
       <!-- SESSIONS PANEL -->
       <div id="sessionsContent" class="sidebar-panel-content">
-        <div class="panel-header">
-          <h2><i data-lucide="terminal"></i> SESSIONS</h2>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="session-count" id="sessionCount">0</span>
-            <button id="closeSidebarBtn" class="close-sidebar-btn" title="Close Sidebar">
-              <i data-lucide="x"></i>
-            </button>
-          </div>
-        </div>
+        <!-- Compatibility hidden close buttons -->
+        <button id="closeSidebarBtnFiles" style="display: none;"></button>
 
-        <div class="action-bar">
-          <button id="newSessionBtn" class="cyber-btn-outline w-full">
-            <i data-lucide="plus"></i>
-            <span>CREATE SESSION</span>
+        <div class="action-bar" style="padding: 12px 16px 6px 16px;">
+          <button id="newSessionBtn" class="cyber-btn-outline w-full" style="height: 34px; font-size: 11px;">
+            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+            <span>INITIALIZE AGENT</span>
           </button>
         </div>
 
-        <div class="session-list" id="sessionList">
+        <div class="session-list" id="sessionList" style="padding: 6px 16px 16px 16px;">
           <!-- Sessions will be loaded here dynamically -->
           <div class="loading-placeholder">
             <div class="cyber-spinner"></div>
-            <span>SCANNING SESSIONS...</span>
+            <span>SCANNING AGENTS...</span>
           </div>
         </div>
       </div>
 
       <!-- FILE EXPLORER PANEL -->
       <div id="filesContent" class="sidebar-panel-content hidden">
-        <div class="panel-header">
-          <h2><i data-lucide="folder-tree"></i> EXPLORER</h2>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button id="closeSidebarBtnFiles" class="close-sidebar-btn" title="Close Sidebar">
-              <i data-lucide="x"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="workspace-selector-actions" style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(10, 12, 22, 0.7); padding: 8px 16px;">
-          <div class="input-wrapper" style="flex: 1; position: relative; display: flex; align-items: center;">
-            <i data-lucide="folder-git-2" class="input-icon" style="position: absolute; left: 10px; width: 14px; height: 14px; color: var(--text-secondary);"></i>
-            <select id="explorerWorkspaceSelect" class="cyber-select" style="width: 100%; padding: 6px 10px 6px 34px; font-size: 12px; height: 28px; line-height: 1; background: rgba(7, 9, 18, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-bottom: 2px solid var(--text-muted); color: #fff; border-radius: 4px; outline: none; font-family: var(--font-mono); letter-spacing: 1px;">
-              <!-- populated dynamically -->
-            </select>
-          </div>
-          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline" title="New Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;">
-            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
-          </button>
-          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline" title="Delete Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;">
-            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
-          </button>
-        </div>
+        <!-- No redundant panel header -->
 
         <div class="file-explorer-actions">
           <button id="refreshFilesBtn" class="cyber-btn-outline" title="Refresh Explorer">
@@ -332,7 +331,7 @@
           </div>
         </div>
 
-        <div class="input-group">
+        <div class="input-group" style="display: none;">
           <label for="sessionWorkspaceSelect">
             <span class="label-tech-text">// WORKSPACE</span>
           </label>
@@ -341,6 +340,16 @@
             <select id="sessionWorkspaceSelect" class="cyber-select" style="padding-left: 48px;">
               <!-- populated dynamically -->
             </select>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>
+            <span class="label-tech-text">// WORKSPACE_CONTEXT</span>
+          </label>
+          <div class="active-workspace-badge-container" style="padding: 10px 14px; background: rgba(0, 240, 255, 0.03); border: 1px dashed rgba(0, 240, 255, 0.2); border-radius: 4px; font-family: var(--font-mono); font-size: 13px; color: var(--neon-cyan); display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="folder" style="width: 14px; height: 14px;"></i>
+            <span id="modalActiveWorkspaceName">Default Workspace</span>
           </div>
         </div>
 

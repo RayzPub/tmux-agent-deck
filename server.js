@@ -200,9 +200,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // API: Tmux Commands (Protected)
 // List sessions
 app.get('/api/sessions', requireAuth, (req, res) => {
-  // -F formats: session_name, session_attached, session_created, session_path
-  // Output format: name|attached|created|path
-  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}'], (err, stdout, stderr) => {
+  // -F formats: session_name, session_attached, session_created, session_path, @workspace_name, @agent_type
+  // Output format: name|attached|created|path|workspaceName|agentType
+  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}'], (err, stdout, stderr) => {
     if (err) {
       // If error code is 1, it usually means tmux is running but has no sessions
       if (err.code === 1) {
@@ -212,12 +212,14 @@ app.get('/api/sessions', requireAuth, (req, res) => {
     }
     
     const sessions = stdout.trim().split('\n').filter(Boolean).map(line => {
-      const [name, attached, created, sessionPath] = line.split('|');
+      const [name, attached, created, sessionPath, workspaceName, agentType] = line.split('|');
       return {
         name,
         attached: attached === '1',
         created: new Date(parseInt(created) * 1000).toLocaleString(),
-        path: sessionPath || ''
+        path: sessionPath || '',
+        workspaceName: workspaceName || '',
+        agentType: agentType || ''
       };
     });
     res.json(sessions);
@@ -320,15 +322,24 @@ const injectAgentHooks = (workspacePath, agent) => {
 
 // Create session
 app.post('/api/sessions', requireAuth, (req, res) => {
-  const { name, agent, workspacePath } = req.body;
+  const { name, agent, workspacePath, workspaceName } = req.body;
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
     return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
   }
 
+  let resolvedWorkspacePath = workspacePath;
+  if (workspaceName && !resolvedWorkspacePath) {
+    const workspaces = readWorkspaces();
+    const ws = workspaces.find(w => w.name.toLowerCase() === workspaceName.toLowerCase());
+    if (ws) {
+      resolvedWorkspacePath = ws.path;
+    }
+  }
+
   const args = ['new-session', '-d', '-s', name];
 
-  if (workspacePath) {
-    const resolvedPath = resolveWorkspacePath(workspacePath);
+  if (resolvedWorkspacePath) {
+    const resolvedPath = resolveWorkspacePath(resolvedWorkspacePath);
     if (!fs.existsSync(resolvedPath)) {
       try {
         fs.mkdirSync(resolvedPath, { recursive: true });
@@ -338,7 +349,7 @@ app.post('/api/sessions', requireAuth, (req, res) => {
     }
     
     // Inject local hooks for the target agent
-    injectAgentHooks(workspacePath, agent);
+    injectAgentHooks(resolvedWorkspacePath, agent);
 
     args.push('-c', resolvedPath);
   }
@@ -396,18 +407,34 @@ app.post('/api/sessions', requireAuth, (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to create session', details: stderr });
     }
-    // Set status bar off for this session to keep layout clean and borderless
-    execTmux(['set-option', '-t', name, 'status', 'off'], (statusErr) => {
-      if (statusErr) {
-        console.error(`Failed to hide tmux status bar for session ${name}:`, statusErr);
-      }
-      // Enable mouse mode for this session to support mouse wheel scrolling
-      execTmux(['set-option', '-t', name, 'mouse', 'on'], (mouseErr) => {
-        if (mouseErr) {
-          console.error(`Failed to enable mouse mode for session ${name}:`, mouseErr);
-        }
-        res.json({ success: true, name });
-      });
+
+    // Build the Tmux options configuration pipeline
+    const optionsToSet = [
+      ['set-option', '-t', name, 'status', 'off'],
+      ['set-option', '-t', name, 'mouse', 'on']
+    ];
+    if (workspaceName) {
+      optionsToSet.push(['set-option', '-t', name, '@workspace_name', workspaceName]);
+    }
+    if (agent) {
+      optionsToSet.push(['set-option', '-t', name, '@agent_type', agent]);
+    }
+
+    // Set options sequentially
+    let chain = Promise.resolve();
+    optionsToSet.forEach(optArgs => {
+      chain = chain.then(() => new Promise((resolve) => {
+        execTmux(optArgs, (optErr) => {
+          if (optErr) {
+            console.error(`Failed to set tmux option ${optArgs.join(' ')}:`, optErr);
+          }
+          resolve();
+        });
+      }));
+    });
+
+    chain.then(() => {
+      res.json({ success: true, name });
     });
   });
 });
