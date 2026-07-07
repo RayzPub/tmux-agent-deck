@@ -32,9 +32,9 @@
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   
   /* Welcome Panel Animations */
-  --welcome-grid-color: rgba(0, 240, 255, 0.08);
+  --welcome-grid-color: rgba(0, 240, 255, 0.22);
   --welcome-scanline-color: rgba(255, 0, 127, 0.18);
-  --welcome-glow-color: rgba(0, 240, 255, 0.08);
+  --welcome-glow-color: rgba(0, 240, 255, 0.12);
 }
 
 /* Reset & Base Styles */
@@ -827,7 +827,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  perspective: 320px;
+  perspective: 1000px;
   z-index: 0;
   pointer-events: none;
 }
@@ -835,16 +835,16 @@ body {
 /* 3D Grid scrolling elements */
 .welcome-grid-3d {
   position: absolute;
-  top: -60%;
-  left: -50%;
-  width: 200%;
-  height: 220%;
+  top: -20%;
+  left: -20%;
+  width: 140%;
+  height: 140%;
   background-image: 
     linear-gradient(var(--welcome-grid-color) 1.5px, transparent 1.5px),
     linear-gradient(90deg, var(--welcome-grid-color) 1.5px, transparent 1.5px);
   background-size: 55px 55px;
-  transform: rotateX(65deg) translate3d(0, 0, 0);
-  transform-origin: center top;
+  transform: rotateX(30deg) translate3d(0, 0, 0);
+  transform-origin: center center;
   animation: welcome-grid-scroll 24s linear infinite;
   transition: transform 0.4s cubic-bezier(0.1, 0.8, 0.2, 1);
   will-change: transform, background-position;
@@ -866,52 +866,18 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(to bottom, var(--bg-core) 0%, transparent 65%);
+  background: linear-gradient(to bottom, var(--bg-core) 0%, transparent 55%);
   pointer-events: none;
   z-index: 1;
 }
 
-/* Vertical Laser Scanline wave */
+/* Vertical Laser Scanline wave - disabled */
 .welcome-scanline {
-  position: absolute;
-  top: -20px;
-  left: 0;
-  width: 100%;
-  height: 25px;
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    var(--welcome-scanline-color) 40%,
-    rgba(255, 255, 255, 0.5) 50%,
-    var(--welcome-scanline-color) 60%,
-    transparent 100%
-  );
-  opacity: 0.7;
-  pointer-events: none;
-  z-index: 1;
-  animation: welcome-scanline-anim 10s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  will-change: top;
+  display: none !important;
 }
 
 body.light-minimalist .welcome-scanline {
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    var(--welcome-scanline-color) 30%,
-    rgba(79, 70, 229, 0.2) 50%,
-    var(--welcome-scanline-color) 70%,
-    transparent 100%
-  );
-  opacity: 0.5;
-}
-
-@keyframes welcome-scanline-anim {
-  0% {
-    top: -30px;
-  }
-  100% {
-    top: 110%;
-  }
+  display: none !important;
 }
 
 /* Ambient Pulsing Glow */
@@ -2343,9 +2309,9 @@ body.light-minimalist {
   color: var(--text-primary);
 
   /* Light mode welcome panel overrides */
-  --welcome-grid-color: rgba(15, 23, 42, 0.04);
+  --welcome-grid-color: rgba(15, 23, 42, 0.18);
   --welcome-scanline-color: rgba(79, 70, 229, 0.06);
-  --welcome-glow-color: rgba(15, 23, 42, 0.02);
+  --welcome-glow-color: rgba(15, 23, 42, 0.05);
 }
 
 /* Hide ambient cyberpunk visuals */

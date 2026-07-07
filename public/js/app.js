@@ -2272,14 +2272,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const tiltX = ((y - centerY) / centerY) * -5;
       const tiltY = ((x - centerX) / centerX) * 6;
       
-      // Apply transform relative to the base 3D rotateX(65deg)
-      welcomeGrid3D.style.transform = `rotateX(${65 + tiltX}deg) rotateY(${tiltY}deg) translate3d(0, 0, 0)`;
+      // Apply transform relative to the base 3D rotateX(30deg)
+      welcomeGrid3D.style.transform = `rotateX(${30 + tiltX}deg) rotateY(${tiltY}deg) translate3d(0, 0, 0)`;
     });
     
     welcomePanel.addEventListener('mouseleave', () => {
       if (window.innerWidth <= 768) return;
-      // Reset back to original 65deg rotateX and 0deg rotateY
-      welcomeGrid3D.style.transform = 'rotateX(65deg) rotateY(0deg) translate3d(0, 0, 0)';
+      // Reset back to original 30deg rotateX and 0deg rotateY
+      welcomeGrid3D.style.transform = 'rotateX(30deg) rotateY(0deg) translate3d(0, 0, 0)';
     });
   }
 
