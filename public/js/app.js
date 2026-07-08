@@ -483,6 +483,56 @@ document.addEventListener('DOMContentLoaded', () => {
     lucide.createIcons();
   }
 
+  function saveTabsState() {
+    try {
+      localStorage.setItem('deckTabs', JSON.stringify(tabs));
+      localStorage.setItem('activeTabId', activeTabId || '');
+    } catch (e) {
+      console.error('Failed to save tabs state to localStorage:', e);
+    }
+  }
+
+  function restoreTabsState() {
+    try {
+      const savedTabsRaw = localStorage.getItem('deckTabs');
+      const savedActiveTabId = localStorage.getItem('activeTabId');
+      
+      if (savedTabsRaw) {
+        const savedTabs = JSON.parse(savedTabsRaw);
+        if (Array.isArray(savedTabs) && savedTabs.length > 0) {
+          // Clear current tabs
+          tabs.length = 0;
+          
+          savedTabs.forEach(tab => {
+            if (tab.type === 'terminal') {
+              // Only restore terminal tab if the session still exists on backend
+              const sessionExists = sessionListCache.some(s => s.name === tab.id);
+              if (sessionExists) {
+                tabs.push(tab);
+              }
+            } else {
+              tabs.push(tab);
+            }
+          });
+          
+          if (tabs.length > 0) {
+            let targetActiveTabId = savedActiveTabId;
+            // Check if the saved active tab actually got restored
+            const activeTabExists = tabs.some(t => t.id === targetActiveTabId);
+            if (!activeTabExists) {
+              targetActiveTabId = tabs[0].id;
+            }
+            activateTab(targetActiveTabId);
+          } else {
+            renderTabs();
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to restore tabs state from localStorage:', e);
+    }
+  }
+
   function renderTabs() {
     if (tabs.length === 0) {
       workspaceTabs.classList.add('hidden');
@@ -492,6 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
       diffPanel.classList.add('hidden');
       currentSession = null;
       activeTabId = null;
+      saveTabsState();
       return;
     }
 
@@ -526,6 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     lucide.createIcons();
+    saveTabsState();
   }
 
   function activateTab(tabId) {
@@ -536,18 +588,24 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTabs();
 
     if (tab.type === 'terminal') {
+      const targetSession = tab.id;
+      let cached = sessionCache.get(targetSession);
+      if (!cached) {
+        attachSession(targetSession);
+        return;
+      }
+
       editorPanel.classList.add('hidden');
       diffPanel.classList.add('hidden');
       welcomePanel.classList.add('hidden');
       terminalPanel.classList.remove('hidden');
 
       // Hide all terminal containers except the active one
-      const targetSession = tab.id;
-      for (const [name, cached] of sessionCache.entries()) {
+      for (const [name, cachedSession] of sessionCache.entries()) {
         if (name === targetSession) {
-          if (cached.container) cached.container.classList.remove('hidden');
+          if (cachedSession.container) cachedSession.container.classList.remove('hidden');
         } else {
-          if (cached.container) cached.container.classList.add('hidden');
+          if (cachedSession.container) cachedSession.container.classList.add('hidden');
         }
       }
 
@@ -557,9 +615,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Make sure the active terminal layout fits and has focus
       setTimeout(() => {
         fitTerminalFor(targetSession);
-        const cached = sessionCache.get(targetSession);
-        if (cached && cached.term) {
-          cached.term.focus();
+        const cachedSession = sessionCache.get(targetSession);
+        if (cachedSession && cachedSession.term) {
+          cachedSession.term.focus();
         }
       }, 50);
     } else if (tab.type === 'editor') {
@@ -2694,11 +2752,37 @@ document.addEventListener('DOMContentLoaded', () => {
   convertSelectToCustom(sessionWorkspaceSelect);
 
   // Initial Load
-  loadWorkspaces().then(() => {
-    loadSessions();
+  loadWorkspaces().then(async () => {
+    await loadSessions();
+    restoreTabsState();
     // Poll sessions state every 5 seconds to keep attached/detached states in sync
     setInterval(loadSessions, 5000);
     // Init push notifications on load
     initPushNotifications();
+
+    // Deck Control Dropdown logic
+    const deckControlToggleBtn = document.getElementById('deckControlToggleBtn');
+    const deckControlDropdownMenu = document.getElementById('deckControlDropdownMenu');
+
+    if (deckControlToggleBtn && deckControlDropdownMenu) {
+      deckControlToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deckControlDropdownMenu.classList.toggle('hidden');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!deckControlDropdownMenu.contains(e.target) && e.target !== deckControlToggleBtn) {
+          deckControlDropdownMenu.classList.add('hidden');
+        }
+      });
+
+      // Event delegation for closing dropdown when major actions are triggered inside
+      deckControlDropdownMenu.addEventListener('click', (e) => {
+        const target = e.target.closest('button, .header-btn');
+        if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn')) {
+          deckControlDropdownMenu.classList.add('hidden');
+        }
+      });
+    }
   });
 });

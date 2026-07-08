@@ -150,6 +150,21 @@
         const configStatus = document.getElementById('imBotConfigStatus');
         const mainSection = document.getElementById('imBotMainSection');
 
+        // Update the IM Bot button text inside the dropdown
+        const imBotBtnSpan = imBotBtn.querySelector('span');
+        if (imBotBtnSpan) {
+          if (!data.enabled) {
+            imBotBtnSpan.textContent = 'IM BOT: OFF';
+            imBotBtn.classList.remove('active');
+          } else if (data.bindings && data.bindings.length > 0) {
+            imBotBtnSpan.textContent = `IM BOT: ${data.bindings.length} ACTIVE`;
+            imBotBtn.classList.add('active');
+          } else {
+            imBotBtnSpan.textContent = 'IM BOT: UNBOUND';
+            imBotBtn.classList.remove('active');
+          }
+        }
+
         if (!data.enabled) {
           configStatus.innerHTML = `⚠️ <span style="color: var(--neon-magenta);">IM Bot is not enabled on this server.</span><br>Please set <code>TELEGRAM_BOT_TOKEN</code> in your server's <code>.env</code> file and restart.`;
           configStatus.style.borderLeftColor = 'var(--neon-magenta)';
@@ -278,5 +293,8 @@
     });
 
     document.getElementById('imBotGenTokenBtn').addEventListener('click', startBinding);
+
+    // Initial status check to update the button UI on page load
+    refreshStatus();
   });
 })();

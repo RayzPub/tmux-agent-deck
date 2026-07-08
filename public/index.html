@@ -49,22 +49,34 @@
         <span class="stat-val online"><span class="pulse-dot"></span><span class="stat-text">ONLINE</span></span>
       </div>
 
-      <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
-        <i data-lucide="bell"></i>
-        <span>PUSH: OFF</span>
-      </button>
-      <button id="themeToggleBtn" class="header-btn" title="Toggle Theme Style">
-        <i data-lucide="sun"></i>
-        <span>MINIMAL</span>
-      </button>
-      <button id="reloadBtn" class="header-btn" title="Reload Deck">
-        <i data-lucide="refresh-cw"></i>
-        <span>RELOAD</span>
-      </button>
-      <button id="logoutBtn" class="header-btn" title="Logout Core">
-        <i data-lucide="log-out"></i>
-        <span>DISCONNECT</span>
-      </button>
+      <!-- Aggregated System Control Dropdown -->
+      <div class="deck-control-dropdown" id="deckControlDropdown">
+        <button id="deckControlToggleBtn" class="header-btn" title="System Settings & Connections">
+          <i data-lucide="sliders-horizontal"></i>
+          <span>SYSTEM</span>
+        </button>
+        <div id="deckControlDropdownMenu" class="deck-dropdown-menu hidden">
+          <div class="deck-dropdown-header">// DECK CONTROLS</div>
+          <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
+            <i data-lucide="bell"></i>
+            <span>PUSH: OFF</span>
+          </button>
+          <!-- IM BOT will be inserted here dynamically -->
+          <button id="themeToggleBtn" class="header-btn" title="Toggle Theme Style">
+            <i data-lucide="sun"></i>
+            <span>MINIMAL</span>
+          </button>
+          <button id="reloadBtn" class="header-btn" title="Reload Deck">
+            <i data-lucide="refresh-cw"></i>
+            <span>RELOAD</span>
+          </button>
+          <div class="deck-dropdown-divider"></div>
+          <button id="logoutBtn" class="header-btn danger" title="Logout Core">
+            <i data-lucide="log-out"></i>
+            <span>DISCONNECT</span>
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 
