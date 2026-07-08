@@ -1745,6 +1745,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: true });
   }
 
+  // Prevent rubber-band/elastic scrolling on mobile for the header and terminal workspace
+  const cyberHeader = document.querySelector('.cyber-header');
+  if (cyberHeader) {
+    cyberHeader.addEventListener('touchmove', (e) => {
+      if (window.innerWidth <= 768) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
+
+  const terminalWorkspace = document.querySelector('.terminal-workspace');
+  if (terminalWorkspace) {
+    terminalWorkspace.addEventListener('touchmove', (e) => {
+      if (window.innerWidth <= 768) {
+        // Allow scrolling inside editor, diff viewer, and horizontal tabs
+        if (e.target.closest('#editorTextarea') || 
+            e.target.closest('#diffPanel .editor-container-wrapper') || 
+            e.target.closest('#workspaceTabs')) {
+          return;
+        }
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
+
   // Close sidebar drawer on selection or creation (on mobile)
   function closeSidebarOnMobile() {
     if (window.innerWidth <= 768 && sidebar && sidebarOverlay) {

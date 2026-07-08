@@ -45,12 +45,18 @@
   padding: 0;
 }
 
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
 body {
   background-color: var(--bg-core);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 16px;
-  overflow-x: hidden;
   height: 100vh;
   height: 100dvh;
   display: flex;
@@ -1415,6 +1421,8 @@ body.light-minimalist .slogan-title {
     height: 56px;
     padding: 0 12px;
     z-index: 1001;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
   }
   
   .sidebar-toggle-btn {
@@ -1482,6 +1490,8 @@ body.light-minimalist .slogan-title {
     padding: 10px 10px calc(115px + env(safe-area-inset-bottom)) 10px;
     height: 100%;
     width: 100%;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
   }
   
   /* Compact Welcome Panel */
