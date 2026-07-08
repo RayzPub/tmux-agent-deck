@@ -82,12 +82,18 @@ async function setupTelegramWebhook(domainName) {
   if (!token) return;
   
   const webhookUrl = `https://${domainName}/api/im/telegram/webhook`;
-  const url = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
+  let url = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
+  
+  const secretToken = process.env.TELEGRAM_SECRET_TOKEN;
+  if (secretToken) {
+    url += `&secret_token=${encodeURIComponent(secretToken)}`;
+  }
+
   try {
     const res = await fetch(url);
     const data = await res.json();
     if (data.ok) {
-      console.log(`🤖 [IM Bot] Telegram Webhook successfully set to ${webhookUrl}`);
+      console.log(`🤖 [IM Bot] Telegram Webhook successfully set to ${webhookUrl}${secretToken ? ' (with secret token)' : ''}`);
     } else {
       console.error(`❌ [IM Bot] Failed to set Telegram Webhook:`, data);
     }
@@ -367,6 +373,16 @@ module.exports = {
 
     // 6. Telegram Webhook Receiver
     app.post('/api/im/telegram/webhook', async (req, res) => {
+      // Validate webhook secret token if configured
+      const configuredSecret = process.env.TELEGRAM_SECRET_TOKEN;
+      if (configuredSecret) {
+        const incomingSecret = req.headers['x-telegram-bot-api-secret-token'];
+        if (incomingSecret !== configuredSecret) {
+          console.warn(`[IM Bot] Blocked unauthorized Webhook access attempt from IP ${req.ip}`);
+          return res.status(403).send('Forbidden: Invalid secret token');
+        }
+      }
+
       res.sendStatus(200); // Telegram expects 200 OK immediately
       
       const { message, callback_query } = req.body;

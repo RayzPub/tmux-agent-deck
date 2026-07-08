@@ -54,6 +54,10 @@
   - 整合 Web Push (VAPID 协议) 与 Service Worker，支持在后台甚至浏览器关闭时接收终端会话重要事件。
   - **AI 动作推送 Hook**：当 AI 智能体 (Agy / Claude) 触发特定长耗时操作或需要权限审批时，调用内置 `/usr/local/bin/deck-notify` 命令行工具实时推送通知至订阅设备。
   - **智能免打扰机制**：在用户正聚焦查看当前会话时，系统将智能绕过推送，避免产生重复无谓的通知打扰。
+- 💬 **IM 即时通讯集成 (Telegram Bot)**：
+  - **双向命令与控制 (C2)**：支持列出会话、切换活动会话、截取实时屏幕内容，甚至直接通过 IM 发送文本进行命令行键盘输入。
+  - **交互式审批推送**：当 AI 智能体请求授权时，可在 Telegram 直接点击 `✅ 允许` 或 `❌ 拒绝` 按钮进行一键反馈，随后系统会自动启动终端状态监视并回传结果。
+  - **单次免密 Magic Link**：支持在 IM 中获取 60 秒内单次有效的免密登录链接，方便在移动端快捷进入控制大厅。
 
 ---
 
@@ -116,16 +120,62 @@ sudo ./stop.sh
 
 ---
 
+## 🤖 Telegram 机器人集成 / Telegram Bot Integration
+
+本项目集成了一个 Telegram 机器人，您可以通过 IM 即时通讯工具接收智能体通知、执行终端指令，甚至进行交互式操作审批。
+
+### 1. 配置 Telegram Bot
+在根目录下的 `.env` 文件中配置以下环境变量（Bot Token 可通过向 [@BotFather](https://t.me/BotFather) 申请获得）：
+
+```env
+# Telegram 机器人配置
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_BOT_USERNAME=your_telegram_bot_username # 可选，若不填写启动时会自动通过 API 获取
+```
+
+配置完成后，使用 `sudo ./restart.sh` 重启服务。
+
+> [!NOTE]
+> Telegram 机器人采用 **Webhook** 模式（API 接口为 `https://<你的域名>/api/im/telegram/webhook`），因此需要配置有效的 `SSL` 证书及公网可访问的 `DOMAIN_NAME` 域名。
+
+### 2. 账号绑定 (User Binding)
+1. 登录网页控制面板，点击控制栏右侧的 **IM BOT** 按钮。
+2. 页面会弹出绑定二维码及链接。
+3. 点击链接或扫描二维码（链接格式如：`https://t.me/your_bot?start=xxxxxx`）跳转至 Telegram 并点击 **Start** 按钮。
+4. 绑定成功后，机器人会向您发送欢迎消息，此时会话控制通道已开启。
+
+### 3. 支持的 IM 指令 (IM Commands)
+在 Telegram 中，你可以使用以下指令来查询与控制你的 Tmux 会话：
+- `/list` — 🖥️ 列出服务器上当前所有的 Tmux 会话以及它们的挂载状态。
+- `/switch <会话名>` — 🎯 切换当前的活动会话，接下来的非指令消息都会发送到该会话。
+- `/status` — 📸 截取并查看当前活动会话屏幕的最后 20 行终端内容。
+- `/link` 或 `/login` — 🔗 获取一个 60 秒内单次有效的免密登录链接，点击可一键安全登录 Web 终端面板。
+- `/help` — ❓ 查看支持的指令帮助。
+
+### 4. 远程键盘输入与终端监视 (Remote Input & Monitoring)
+- **直接输入**：除指令外，你可以在 Telegram 中直接发送任何文本消息，Bot 会将其作为键盘输入（自动附带 Enter）下发至当前活动会话中。
+- **状态监视**：发送输入后，Bot 会自动开启终端监视器（最长 5 分钟），并在命令执行结束（终端输出静止 3 秒或命令运行 12 秒无变化）时，将最后 20 行输出自动推送给您。
+
+### 5. 交互式动作审批 (Interactive Action Approval)
+当运行在 Tmux 里的 AI 智能体 (Agy 或 Claude Code) 触发需要授权的动作（例如：运行指令、修改/查看文件等）时，Telegram 机器人会发出带有交互式按钮的通知：
+- **操作按钮**：包含 `✅ 允许 (Approve)` 和 `❌ 拒绝 (Deny)` 两个内联按钮。
+- **一键决策**：在 Telegram 中点击相应按钮即可立即将 `y` 或 `n` 发送至对应的 Tmux 终端，无需登录网页操作。
+- **自动闭环**：做出决策后，机器人会自动移除按钮、记录决策结果并进入终端状态监视，命令执行完毕后自动把终端的最新输出推送给您。
+
+---
+
 ## 📂 项目结构
 
-- [server.js](file:///home/ubuntu/tmux-web-terminal/server.js) — 基于 Express + Socket.io + Node-PTY 的 Web 主进程
-- [bin/](file:///home/ubuntu/tmux-web-terminal/bin) — 命令行工具目录
-  - [deck-notify](file:///home/ubuntu/tmux-web-terminal/bin/deck-notify) — 供系统和 AI 智能体调用的主动推送命令行通知工具
-- [public/](file:///home/ubuntu/tmux-web-terminal/public) — 前端静态文件目录
-  - [login.html](file:///home/ubuntu/tmux-web-terminal/public/login.html) — 赛博朋克风格身份登录认证页面
-  - [index.html](file:///home/ubuntu/tmux-web-terminal/public/index.html) — 主控终端与会话看板控制页面
-  - [css/style.css](file:///home/ubuntu/tmux-web-terminal/public/css/style.css) — 霓虹视觉系统与布局样式表
-  - [js/app.js](file:///home/ubuntu/tmux-web-terminal/public/js/app.js) — 前端核心逻辑（Xterm.js 配置与 WebSocket 数据流）
-  - [sw.js](file:///home/ubuntu/tmux-web-terminal/public/sw.js) — 用于注册与接收通知的 PWA Service Worker
-  - [manifest.json](file:///home/ubuntu/tmux-web-terminal/public/manifest.json) — 包含图标和主题设置的 Web 应用清单文件
-  - [images/](file:///home/ubuntu/tmux-web-terminal/public/images) — 静态图片资源目录 (包含 PWA 图标 icon-192.png)
+- [server.js](file:///home/ubuntu/tmux-agent-deck/server.js) — 基于 Express + Socket.io + Node-PTY 的 Web 主进程
+- [im-bot.js](file:///home/ubuntu/tmux-agent-deck/im-bot.js) — 即时通讯（Telegram）机器人后端核心，实现 Webhook 路由、指令解析与交互审批逻辑
+- [bin/](file:///home/ubuntu/tmux-agent-deck/bin) — 命令行工具目录
+  - [deck-notify](file:///home/ubuntu/tmux-agent-deck/bin/deck-notify) — 供系统和 AI 智能体调用的主动推送命令行通知工具
+- [public/](file:///home/ubuntu/tmux-agent-deck/public) — 前端静态文件目录
+  - [login.html](file:///home/ubuntu/tmux-agent-deck/public/login.html) — 赛博朋克风格身份登录认证页面
+  - [index.html](file:///home/ubuntu/tmux-agent-deck/public/index.html) — 主控终端与会话看板控制页面
+  - [css/style.css](file:///home/ubuntu/tmux-agent-deck/public/css/style.css) — 霓虹视觉系统与布局样式表
+  - [js/app.js](file:///home/ubuntu/tmux-agent-deck/public/js/app.js) — 前端核心逻辑（Xterm.js 配置与 WebSocket 数据流）
+  - [js/im-bot-client.js](file:///home/ubuntu/tmux-agent-deck/public/js/im-bot-client.js) — 前端 IM 绑定、状态查询与解绑核心逻辑
+  - [sw.js](file:///home/ubuntu/tmux-agent-deck/public/sw.js) — 用于注册与接收通知的 PWA Service Worker
+  - [manifest.json](file:///home/ubuntu/tmux-agent-deck/public/manifest.json) — 包含图标和主题设置的 Web 应用清单文件
+  - [images/](file:///home/ubuntu/tmux-agent-deck/public/images) — 静态图片资源目录 (包含 PWA 图标 icon-192.png)
