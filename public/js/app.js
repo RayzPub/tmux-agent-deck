@@ -1980,6 +1980,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.continuous = false;
         
         let isListening = false;
+        let wantsListening = false; // User's intended state (sync toggled)
         let isHolding = false;
         let holdTimeout = null;
         let autoSendPending = false;
@@ -1992,6 +1993,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         recognition.onend = () => {
           isListening = false;
+          wantsListening = false; // Reset intended state
           mobileMicBtn.classList.remove('listening');
           mobileCommandInput.placeholder = 'Type or dictate command...';
           
@@ -2016,24 +2018,33 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.onerror = (event) => {
           console.error('Speech recognition error:', event.error);
           isListening = false;
+          wantsListening = false;
           isHolding = false;
           autoSendPending = false;
-          recognition.stop();
+          try {
+            recognition.stop();
+          } catch(e) {}
         };
 
         const startListening = () => {
           if (!isListening) {
-            recognition.start();
+            try {
+              recognition.start();
+            } catch (err) {
+              console.warn('[IM Bot] SpeechRecognition start error:', err);
+            }
           }
         };
 
         const stopListening = () => {
-          if (isListening) {
+          try {
             recognition.stop();
+          } catch (err) {
+            console.warn('[IM Bot] SpeechRecognition stop error:', err);
           }
         };
 
-        // Touch/Mouse press down -> Start listening and detect long press
+        // Touch/Mouse press down -> Toggle immediately or start long press
         const onPressDown = (e) => {
           e.preventDefault(); // Prevent double trigger and keyboard popup
           
@@ -2042,32 +2053,36 @@ document.addEventListener('DOMContentLoaded', () => {
           isHolding = false;
           autoSendPending = false;
 
-          startListening();
+          // Toggle wantsListening synchronously on touch/click down
+          if (wantsListening) {
+            wantsListening = false;
+            stopListening();
+          } else {
+            wantsListening = true;
+            startListening();
 
-          // If they hold for > 350ms, switch to "hold to talk" mode
-          holdTimeout = setTimeout(() => {
-            isHolding = true;
-            if (isListening) {
-              mobileCommandInput.placeholder = '正在按住录音... 松开即发送';
-            }
-          }, 350);
+            // Only schedule long press hold if we are turning it ON
+            holdTimeout = setTimeout(() => {
+              isHolding = true;
+              if (isListening || wantsListening) {
+                mobileCommandInput.placeholder = '正在按住录音... 松开即发送';
+              }
+            }, 350);
+          }
         };
 
-        // Touch/Mouse release -> Handle hold-to-talk release
+        // Touch/Mouse release -> Handle long press release
         const onPressUp = (e) => {
           if (holdTimeout) clearTimeout(holdTimeout);
 
           if (isHolding) {
-            // Long press release -> stop and auto-send
+            // It was a long press! Releasing it stops and sends
             isHolding = false;
+            wantsListening = false;
             autoSendPending = true;
             stopListening();
-          } else {
-            // Short tap -> toggle behavior
-            if (isListening) {
-              stopListening();
-            }
           }
+          // Note: Short tap release does nothing since toggle was handled on press down!
         };
 
         // Bind events for both Mobile touch and Desktop mouse
@@ -2081,6 +2096,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (holdTimeout) clearTimeout(holdTimeout);
           if (isHolding) {
             isHolding = false;
+            wantsListening = false;
             autoSendPending = true;
             stopListening();
           }
