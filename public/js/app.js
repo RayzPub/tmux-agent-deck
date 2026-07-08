@@ -2001,6 +2001,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         
         recognition.onresult = (event) => {
+          if (!wantsListening) return; // Prevent late speech results from overwriting a cleared/sent input
+          
           const transcript = Array.from(event.results)
             .map(result => result[0])
             .map(result => result.transcript)
