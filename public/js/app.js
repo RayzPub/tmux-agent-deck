@@ -1815,6 +1815,7 @@ document.addEventListener('DOMContentLoaded', () => {
         case 'down': seq = '\x1b[B'; break;
         case 'left': seq = '\x1b[D'; break;
         case 'right': seq = '\x1b[C'; break;
+        case 'clear': seq = 'clear\r'; break; // Clear screen command + Enter
       }
       
       if (seq && activeSession && activeSession.socket) {
