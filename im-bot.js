@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 const BINDINGS_FILE = path.join(__dirname, 'im_bindings.json');
 let bindings = {
@@ -91,6 +92,13 @@ async function setupTelegramWebhook(domainName) {
   }
 }
 
+const usedTokens = new Set();
+
+// Clean up used tokens periodically to prevent memory leaks
+setInterval(() => {
+  usedTokens.clear();
+}, 10 * 60 * 1000); // clear every 10 minutes (safe since tokens expire in 60s)
+
 // Set Commands Menu helper
 async function setupTelegramCommands() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -101,6 +109,7 @@ async function setupTelegramCommands() {
     commands: [
       { command: "list", description: "🖥️ 列出所有 Tmux 会话" },
       { command: "status", description: "📸 查看当前活动会话屏幕" },
+      { command: "link", description: "🔗 获取 60 秒免密登录链接" },
       { command: "help", description: "❓ 查看指令帮助" }
     ]
   };
@@ -304,7 +313,47 @@ module.exports = {
       res.json({ success: true });
     });
 
-    // 5. Telegram Webhook Receiver
+    // 5. Magic Link login handler (No auth required because token acts as auth)
+    app.get('/api/im/login', (req, res) => {
+      const { token } = req.query;
+      if (!token) {
+        return res.status(400).send('<h1>登录失败</h1><p>缺少 Token 参数。</p>');
+      }
+
+      if (usedTokens.has(token)) {
+        return res.status(401).send('<h1>登录失败</h1><p>该免密登录链接仅限单次有效，已被使用。请重新在机器人中发送 /link 获取新链接。</p>');
+      }
+
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Verify that the Chat ID inside the token is still bound
+        const isStillBound = bindings.telegram.some(user => user.chatId === decoded.chatId);
+        if (!isStillBound) {
+          return res.status(401).send('<h1>登录失败</h1><p>发起此请求的 Telegram 账号已被解除绑定。</p>');
+        }
+
+        // Mark token as used
+        usedTokens.add(token);
+
+        // Issue standard session cookie (valid for 7 days)
+        const useHttps = !!(process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH);
+        const sessionToken = jwt.sign({ authenticated: true }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        res.cookie('token', sessionToken, {
+          httpOnly: true,
+          secure: useHttps,
+          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        // Redirect to index
+        return res.redirect('/index.html');
+
+      } catch (err) {
+        return res.status(401).send('<h1>登录链接无效或已过期</h1><p>免密登录链接有效时间为 60 秒，请重新在机器人中发送 /link 获取。</p>');
+      }
+    });
+
+    // 6. Telegram Webhook Receiver
     app.post('/api/im/telegram/webhook', async (req, res) => {
       res.sendStatus(200); // Telegram expects 200 OK immediately
       
@@ -413,8 +462,28 @@ module.exports = {
           `• /list - 列出所有 TMUX 会话\n` +
           `• /switch &lt;session&gt; - 切换当前活动会话\n` +
           `• /status - 查看当前活动会话屏幕\n` +
+          `• /link - 获取 60 秒免密登录链接\n` +
           `• /help - 查看本帮助消息\n\n` +
           `<i>你也可以直接回复任何文本，机器人会将其作为键盘输入发送给活动终端！</i>`
+        );
+        return;
+      }
+
+      // Command: /link or /login
+      if (text === '/link' || text === '/login') {
+        const token = jwt.sign(
+          { authenticated: true, chatId: chatId },
+          process.env.JWT_SECRET,
+          { expiresIn: '60s' }
+        );
+        
+        const domainName = process.env.DOMAIN_NAME || 'outshine.cloud';
+        const loginUrl = `https://${domainName}/api/im/login?token=${token}`;
+        
+        await sendTelegramMessage(chatId, 
+          `🔗 <b>免密登录链接已生成</b>\n` +
+          `该链接有效时间为 <b>60 秒</b>，且仅限使用<b>单次</b>。请在手机浏览器中打开：\n\n` +
+          `👉 <a href="${loginUrl}">点击此处一键免密登录 Control Deck</a>`
         );
         return;
       }
