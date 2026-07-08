@@ -51,7 +51,11 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
   const body = {
     chat_id: chatId,
     text: text,
-    parse_mode: 'HTML'
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    link_preview_options: {
+      is_disabled: true
+    }
   };
   if (replyMarkup) {
     body.reply_markup = replyMarkup;
@@ -318,6 +322,14 @@ module.exports = {
       const { token } = req.query;
       if (!token) {
         return res.status(400).send('<h1>登录失败</h1><p>缺少 Token 参数。</p>');
+      }
+
+      // Check User-Agent: Prevent Telegram Bot link preview scrapers from consuming the token
+      const ua = req.headers['user-agent'] || '';
+      const isCrawler = /TelegramBot|Twitterbot|Slackbot|Discordbot|facebookexternalhit|WhatsApp/i.test(ua);
+      if (isCrawler) {
+        console.log(`[IM Bot] Blocked link preview crawler from consuming token. User-Agent: ${ua}`);
+        return res.send('<html><head><title>Control Deck</title></head><body>Loading...</body></html>');
       }
 
       if (usedTokens.has(token)) {
