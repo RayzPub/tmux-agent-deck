@@ -1843,6 +1843,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     mobileKeyboardBar.addEventListener('touchstart', handleHelperKey, { passive: false });
     mobileKeyboardBar.addEventListener('mousedown', handleHelperKey);
+
+    // Also attach listeners to the relocated ENTER button in the input bar
+    const mobileEnterBtn = document.querySelector('.mobile-input-bar .enter-key');
+    if (mobileEnterBtn) {
+      mobileEnterBtn.addEventListener('touchstart', handleHelperKey, { passive: false });
+      mobileEnterBtn.addEventListener('mousedown', handleHelperKey);
+    }
   }
 
   // Modal Control
