@@ -1983,33 +1983,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const recognition = new SpeechRecognition();
         recognition.lang = 'zh-CN'; // Support Chinese/English
         recognition.interimResults = true;
-        recognition.continuous = false;
+        recognition.continuous = false; // Automatically stops when user stops speaking
         
         let isListening = false;
         let wantsListening = false; // User's intended state (sync toggled)
-        let isHolding = false;
-        let holdTimeout = null;
-        let autoSendPending = false;
         
         recognition.onstart = () => {
           isListening = true;
           mobileMicBtn.classList.add('listening');
-          mobileCommandInput.placeholder = isHolding ? '正在按住录音... 松开即发送' : '正在听取指令... 请说话...';
+          mobileCommandInput.placeholder = '正在听取指令... 请说话...';
         };
         
         recognition.onend = () => {
           isListening = false;
-          wantsListening = false; // Reset intended state
+          wantsListening = false; // Reset intended state when recording finishes/times out
           mobileMicBtn.classList.remove('listening');
           mobileCommandInput.placeholder = 'Type or dictate command...';
-          
-          if (autoSendPending) {
-            autoSendPending = false;
-            // Wait 300ms for final result to settle in input value
-            setTimeout(() => {
-              sendMobileCommand();
-            }, 300);
-          }
         };
         
         recognition.onresult = (event) => {
@@ -2025,8 +2014,6 @@ document.addEventListener('DOMContentLoaded', () => {
           console.error('Speech recognition error:', event.error);
           isListening = false;
           wantsListening = false;
-          isHolding = false;
-          autoSendPending = false;
           try {
             recognition.stop();
           } catch(e) {}
@@ -2050,7 +2037,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         };
 
-        // Expose stop function to higher scope
+        // Expose stop function to higher scope (e.g. for autosend on Send/Enter click)
         stopVoiceInputGlobal = () => {
           if (wantsListening) {
             wantsListening = false;
@@ -2058,63 +2045,29 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         };
 
-        // Touch/Mouse press down -> Toggle immediately or start long press
-        const onPressDown = (e) => {
-          e.preventDefault(); // Prevent double trigger and keyboard popup
+        let lastTouchTime = 0;
+        const handleMicToggle = (e) => {
+          e.preventDefault();
           
-          if (holdTimeout) clearTimeout(holdTimeout);
-          
-          isHolding = false;
-          autoSendPending = false;
+          // Throttling double triggers
+          const now = Date.now();
+          if (now - lastTouchTime < 300) return;
+          if (e.type === 'touchstart') {
+            lastTouchTime = now;
+          }
 
-          // Toggle wantsListening synchronously on touch/click down
           if (wantsListening) {
             wantsListening = false;
             stopListening();
           } else {
             wantsListening = true;
             startListening();
-
-            // Only schedule long press hold if we are turning it ON
-            holdTimeout = setTimeout(() => {
-              isHolding = true;
-              if (isListening || wantsListening) {
-                mobileCommandInput.placeholder = '正在按住录音... 松开即发送';
-              }
-            }, 350);
           }
         };
 
-        // Touch/Mouse release -> Handle long press release
-        const onPressUp = (e) => {
-          if (holdTimeout) clearTimeout(holdTimeout);
-
-          if (isHolding) {
-            // It was a long press! Releasing it stops and sends
-            isHolding = false;
-            wantsListening = false;
-            autoSendPending = true;
-            stopListening();
-          }
-          // Note: Short tap release does nothing since toggle was handled on press down!
-        };
-
-        // Bind events for both Mobile touch and Desktop mouse
-        mobileMicBtn.addEventListener('touchstart', onPressDown, { passive: false });
-        mobileMicBtn.addEventListener('touchend', onPressUp);
-        mobileMicBtn.addEventListener('mousedown', onPressDown);
-        mobileMicBtn.addEventListener('mouseup', onPressUp);
-        
-        // Safety check if mouse leaves button area while holding
-        mobileMicBtn.addEventListener('mouseleave', () => {
-          if (holdTimeout) clearTimeout(holdTimeout);
-          if (isHolding) {
-            isHolding = false;
-            wantsListening = false;
-            autoSendPending = true;
-            stopListening();
-          }
-        });
+        // Bind events for both Mobile touch (fast response) and Desktop mouse click
+        mobileMicBtn.addEventListener('touchstart', handleMicToggle, { passive: false });
+        mobileMicBtn.addEventListener('click', handleMicToggle);
       }
     }
   }
