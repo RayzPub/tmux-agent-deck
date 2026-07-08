@@ -133,3 +133,6 @@ vapid.json
 # Local agent settings & hooks
 .agents/
 .claude/
+
+# IM Bot Bindings Data
+im_bindings.json

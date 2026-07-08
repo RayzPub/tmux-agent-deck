@@ -11,6 +11,7 @@ const pty = require('node-pty');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const webpush = require('web-push');
+const imBot = require('./im-bot');
 
 // Helper: get run-as-user configuration (drops privileges to SUDO_USER if run as root)
 const getRunUser = () => {
@@ -143,6 +144,9 @@ const requireAuth = (req, res, next) => {
   req.user = decoded;
   next();
 };
+
+// Initialize IM Bot
+imBot.init(app, execTmux, getRunUser, requireAuth);
 
 // API: Login
 app.post('/api/login', (req, res) => {
@@ -924,6 +928,9 @@ const sendPushToAll = (payload) => {
     }
     lastPushTimeMap.set(payload.session, now);
   }
+
+  // Notify IM Bot (Telegram, etc.)
+  imBot.notify(payload).catch(err => console.error('[IM Bot] Notification error:', err));
 
   const payloadString = JSON.stringify(payload);
   console.log(`📡 Sending push to ${subscriptions.length} devices...`);
