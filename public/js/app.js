@@ -1980,17 +1980,28 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.continuous = false;
         
         let isListening = false;
+        let isHolding = false;
+        let holdTimeout = null;
+        let autoSendPending = false;
         
         recognition.onstart = () => {
           isListening = true;
           mobileMicBtn.classList.add('listening');
-          mobileCommandInput.placeholder = '正在听取指令... 请说话...';
+          mobileCommandInput.placeholder = isHolding ? '正在按住录音... 松开即发送' : '正在听取指令... 请说话...';
         };
         
         recognition.onend = () => {
           isListening = false;
           mobileMicBtn.classList.remove('listening');
           mobileCommandInput.placeholder = 'Type or dictate command...';
+          
+          if (autoSendPending) {
+            autoSendPending = false;
+            // Wait 300ms for final result to settle in input value
+            setTimeout(() => {
+              sendMobileCommand();
+            }, 300);
+          }
         };
         
         recognition.onresult = (event) => {
@@ -2005,14 +2016,73 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.onerror = (event) => {
           console.error('Speech recognition error:', event.error);
           isListening = false;
+          isHolding = false;
+          autoSendPending = false;
           recognition.stop();
         };
-        
-        mobileMicBtn.addEventListener('click', () => {
+
+        const startListening = () => {
+          if (!isListening) {
+            recognition.start();
+          }
+        };
+
+        const stopListening = () => {
           if (isListening) {
             recognition.stop();
+          }
+        };
+
+        // Touch/Mouse press down -> Start listening and detect long press
+        const onPressDown = (e) => {
+          e.preventDefault(); // Prevent double trigger and keyboard popup
+          
+          if (holdTimeout) clearTimeout(holdTimeout);
+          
+          isHolding = false;
+          autoSendPending = false;
+
+          startListening();
+
+          // If they hold for > 350ms, switch to "hold to talk" mode
+          holdTimeout = setTimeout(() => {
+            isHolding = true;
+            if (isListening) {
+              mobileCommandInput.placeholder = '正在按住录音... 松开即发送';
+            }
+          }, 350);
+        };
+
+        // Touch/Mouse release -> Handle hold-to-talk release
+        const onPressUp = (e) => {
+          if (holdTimeout) clearTimeout(holdTimeout);
+
+          if (isHolding) {
+            // Long press release -> stop and auto-send
+            isHolding = false;
+            autoSendPending = true;
+            stopListening();
           } else {
-            recognition.start();
+            // Short tap -> toggle behavior
+            if (isListening) {
+              stopListening();
+            }
+          }
+        };
+
+        // Bind events for both Mobile touch and Desktop mouse
+        mobileMicBtn.addEventListener('touchstart', onPressDown, { passive: false });
+        mobileMicBtn.addEventListener('touchend', onPressUp);
+        mobileMicBtn.addEventListener('mousedown', onPressDown);
+        mobileMicBtn.addEventListener('mouseup', onPressUp);
+        
+        // Safety check if mouse leaves button area while holding
+        mobileMicBtn.addEventListener('mouseleave', () => {
+          if (holdTimeout) clearTimeout(holdTimeout);
+          if (isHolding) {
+            isHolding = false;
+            autoSendPending = true;
+            stopListening();
           }
         });
       }
