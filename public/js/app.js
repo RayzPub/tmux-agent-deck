@@ -137,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Terminal & Socket State Cache
   const sessionCache = new Map(); // sessionName -> { socket, term, fitAddon, container }
   let currentSession = null;
+  let stopVoiceInputGlobal = null;
   let resizeTimeout = null;
   let visibilityListenerAdded = false;
 
@@ -1948,6 +1949,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendMobileCommand = () => {
       const text = mobileCommandInput.value;
       if (text && currentSession) {
+        // Automatically stop recording when sending
+        if (stopVoiceInputGlobal) {
+          stopVoiceInputGlobal();
+        }
+
         const cached = sessionCache.get(currentSession);
         if (cached && cached.socket) {
           // Send the text followed by a carriage return (Enter key)
@@ -2041,6 +2047,14 @@ document.addEventListener('DOMContentLoaded', () => {
             recognition.stop();
           } catch (err) {
             console.warn('[IM Bot] SpeechRecognition stop error:', err);
+          }
+        };
+
+        // Expose stop function to higher scope
+        stopVoiceInputGlobal = () => {
+          if (wantsListening) {
+            wantsListening = false;
+            stopListening();
           }
         };
 
