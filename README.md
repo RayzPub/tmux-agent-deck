@@ -8,18 +8,20 @@
 
 <table>
   <tr>
-    <td align="center"><b>1. 创建Agent会话</b></td>
-    <td align="center"><b>2. 🖥️ 终端控制大厅 / AI Agent</b></td>
+    <td align="center"><b>1. 新建工作区 / Initialize Workspace</b></td>
+    <td align="center"><b>2. 新建 Agent / Initialize Agent Session</b></td>
   </tr>
   <tr>
-    <td><img src="docs/images/login_preview.png" alt="创建Agent会话" width="400"/></td>
-    <td><img src="docs/images/deck_preview.png" alt="🖥️ 终端控制大厅 / AI Agent" width="400"/></td>
+    <td><img src="docs/images/workspace_preview.jpg" alt="新建工作区 / Initialize Workspace" width="400"/></td>
+    <td><img src="docs/images/agent_preview.jpg" alt="新建 Agent / Initialize Agent Session" width="400"/></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><b>3. 📂 文件浏览器</b></td>
+    <td align="center"><b>3. 多 Agent 会话 / Multi-Agent Dashboard</b></td>
+    <td align="center"><b>4. Diff 与文件预览 / Diff & File Editor</b></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="docs/images/file_preview.png" alt="文件浏览器" width="800"/></td>
+    <td><img src="docs/images/dashboard_preview.jpg" alt="多 Agent 会话 / Multi-Agent Dashboard" width="400"/></td>
+    <td><img src="docs/images/editor_diff_preview.jpg" alt="Diff 与文件预览 / Diff & File Editor" width="400"/></td>
   </tr>
 </table>
 
