@@ -1844,13 +1844,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     mobileKeyboardBar.addEventListener('touchstart', handleHelperKey, { passive: false });
     mobileKeyboardBar.addEventListener('mousedown', handleHelperKey);
-
-    // Also attach listeners to the relocated ENTER button in the input bar
-    const mobileEnterBtn = document.querySelector('.mobile-input-bar .enter-key');
-    if (mobileEnterBtn) {
-      mobileEnterBtn.addEventListener('touchstart', handleHelperKey, { passive: false });
-      mobileEnterBtn.addEventListener('mousedown', handleHelperKey);
-    }
   }
 
   // Modal Control
@@ -1948,18 +1941,24 @@ document.addEventListener('DOMContentLoaded', () => {
   if (mobileCommandInput && mobileSendBtn) {
     const sendMobileCommand = () => {
       const text = mobileCommandInput.value;
-      if (text && currentSession) {
-        // Automatically stop recording when sending
-        if (stopVoiceInputGlobal) {
-          stopVoiceInputGlobal();
-        }
+      
+      // Automatically stop recording when sending
+      if (stopVoiceInputGlobal) {
+        stopVoiceInputGlobal();
+      }
 
+      if (currentSession) {
         const cached = sessionCache.get(currentSession);
         if (cached && cached.socket) {
-          // Send the text followed by a carriage return (Enter key)
-          cached.socket.emit('terminal-input', text + '\r');
-          mobileCommandInput.value = '';
-          mobileCommandInput.blur();
+          if (text) {
+            // Send the text followed by a carriage return (Enter key)
+            cached.socket.emit('terminal-input', text + '\r');
+            mobileCommandInput.value = '';
+            mobileCommandInput.blur();
+          } else {
+            // Input is empty: Send a raw carriage return (Enter key)
+            cached.socket.emit('terminal-input', '\r');
+          }
         }
       }
     };
