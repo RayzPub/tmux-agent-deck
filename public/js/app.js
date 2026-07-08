@@ -1959,7 +1959,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const mobileMicBtn = document.getElementById('mobileMicBtn');
 
   if (mobileCommandInput && mobileSendBtn) {
+    let lastSendCommandTime = 0;
     const sendMobileCommand = () => {
+      const now = Date.now();
+      if (now - lastSendCommandTime < 350) return; // Prevent touch/click double-submission
+      lastSendCommandTime = now;
+
       const text = mobileCommandInput.value;
       
       // Automatically stop recording when sending
@@ -1970,14 +1975,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentSession) {
         const cached = sessionCache.get(currentSession);
         if (cached && cached.socket) {
-          if (text) {
+          const cleanText = text.trim();
+          if (cleanText) {
             // Send the text followed by a carriage return (Enter key)
-            cached.socket.emit('terminal-input', text + '\r');
+            cached.socket.emit('terminal-input', cleanText + '\r');
             mobileCommandInput.value = '';
             mobileCommandInput.blur();
           } else {
             // Input is empty: Send a raw carriage return (Enter key)
             cached.socket.emit('terminal-input', '\r');
+            mobileCommandInput.value = ''; // Clean up whitespace if any
           }
         }
       }
