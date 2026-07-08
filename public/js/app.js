@@ -1781,12 +1781,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Mobile Keyboard Helper Bar Logic
   if (mobileKeyboardBar) {
-    const handleHelperKey = (e) => {
-      const btn = e.target.closest('.helper-key');
-      if (!btn) return;
-      
-      e.preventDefault(); // Prevent focus loss from xterm's hidden textarea
-      
+    const triggerHelperKey = (btn) => {
       const key = btn.getAttribute('data-key');
       if (!key) return;
       
@@ -1797,20 +1792,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (key === 'paste') {
         pasteFromClipboard();
-        return;
-      }
-
-      if (key === 'copy') {
-        // Copy terminal selection
-        (async () => {
-          const activeSession = sessionCache.get(currentSession);
-          const selection = activeSession?.term?.getSelection();
-          if (selection && selection.trim()) {
-            await writeToClipboard(selection);
-          } else if (lastSelection) {
-            await writeToClipboard(lastSelection);
-          }
-        })();
         return;
       }
       
@@ -1829,7 +1810,6 @@ document.addEventListener('DOMContentLoaded', () => {
         case 'esc': seq = '\x1b'; break;
         case 'tab': seq = '\x09'; break;
         case 'enter': seq = '\r'; break;
-        case 'tmux-prefix': seq = '\x02'; break; // Ctrl+B
         case 'ctrl-c': seq = '\x03'; break; // Ctrl+C
         case 'up': seq = '\x1b[A'; break;
         case 'down': seq = '\x1b[B'; break;
@@ -1842,8 +1822,48 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
 
-    mobileKeyboardBar.addEventListener('touchstart', handleHelperKey, { passive: false });
-    mobileKeyboardBar.addEventListener('mousedown', handleHelperKey);
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchHasMoved = false;
+
+    // Track touch start to detect dragging/scrolling vs tapping
+    mobileKeyboardBar.addEventListener('touchstart', (e) => {
+      const btn = e.target.closest('.helper-key');
+      if (!btn) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchHasMoved = false;
+      // Do NOT preventDefault, letting the mobile browser scroll horizontally natively!
+    }, { passive: true });
+
+    mobileKeyboardBar.addEventListener('touchmove', (e) => {
+      if (!touchHasMoved) {
+        const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+        const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+        // If they drag more than 8 pixels, mark as scrolling/dragging
+        if (deltaX > 8 || deltaY > 8) {
+          touchHasMoved = true;
+        }
+      }
+    }, { passive: true });
+
+    mobileKeyboardBar.addEventListener('touchend', (e) => {
+      const btn = e.target.closest('.helper-key');
+      if (!btn) return;
+
+      if (!touchHasMoved) {
+        // It was a short tap (not a drag/scroll gesture)!
+        e.preventDefault(); // Prevent focus loss and double tap zoom
+        triggerHelperKey(btn);
+      }
+    });
+
+    mobileKeyboardBar.addEventListener('mousedown', (e) => {
+      const btn = e.target.closest('.helper-key');
+      if (!btn) return;
+      e.preventDefault(); // Prevent focus loss
+      triggerHelperKey(btn);
+    });
   }
 
   // Modal Control
