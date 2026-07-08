@@ -1760,6 +1760,44 @@ body.light-minimalist .slogan-title {
     width: 16px;
     height: 16px;
   }
+
+  .mobile-mic-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 240, 255, 0.3);
+    background: rgba(0, 240, 255, 0.05);
+    color: var(--neon-cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: all 0.2s ease;
+  }
+
+  .mobile-mic-btn i {
+    width: 16px;
+    height: 16px;
+  }
+
+  .mobile-mic-btn:active {
+    background: rgba(0, 240, 255, 0.2);
+    border-color: var(--neon-cyan);
+  }
+
+  .mobile-mic-btn.listening {
+    border-color: var(--neon-pink) !important;
+    color: var(--neon-pink) !important;
+    background: rgba(255, 0, 127, 0.15) !important;
+    box-shadow: 0 0 12px rgba(255, 0, 127, 0.5) !important;
+    animation: mic-pulse 1.5s infinite alternate;
+  }
+
+  @keyframes mic-pulse {
+    from { opacity: 0.8; }
+    to { opacity: 1; box-shadow: 0 0 18px rgba(255, 0, 127, 0.8); }
+  }
   
   .terminal-container-wrapper {
     padding-bottom: 12px !important;

@@ -1942,6 +1942,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Mobile Command Input logic
   const mobileCommandInput = document.getElementById('mobileCommandInput');
   const mobileSendBtn = document.getElementById('mobileSendBtn');
+  const mobileMicBtn = document.getElementById('mobileMicBtn');
 
   if (mobileCommandInput && mobileSendBtn) {
     const sendMobileCommand = () => {
@@ -1964,6 +1965,58 @@ document.addEventListener('DOMContentLoaded', () => {
         sendMobileCommand();
       }
     });
+
+    // Mobile Speech Recognition (Voice Input)
+    if (mobileMicBtn) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
+      if (!SpeechRecognition) {
+        // Hide button if browser doesn't support Web Speech API
+        mobileMicBtn.style.display = 'none';
+      } else {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'zh-CN'; // Support Chinese/English
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        
+        let isListening = false;
+        
+        recognition.onstart = () => {
+          isListening = true;
+          mobileMicBtn.classList.add('listening');
+          mobileCommandInput.placeholder = '正在听取指令... 请说话...';
+        };
+        
+        recognition.onend = () => {
+          isListening = false;
+          mobileMicBtn.classList.remove('listening');
+          mobileCommandInput.placeholder = 'Type or dictate command...';
+        };
+        
+        recognition.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .map(result => result[0])
+            .map(result => result.transcript)
+            .join('');
+          
+          mobileCommandInput.value = transcript;
+        };
+        
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+          isListening = false;
+          recognition.stop();
+        };
+        
+        mobileMicBtn.addEventListener('click', () => {
+          if (isListening) {
+            recognition.stop();
+          } else {
+            recognition.start();
+          }
+        });
+      }
+    }
   }
 
   // Sidebar tab click listeners
