@@ -1121,7 +1121,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       card.innerHTML = `
         <div class="session-info">
-          <div class="session-name" title="${session.name}">${session.name}</div>
+          <div class="session-name-wrapper" style="display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 140px;">
+            <span class="session-status-dot" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background-color: ${session.attached ? 'var(--neon-green)' : 'rgba(255, 255, 255, 0.25)'}; box-shadow: ${session.attached ? 'var(--glow-green)' : 'none'};"></span>
+            <div class="session-name" title="${session.name}" style="max-width: 120px;">${session.name}</div>
+          </div>
           <div class="session-workspace" title="${session.path || 'Default Workspace'}">
             <i data-lucide="folder"></i>
             <span>${workspaceText}</span>

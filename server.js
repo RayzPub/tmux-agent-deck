@@ -219,7 +219,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
       const [name, attached, created, sessionPath, workspaceName, agentType] = line.split('|');
       return {
         name,
-        attached: attached === '1',
+        attached: parseInt(attached, 10) > 0,
         created: new Date(parseInt(created) * 1000).toLocaleString(),
         path: sessionPath || '',
         workspaceName: workspaceName || '',

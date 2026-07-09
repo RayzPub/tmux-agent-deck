@@ -221,6 +221,54 @@ module.exports = {
   init(app, execTmux, getRunUser, requireAuth) {
     loadBindings();
 
+    function getSessionsListMessage(chatId) {
+      return new Promise((resolve) => {
+        execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_path}'], (err, stdout) => {
+          if (err) {
+            resolve({
+              text: `🖥️ <b>服务器上当前没有活跃的 Tmux 会话。</b>`,
+              replyMarkup: {
+                inline_keyboard: [[{ text: '🔄 刷新列表', callback_data: 'refresh_list' }]]
+              }
+            });
+            return;
+          }
+          const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+          let reply = `🖥️ <b>TMUX 会话列表：</b>\n`;
+          const inlineKeyboard = [];
+          const currentActive = bindings.activeSessions[chatId] || '无';
+
+          lines.forEach(line => {
+            const [name, attached, pathStr] = line.split('|');
+            const numAttached = parseInt(attached, 10) || 0;
+            const attachedStatus = numAttached > 0 
+              ? `🟢 前台查看 (Active${numAttached > 1 ? ` x${numAttached}` : ''})` 
+              : '⚪ 后台挂起 (Background)';
+            reply += `• <b>${escapeHTML(name)}</b> - ${attachedStatus}\n  <code>${escapeHTML(pathStr)}</code>\n`;
+            
+            const isActive = name === currentActive;
+            inlineKeyboard.push([{
+              text: `${isActive ? '🎯' : '🔘'} ${name}`,
+              callback_data: `switch:${name}`
+            }]);
+          });
+          
+          reply += `\n🎯 <b>当前的活动会话：</b> <code>${escapeHTML(currentActive)}</code>`;
+          reply += `\n使用 <code>/switch [会话名]</code> 或点击下方按钮直接切换：`;
+          
+          inlineKeyboard.push([{
+            text: '🔄 刷新列表',
+            callback_data: 'refresh_list'
+          }]);
+          
+          resolve({
+            text: reply,
+            replyMarkup: { inline_keyboard: inlineKeyboard }
+          });
+        });
+      });
+    }
+
     const domainName = process.env.DOMAIN_NAME || 'outshine.cloud';
     if (process.env.TELEGRAM_BOT_TOKEN) {
       setupTelegramWebhook(domainName);
@@ -438,6 +486,55 @@ module.exports = {
             // Start monitoring session output after approval/denial to capture the next step
             startSessionMonitor(sessionName, chatId, execTmux);
           });
+        } else if (action === 'switch') {
+          bindings.activeSessions[chatId] = sessionName;
+          saveBindings();
+
+          await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callback_query_id: queryId, text: `🎯 活动会话已切换为: ${sessionName}` })
+          });
+
+          const { text: updatedText, replyMarkup: updatedMarkup } = await getSessionsListMessage(chatId);
+          fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: msgId,
+              text: updatedText,
+              reply_markup: updatedMarkup,
+              parse_mode: 'HTML'
+            })
+          }).then(res => res.json()).then(data => {
+            if (!data.ok && !data.description.includes('message is not modified')) {
+              console.error('[IM Bot] editMessageText error:', data);
+            }
+          }).catch(err => console.error('[IM Bot] Edit message network error:', err));
+        } else if (action === 'refresh_list') {
+          await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callback_query_id: queryId, text: `🔄 列表已刷新` })
+          });
+
+          const { text: updatedText, replyMarkup: updatedMarkup } = await getSessionsListMessage(chatId);
+          fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: msgId,
+              text: updatedText,
+              reply_markup: updatedMarkup,
+              parse_mode: 'HTML'
+            })
+          }).then(res => res.json()).then(data => {
+            if (!data.ok && !data.description.includes('message is not modified')) {
+              console.error('[IM Bot] editMessageText error:', data);
+            }
+          }).catch(err => console.error('[IM Bot] Edit message network error:', err));
         }
         return;
       }
@@ -518,25 +615,8 @@ module.exports = {
 
       // Command: /list
       if (text === '/list') {
-        execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_path}'], async (err, stdout) => {
-          if (err) {
-            await sendTelegramMessage(chatId, `🖥️ <b>服务器上当前没有活跃的 Tmux 会话。</b>`);
-            return;
-          }
-          const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
-          let reply = `🖥️ <b>TMUX 会话列表：</b>\n`;
-          lines.forEach(line => {
-            const [name, attached, pathStr] = line.split('|');
-            const attachedStatus = attached === '1' ? '🟢 已挂载 (Attached)' : '🔴 未挂载 (Detached)';
-            reply += `• <b>${escapeHTML(name)}</b> - ${attachedStatus}\n  <code>${escapeHTML(pathStr)}</code>\n`;
-          });
-          
-          const currentActive = bindings.activeSessions[chatId] || '无';
-          reply += `\n🎯 <b>当前的活动会话：</b> <code>${escapeHTML(currentActive)}</code>`;
-          reply += `\n使用 <code>/switch [会话名]</code> 进行切换。`;
-
-          await sendTelegramMessage(chatId, reply);
-        });
+        const { text: listText, replyMarkup } = await getSessionsListMessage(chatId);
+        await sendTelegramMessage(chatId, listText, replyMarkup);
         return;
       }
 
