@@ -2905,19 +2905,6 @@ body.light-minimalist .helper-key.keyboard-toggle:active {
 }
 
 /* Push Notification Button Custom Cyberpunk Styles */
-#pushToggleBtn {
-  border-color: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.4);
-  transition: all 0.2s ease;
-}
-
-#pushToggleBtn:hover {
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
-  background: rgba(0, 240, 255, 0.05);
-  box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
-}
-
 #pushToggleBtn.active {
   border-color: var(--neon-green);
   color: var(--neon-green);
@@ -2932,20 +2919,6 @@ body.light-minimalist .helper-key.keyboard-toggle:active {
 }
 
 /* Light Minimalist Mode Overrides */
-body.light-minimalist #pushToggleBtn {
-  border-color: #cbd5e1;
-  color: #64748b;
-  background: transparent;
-  box-shadow: none;
-  text-shadow: none;
-}
-
-body.light-minimalist #pushToggleBtn:hover {
-  border-color: #0891b2;
-  color: #0891b2;
-  background: #ecfeff;
-}
-
 body.light-minimalist #pushToggleBtn.active {
   border-color: #16a34a;
   color: #16a34a;
@@ -3314,15 +3287,26 @@ body.light-minimalist .workspace-tech-header .pulse-dot {
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
 }
 
+.deck-dropdown-menu #themeToggleBtn.active {
+  color: var(--neon-yellow);
+  border-color: rgba(255, 204, 0, 0.3);
+  background: rgba(255, 204, 0, 0.05);
+}
+
+.deck-dropdown-menu #themeToggleBtn.active:hover {
+  border-color: var(--neon-yellow);
+  box-shadow: 0 0 10px rgba(255, 204, 0, 0.2);
+}
+
 .deck-dropdown-menu #logoutBtn {
-  color: var(--neon-magenta);
+  color: var(--text-secondary);
 }
 
 .deck-dropdown-menu #logoutBtn:hover {
   background: rgba(255, 0, 128, 0.08);
   border-color: rgba(255, 0, 128, 0.4);
   box-shadow: 0 0 10px rgba(255, 0, 128, 0.2);
-  color: #fff;
+  color: var(--neon-magenta);
 }
 
 .deck-dropdown-divider {
@@ -3380,17 +3364,27 @@ body.light-minimalist .deck-dropdown-menu #imBotBtn.active:hover {
   box-shadow: none;
 }
 
+body.light-minimalist .deck-dropdown-menu #themeToggleBtn.active {
+  background: #f8fafc;
+  color: #a16207;
+  border-color: #eab308;
+}
+
+body.light-minimalist .deck-dropdown-menu #themeToggleBtn.active:hover {
+  background: #f1f5f9;
+  border-color: #ca8a04;
+  box-shadow: none;
+}
+
 body.light-minimalist .deck-dropdown-menu #logoutBtn {
-  color: #dc2626;
-  border-color: #fca5a5;
-  background: #fef2f2;
+  color: #64748b;
 }
 
 body.light-minimalist .deck-dropdown-menu #logoutBtn:hover {
   background: #fee2e2;
-  border-color: #f87171;
+  border-color: #fca5a5;
   box-shadow: none;
-  color: #991b1b;
+  color: #dc2626;
 }
 
 body.light-minimalist .deck-dropdown-divider {

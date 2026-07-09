@@ -85,17 +85,19 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateThemeButtonUI(isLight) {
     if (!themeToggleBtn) return;
     const textSpan = themeToggleBtn.querySelector('span');
-    const icon = themeToggleBtn.querySelector('i');
+    const icon = themeToggleBtn.querySelector('i, svg');
     if (isLight) {
-      if (textSpan) textSpan.textContent = 'CYBERPUNK';
-      if (icon) {
-        icon.setAttribute('data-lucide', 'moon');
-      }
-    } else {
       if (textSpan) textSpan.textContent = 'MINIMAL';
       if (icon) {
         icon.setAttribute('data-lucide', 'sun');
       }
+      themeToggleBtn.classList.add('active');
+    } else {
+      if (textSpan) textSpan.textContent = 'CYBERPUNK';
+      if (icon) {
+        icon.setAttribute('data-lucide', 'moon');
+      }
+      themeToggleBtn.classList.remove('active');
     }
     // Re-render lucide icons to display the updated icon
     if (window.lucide) {
@@ -2420,7 +2422,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updatePushBtnUI() {
     if (!pushToggleBtn) return;
     const textSpan = pushToggleBtn.querySelector('span');
-    const icon = pushToggleBtn.querySelector('i');
+    const icon = pushToggleBtn.querySelector('i, svg');
     if (isSubscribed) {
       if (textSpan) textSpan.textContent = 'PUSH: ON';
       if (icon) {
