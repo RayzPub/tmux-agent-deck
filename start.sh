@@ -33,27 +33,27 @@ if ! command -v tmux >/dev/null 2>&1; then
 fi
 
 # 1.2 Check Node.js
-NODE_BIN="node"
-if ! command -v node >/dev/null 2>&1; then
-    # Node is not in PATH (often happens when running with sudo)
-    # Check if NVM is installed in the user's home directory
-    if [ "$EUID" -ne 0 ]; then
-        USER_HOME="$HOME"
-    else
-        USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
-    fi
-    NVM_NODE=$(find "$USER_HOME/.nvm/versions/node" -maxdepth 3 -type f -name "node" | sort -V | tail -n 1 2>/dev/null)
-    if [ -n "$NVM_NODE" ] && [ -x "$NVM_NODE" ]; then
-        NODE_BIN="$NVM_NODE"
-    else
-        # Try common paths
-        for path in /usr/local/bin/node /usr/bin/node /opt/node/bin/node; do
-            if [ -x "$path" ]; then
-                NODE_BIN="$path"
-                break
-            fi
-        done
-    fi
+if [ "$EUID" -ne 0 ]; then
+    USER_HOME="$HOME"
+else
+    USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
+fi
+
+NVM_NODE=$(find "$USER_HOME/.nvm/versions/node" -maxdepth 3 -type f -name "node" | sort -V | tail -n 1 2>/dev/null)
+
+if [ -n "$NVM_NODE" ] && [ -x "$NVM_NODE" ]; then
+    NODE_BIN="$NVM_NODE"
+elif command -v node >/dev/null 2>&1; then
+    NODE_BIN=$(command -v node)
+else
+    NODE_BIN="node"
+    # Try common paths
+    for path in /usr/local/bin/node /usr/bin/node /opt/node/bin/node; do
+        if [ -x "$path" ]; then
+            NODE_BIN="$path"
+            break
+        fi
+    done
 fi
 
 NODE_EXISTS=false
@@ -80,8 +80,8 @@ else
     if [ ! -d "node_modules" ] || ! "$NODE_BIN" -e "require('express'); require('socket.io'); require('node-pty')" >/dev/null 2>&1; then
         echo -e "${RED}[✗] 错误: npm 依赖项未安装或不完整！${NC}"
         echo -e "${YELLOW}系统未检测到完整的依赖包 (express, socket.io, node-pty 等)。${NC}"
-        echo -e "请在当前项目根目录下执行以下命令安装依赖："
-        echo -e "    ${GREEN}npm install${NC}"
+        echo -e "请执行一键安装脚本来配置并安装依赖："
+        echo -e "    ${GREEN}./install.sh${NC}"
         echo -e "${BLUE}--------------------------------------------------${NC}"
         MISSING_DEPS=true
     fi

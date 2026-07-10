@@ -63,6 +63,21 @@
 
 ## 🛠️ 快速启动
 
+### 🚀 一键安装（推荐）
+
+您可以通过在终端执行以下命令，实现一键检测并安装系统依赖（Git、Tmux、Curl、GCC/C++ 编译工具）、Node.js 运行环境，并自动克隆仓库、安装项目依赖：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RayzPub/tmux-agent-deck/main/install.sh | bash
+```
+
+安装完成后，进入项目目录：
+```bash
+cd tmux-agent-deck
+```
+
+接下来配置环境并启动。
+
 ### 1. 配置环境
 
 在项目根目录下查看或编辑 `.env` 文件。该文件包含了主要的配置项：
