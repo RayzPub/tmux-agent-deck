@@ -80,6 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
         cached.term.options.theme = isLight ? LIGHT_THEME : DARK_THEME;
       }
     }
+
+    // Update Monaco editor theme
+    if (editorInstance && typeof monaco !== 'undefined') {
+      monaco.editor.setTheme(isLight ? 'vs' : 'cyberTheme');
+    }
   }
 
   function updateThemeButtonUI(isLight) {
@@ -155,6 +160,82 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveFileBtn = document.getElementById('saveFileBtn');
   const closeEditorBtn = document.getElementById('closeEditorBtn');
   const editorTextarea = document.getElementById('editorTextarea');
+
+  let editorInstance = null;
+  let editorDisabled = false;
+  let showOnlyGitChanges = false;
+
+  function getLanguageFromExtension(path) {
+    if (!path) return 'plaintext';
+    const ext = path.split('.').pop().toLowerCase();
+    switch (ext) {
+      case 'js': case 'mjs': case 'cjs': return 'javascript';
+      case 'ts': return 'typescript';
+      case 'json': return 'json';
+      case 'html': case 'htm': return 'html';
+      case 'css': return 'css';
+      case 'md': case 'markdown': return 'markdown';
+      case 'py': return 'python';
+      case 'sh': case 'bash': return 'shell';
+      case 'go': return 'go';
+      case 'rs': return 'rust';
+      case 'yml': case 'yaml': return 'yaml';
+      case 'xml': return 'xml';
+      default: return 'plaintext';
+    }
+  }
+
+  // Monaco initialization
+  if (typeof require !== 'undefined') {
+    require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+    require(['vs/editor/editor.main'], function () {
+      monaco.editor.defineTheme('cyberTheme', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+          { token: 'comment', foreground: '7f8a9e', fontStyle: 'italic' },
+          { token: 'keyword', foreground: '00f0ff', fontStyle: 'bold' },
+          { token: 'string', foreground: 'ff007f' },
+          { token: 'number', foreground: '39ff14' },
+          { token: 'type', foreground: '9d00ff' },
+          { token: 'class', foreground: '9d00ff', fontStyle: 'bold' },
+          { token: 'function', foreground: 'ffcc00' }
+        ],
+        colors: {
+          'editor.background': '#020205',
+          'editor.foreground': '#f2f5fa',
+          'editor.lineHighlightBackground': '#0d0e15',
+          'editorCursor.foreground': '#00f0ff',
+          'editor.selectionBackground': 'rgba(0, 240, 255, 0.2)',
+          'editorLineNumber.foreground': '#4e5866',
+          'editorLineNumber.activeForeground': '#00f0ff',
+          'editor.lineHighlightBorder': 'rgba(0, 240, 255, 0.1)'
+        }
+      });
+
+      const currentTheme = document.body.classList.contains('light-minimalist') ? 'vs' : 'cyberTheme';
+      editorTextarea.innerHTML = '';
+      editorInstance = monaco.editor.create(editorTextarea, {
+        value: '',
+        language: 'plaintext',
+        theme: currentTheme,
+        automaticLayout: true,
+        fontSize: 14,
+        fontFamily: 'var(--font-mono)',
+        minimap: { enabled: true },
+        scrollbar: {
+          vertical: 'visible',
+          horizontal: 'visible',
+          verticalScrollbarSize: 8,
+          horizontalScrollbarSize: 8
+        }
+      });
+
+      editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+        saveEditorFile();
+      });
+    });
+  }
 
   // Git Diff Panel elements
   const diffPanel = document.getElementById('diffPanel');
@@ -688,8 +769,14 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadEditorFile(path) {
     if (editorLoadingPath === path) return;
     editorLoadingPath = path;
-    editorTextarea.value = '';
-    editorTextarea.disabled = true;
+    
+    if (editorInstance) {
+      editorInstance.setValue('');
+      editorInstance.updateOptions({ readOnly: true });
+    } else {
+      editorTextarea.textContent = '';
+    }
+    editorDisabled = true;
     editorStatusMsg.textContent = 'LOADING...';
     
     try {
@@ -700,18 +787,36 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const data = await response.json();
       if (response.ok) {
-        editorTextarea.value = data.content;
-        editorTextarea.disabled = false;
+        if (editorInstance) {
+          editorInstance.setValue(data.content);
+          editorInstance.updateOptions({ readOnly: false });
+          const model = editorInstance.getModel();
+          if (model) {
+            const lang = getLanguageFromExtension(path);
+            monaco.editor.setModelLanguage(model, lang);
+          }
+          editorInstance.focus();
+        } else {
+          editorTextarea.textContent = data.content;
+        }
+        editorDisabled = false;
         editorStatusMsg.textContent = '';
-        editorTextarea.focus();
       } else {
         editorStatusMsg.textContent = 'LOAD ERROR';
-        editorTextarea.value = `Error loading file: ${data.error || 'Unknown error'}`;
+        if (editorInstance) {
+          editorInstance.setValue(`Error loading file: ${data.error || 'Unknown error'}`);
+        } else {
+          editorTextarea.textContent = `Error loading file: ${data.error || 'Unknown error'}`;
+        }
       }
     } catch (err) {
       console.error(err);
       editorStatusMsg.textContent = 'NET ERROR';
-      editorTextarea.value = 'Network error while retrieving file content.';
+      if (editorInstance) {
+        editorInstance.setValue('Network error while retrieving file content.');
+      } else {
+        editorTextarea.textContent = 'Network error while retrieving file content.';
+      }
     } finally {
       editorLoadingPath = null;
     }
@@ -719,10 +824,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function saveEditorFile() {
     const activeTab = tabs.find(t => t.id === activeTabId && t.type === 'editor');
-    if (!activeTab || editorTextarea.disabled) return;
+    if (!activeTab || editorDisabled) return;
 
     const path = activeTab.path;
-    const content = editorTextarea.value;
+    const content = editorInstance ? editorInstance.getValue() : editorTextarea.textContent;
     editorStatusMsg.textContent = 'SAVING...';
     
     try {
@@ -784,12 +889,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (files.length === 0) {
+      let filteredFiles = files;
+      if (showOnlyGitChanges) {
+        filteredFiles = files.filter(file => {
+          if (file.isDir) {
+            return gitDirStatusMap.has(file.path);
+          } else {
+            return gitStatusMap.has(file.path);
+          }
+        });
+      }
+
+      if (filteredFiles.length === 0) {
         containerEl.innerHTML = '<div class="empty-text" style="color: var(--text-muted); padding: 4px 8px; font-style: italic; font-size:11px;">(empty)</div>';
         return;
       }
 
-      files.forEach(file => {
+      filteredFiles.forEach(file => {
         const nodeEl = document.createElement('div');
         nodeEl.className = 'file-node';
         nodeEl.setAttribute('data-path', file.path);
@@ -802,6 +918,9 @@ document.addEventListener('DOMContentLoaded', () => {
           rowEl.classList.add('file-row');
         }
 
+        if (file.isDir && showOnlyGitChanges) {
+          expandedFolders.add(file.path);
+        }
         const isExpanded = expandedFolders.has(file.path);
         const folderIcon = isExpanded ? 'folder-open' : 'folder';
         const iconName = file.isDir ? folderIcon : 'file';
@@ -2194,11 +2313,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // File explorer controls
   refreshFilesBtn.addEventListener('click', refreshFileTree);
   collapseAllBtn.addEventListener('click', () => {
+    if (showOnlyGitChanges) {
+      showOnlyGitChanges = false;
+      gitDiffWorkspaceBtn.classList.remove('active');
+      gitDiffWorkspaceBtn.title = "Show Only Modified Files";
+    }
     expandedFolders.clear();
     refreshFileTree();
   });
   gitDiffWorkspaceBtn.addEventListener('click', () => {
-    openGitDiff('');
+    showOnlyGitChanges = !showOnlyGitChanges;
+    if (showOnlyGitChanges) {
+      gitDiffWorkspaceBtn.classList.add('active');
+      gitDiffWorkspaceBtn.title = "Show All Files";
+    } else {
+      gitDiffWorkspaceBtn.classList.remove('active');
+      gitDiffWorkspaceBtn.title = "Show Only Modified Files";
+    }
+    refreshFileTree();
   });
   refreshDiffBtn.addEventListener('click', () => {
     const activeTab = tabs.find(t => t.id === activeTabId);
@@ -2223,7 +2355,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Editor keyboard shortcut (Ctrl+S)
   editorTextarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    if (!editorInstance && (e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       saveEditorFile();
     }
