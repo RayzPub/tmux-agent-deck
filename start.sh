@@ -17,7 +17,86 @@ echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}🌟 Tmux Agent Deck - Background Control Script 🌟${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
-# 1. Ensure .env exists
+# 1. Environment & Dependency Checks
+MISSING_DEPS=false
+
+# 1.1 Check tmux
+if ! command -v tmux >/dev/null 2>&1; then
+    echo -e "${RED}[✗] 错误: 系统未安装 tmux！${NC}"
+    echo -e "${YELLOW}tmux 是运行 Terminal 会话所必需的的工具。${NC}"
+    echo -e "请使用以下命令进行安装："
+    echo -e "  - Ubuntu/Debian:    ${GREEN}sudo apt update && sudo apt install -y tmux${NC}"
+    echo -e "  - CentOS/Fedora:    ${GREEN}sudo dnf install -y tmux${NC}"
+    echo -e "  - macOS:            ${GREEN}brew install tmux${NC}"
+    echo -e "${BLUE}--------------------------------------------------${NC}"
+    MISSING_DEPS=true
+fi
+
+# 1.2 Check Node.js
+NODE_BIN="node"
+if ! command -v node >/dev/null 2>&1; then
+    # Node is not in PATH (often happens when running with sudo)
+    # Check if NVM is installed in the user's home directory
+    if [ "$EUID" -ne 0 ]; then
+        USER_HOME="$HOME"
+    else
+        USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
+    fi
+    NVM_NODE=$(find "$USER_HOME/.nvm/versions/node" -maxdepth 3 -type f -name "node" | sort -V | tail -n 1 2>/dev/null)
+    if [ -n "$NVM_NODE" ] && [ -x "$NVM_NODE" ]; then
+        NODE_BIN="$NVM_NODE"
+    else
+        # Try common paths
+        for path in /usr/local/bin/node /usr/bin/node /opt/node/bin/node; do
+            if [ -x "$path" ]; then
+                NODE_BIN="$path"
+                break
+            fi
+        done
+    fi
+fi
+
+NODE_EXISTS=false
+if command -v "$NODE_BIN" >/dev/null 2>&1 || [ -x "$NODE_BIN" ]; then
+    NODE_EXISTS=true
+fi
+
+if [ "$NODE_EXISTS" = false ]; then
+    echo -e "${RED}[✗] 错误: 系统未检测到 Node.js 环境！${NC}"
+    echo -e "${YELLOW}Node.js 环境是运行后端服务器所必需的 (推荐 v18+)。${NC}"
+    echo -e "请使用以下方式之一安装 Node.js："
+    echo -e "  - 方案 A (使用 NVM 安装，推荐):"
+    echo -e "    ${GREEN}curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash${NC}"
+    echo -e "    (重新打开终端或加载环境变量后，运行: ${GREEN}nvm install 18${NC})"
+    echo -e "  - 方案 B (Ubuntu/Debian 使用 NodeSource 源):"
+    echo -e "    ${GREEN}curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs${NC}"
+    echo -e "  - 方案 C (Ubuntu/Debian 官方源):"
+    echo -e "    ${GREEN}sudo apt update && sudo apt install -y nodejs npm${NC}"
+    echo -e "${BLUE}--------------------------------------------------${NC}"
+    MISSING_DEPS=true
+else
+    # 1.3 Check npm dependencies
+    # Check if node_modules exists, and if we can import key dependencies
+    if [ ! -d "node_modules" ] || ! "$NODE_BIN" -e "require('express'); require('socket.io'); require('node-pty')" >/dev/null 2>&1; then
+        echo -e "${RED}[✗] 错误: npm 依赖项未安装或不完整！${NC}"
+        echo -e "${YELLOW}系统未检测到完整的依赖包 (express, socket.io, node-pty 等)。${NC}"
+        echo -e "请在当前项目根目录下执行以下命令安装依赖："
+        echo -e "    ${GREEN}npm install${NC}"
+        echo -e "${BLUE}--------------------------------------------------${NC}"
+        MISSING_DEPS=true
+    fi
+fi
+
+# Pause and exit if dependencies are missing
+if [ "$MISSING_DEPS" = true ]; then
+    echo -e "${YELLOW}[!] 检测到环境依赖缺失，请安装上述缺失依赖后再重新启动。${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    read -n 1 -s -r -p "按任意键退出..."
+    echo ""
+    exit 1
+fi
+
+# 2. Ensure .env exists
 if [ ! -f "$ENV_FILE" ]; then
     echo -e "${YELLOW}[!] .env file not found. Creating a default one...${NC}"
     echo "PORT=$PORT" > "$ENV_FILE"
@@ -80,29 +159,7 @@ if [ -z "$CURRENT_JWT" ] || [ "$CURRENT_JWT" = "cyberpunk-tmux-secret-key-1337" 
     fi
 fi
 
-# 4. Locate node binary
-NODE_BIN="node"
-if ! command -v node >/dev/null 2>&1; then
-    # Node is not in PATH (often happens when running with sudo)
-    # Check if NVM is installed in the user's home directory
-    if [ "$EUID" -ne 0 ]; then
-        USER_HOME="$HOME"
-    else
-        USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
-    fi
-    NVM_NODE=$(find "$USER_HOME/.nvm/versions/node" -maxdepth 3 -type f -name "node" | sort -V | tail -n 1 2>/dev/null)
-    if [ -n "$NVM_NODE" ] && [ -x "$NVM_NODE" ]; then
-        NODE_BIN="$NVM_NODE"
-    else
-        # Try common paths
-        for path in /usr/local/bin/node /usr/bin/node /opt/node/bin/node; do
-            if [ -x "$path" ]; then
-                NODE_BIN="$path"
-                break
-            fi
-        done
-    fi
-fi
+# 4. Locate node binary (already done and verified in step 1)
 
 echo -e "${BLUE}[*] Using Node binary: ${NODE_BIN}${NC}"
 

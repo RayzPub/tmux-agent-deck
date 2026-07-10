@@ -247,12 +247,28 @@ const injectAgentHooks = (workspacePath, agent) => {
       }
       
       let hooksData = {};
-      if (fs.existsSync(hooksFile)) {
+      let hasHooksFile = fs.existsSync(hooksFile);
+      if (hasHooksFile) {
         try {
           hooksData = JSON.parse(fs.readFileSync(hooksFile, 'utf8'));
         } catch (e) {
           hooksData = {};
         }
+      }
+
+      let migrated = false;
+      // Migrate existing gate configuration from absolute to relative if present
+      if (hooksData['deck-notify-gate'] && hooksData['deck-notify-gate'].PreToolUse) {
+        hooksData['deck-notify-gate'].PreToolUse.forEach(item => {
+          if (item.hooks) {
+            item.hooks.forEach(hook => {
+              if (hook.command && hook.command.includes('/usr/local/bin/deck-notify')) {
+                hook.command = hook.command.replace('/usr/local/bin/deck-notify', 'deck-notify');
+                migrated = true;
+              }
+            });
+          }
+        });
       }
 
       // Check if gate is already present
@@ -265,15 +281,19 @@ const injectAgentHooks = (workspacePath, agent) => {
               hooks: [
                 {
                   type: "command",
-                  command: "/usr/local/bin/deck-notify 'Agy 智能体请求' 'Agy 正在请求执行工具，可能需要您的确认。'",
+                  command: "deck-notify 'Agy 智能体请求' 'Agy 正在请求执行工具，可能需要您的确认。'",
                   timeout: 10
                 }
               ]
             }
           ]
         };
+        migrated = true;
+      }
+
+      if (migrated || !hasHooksFile) {
         fs.writeFileSync(hooksFile, JSON.stringify(hooksData, null, 2), 'utf8');
-        console.log(`[Hooks Injection] Injected agy hooks.json in ${resolvedPath}`);
+        console.log(`[Hooks Injection] Injected/Updated agy hooks.json in ${resolvedPath}`);
       }
     } catch (err) {
       console.error('Failed to inject agy hooks:', err);
@@ -287,7 +307,8 @@ const injectAgentHooks = (workspacePath, agent) => {
       }
       
       let settingsData = {};
-      if (fs.existsSync(settingsFile)) {
+      let hasSettingsFile = fs.existsSync(settingsFile);
+      if (hasSettingsFile) {
         try {
           settingsData = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
         } catch (e) {
@@ -302,6 +323,19 @@ const injectAgentHooks = (workspacePath, agent) => {
         settingsData.hooks.PermissionRequest = [];
       }
 
+      let migrated = false;
+      // Migrate existing settings from absolute to relative
+      settingsData.hooks.PermissionRequest.forEach(h => {
+        if (h.hooks) {
+          h.hooks.forEach(inner => {
+            if (inner.command && inner.command.includes('/usr/local/bin/deck-notify')) {
+              inner.command = inner.command.replace('/usr/local/bin/deck-notify', 'deck-notify');
+              migrated = true;
+            }
+          });
+        }
+      });
+
       const hasDeckNotify = settingsData.hooks.PermissionRequest.some(h => 
         h.hooks && h.hooks.some(inner => inner.command && inner.command.includes('deck-notify'))
       );
@@ -311,15 +345,72 @@ const injectAgentHooks = (workspacePath, agent) => {
           hooks: [
             {
               type: "command",
-              command: "/usr/local/bin/deck-notify 'Claude 权限请求' 'Claude 正在等待您的终端授权确认。'"
+              command: "deck-notify 'Claude 权限请求' 'Claude 正在等待您的终端授权确认。'"
             }
           ]
         });
+        migrated = true;
+      }
+
+      if (migrated || !hasSettingsFile) {
         fs.writeFileSync(settingsFile, JSON.stringify(settingsData, null, 2), 'utf8');
-        console.log(`[Hooks Injection] Injected claude settings.local.json in ${resolvedPath}`);
+        console.log(`[Hooks Injection] Injected/Updated claude settings.local.json in ${resolvedPath}`);
       }
     } catch (err) {
       console.error('Failed to inject claude settings:', err);
+    }
+  } else if (agent === 'codex') {
+    const codexDir = path.join(resolvedPath, '.codex');
+    const hooksFile = path.join(codexDir, 'hooks.json');
+    try {
+      if (!fs.existsSync(codexDir)) {
+        fs.mkdirSync(codexDir, { recursive: true });
+      }
+
+      let hooksData = {};
+      let hasHooksFile = fs.existsSync(hooksFile);
+      if (hasHooksFile) {
+        try {
+          hooksData = JSON.parse(fs.readFileSync(hooksFile, 'utf8'));
+        } catch (e) {
+          hooksData = {};
+        }
+      }
+
+      if (!hooksData.hooks) {
+        hooksData.hooks = [];
+      }
+
+      let migrated = false;
+      // Migrate existing settings from absolute to relative
+      hooksData.hooks.forEach(h => {
+        if (h.command && h.command.includes('/usr/local/bin/deck-notify')) {
+          h.command = h.command.replace('/usr/local/bin/deck-notify', 'deck-notify');
+          migrated = true;
+        }
+      });
+
+      const hasDeckNotify = hooksData.hooks.some(h =>
+        h.command && h.command.includes('deck-notify')
+      );
+
+      if (!hasDeckNotify) {
+        hooksData.hooks.push({
+          name: "deck-notify-gate",
+          events: ["PermissionRequest", "PreToolUse"],
+          command: "deck-notify",
+          args: ["Codex 权限请求", "Codex 正在等待您的终端授权确认。"],
+          timeout: 10
+        });
+        migrated = true;
+      }
+
+      if (migrated || !hasHooksFile) {
+        fs.writeFileSync(hooksFile, JSON.stringify(hooksData, null, 2), 'utf8');
+        console.log(`[Hooks Injection] Injected/Updated codex hooks.json in ${resolvedPath}`);
+      }
+    } catch (err) {
+      console.error('Failed to inject codex hooks:', err);
     }
   }
 };
@@ -360,8 +451,9 @@ app.post('/api/sessions', requireAuth, (req, res) => {
 
   // Dynamic agent paths based on user home directory
   const userHome = getHomeDir();
+  const binDir = path.resolve(__dirname, 'bin');
   if (agent === 'agy') {
-    args.push(`${userHome}/.local/bin/agy --dangerously-skip-permissions; exec bash`);
+    args.push(`export PATH="${binDir}:$PATH"; ${userHome}/.local/bin/agy --dangerously-skip-permissions; exec bash`);
   } else if (agent === 'claude') {
     // Find claude binary: try nvm versions first, then fallback paths
     let claudePath = null;
@@ -400,10 +492,30 @@ app.post('/api/sessions', requireAuth, (req, res) => {
     }
 
     if (claudePath) {
-      args.push(`${claudePath} --permission-mode auto; exec bash`);
+      args.push(`export PATH="${binDir}:$PATH"; ${claudePath} --permission-mode auto; exec bash`);
     } else {
       // If claude not found, just start bash
-      args.push('exec bash');
+      args.push(`export PATH="${binDir}:$PATH"; exec bash`);
+    }
+  } else if (agent === 'codex') {
+    // Find codex binary: check standard installation locations
+    let codexPath = null;
+    const possiblePaths = [
+      `${userHome}/.local/bin/codex`,   // local install
+      '/usr/local/bin/codex',           // system install
+      '/usr/bin/codex'                  // system install
+    ];
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        codexPath = p;
+        break;
+      }
+    }
+    if (codexPath) {
+      args.push(`export PATH="${binDir}:$PATH"; ${codexPath} --dangerously-bypass-hook-trust; exec bash`);
+    } else {
+      // If codex not found, fallback to bash with local bin in PATH
+      args.push(`export PATH="${binDir}:$PATH"; exec bash`);
     }
   }
 
@@ -571,7 +683,7 @@ app.get('/api/directories', requireAuth, (req, res) => {
     const result = items
       .filter(item => {
         if (!item.isDirectory()) return false;
-        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude';
+        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude' && item.name !== '.codex';
       })
       .map(item => {
         const itemPath = path.join(targetDir, item.name);
@@ -615,7 +727,7 @@ app.get('/api/files/list', requireAuth, (req, res) => {
     const result = items
       .filter(item => {
         // Exclude common noise directories/files to keep it ultra lightweight
-        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude';
+        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude' && item.name !== '.codex';
       })
       .map(item => {
         const itemPath = path.join(targetDir, item.name);

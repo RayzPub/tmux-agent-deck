@@ -1,6 +1,6 @@
 # Cyberpunk TMUX Agent Deck
 
-一个极具科技感的网页端 Tmux 托管控制面板项目。通过此项目，你可以登录网页并利用 Web 终端完全控制服务器上的 Tmux 命令行会话，随时进行连接与断开。本项目专注于利用 Tmux 进行会话持久化管理，并无缝集成 **Claude Code**、**Antigravity (agy)** 等 AI 编程智能体（Programming Agents）。
+一个极具科技感的网页端 Tmux 托管控制面板项目。通过此项目，你可以登录网页并利用 Web 终端完全控制服务器上的 Tmux 命令行会话，随时进行连接与断开。本项目专注于利用 Tmux 进行会话持久化管理，并无缝集成 **Claude Code**、**Antigravity (agy)**、**Codex Agent** 等 AI 编程智能体（Programming Agents）。
 
 本项目的定位不仅仅是终端仿真器，而是一个以会话为中心的 AI 代理控制中心（Control Deck）。未来将更加兼容手机端等便携式设备，支持多设备无缝接入与可视化 Agent 管理。
 
@@ -42,7 +42,7 @@
 - 🔒 **安全访问控制**：采用基于 JWT 的单密码认证（主密码在环境变量中配置，支持 HTTP-Only Cookie 保持会话）。
 - 🎨 **赛博霓虹设计**：基于暗黑极客风格精心打造，拥有发光特效、科幻扫描线、动态霓虹边框与平滑的微交互动画。
 - 🤖 **AI 编程智能体集成**：
-  - 在创建 Tmux 会话时，可一键选择直接运行 **Claude Code** 或 **Antigravity (agy)** 等编程 Agent。
+  - 在创建 Tmux 会话时，可一键选择直接运行 **Claude Code**、**Antigravity (agy)** 或 **Codex Agent** 等编程 Agent。
   - Tmux 会话持久化：即使关闭浏览器，AI Agent 的运行状态和上下文也会在服务器端继续保持，随时可以重连查看。
 - 🖥️ **Tmux 会话交互**：
   - 在侧边栏实时扫描和列出所有活跃的 Tmux 会话（附带时间戳和“已挂载/未挂载”状态点）。
@@ -52,7 +52,7 @@
 - 📐 **自适应缩放 (Auto-Fit)**：当浏览器窗口大小发生改变时，自动重新计算终端行列数并对齐远程 Tmux 实例。
 - 📡 **PWA 主动推送通知 (Web Push)**：
   - 整合 Web Push (VAPID 协议) 与 Service Worker，支持在后台甚至浏览器关闭时接收终端会话重要事件。
-  - **AI 动作推送 Hook**：当 AI 智能体 (Agy / Claude) 触发特定长耗时操作或需要权限审批时，调用内置 `/usr/local/bin/deck-notify` 命令行工具实时推送通知至订阅设备。
+  - **AI 动作推送 Hook**：当 AI 智能体 (Agy / Claude / Codex) 触发特定长耗时操作或需要权限审批时，调用内置 `deck-notify` 命令行工具（自动通过 session 环境 PATH 动态定位）实时推送通知至订阅设备。
   - **智能免打扰机制**：在用户正聚焦查看当前会话时，系统将智能绕过推送，避免产生重复无谓的通知打扰。
 - 💬 **IM 即时通讯集成 (Telegram Bot)**：
   - **双向命令与控制 (C2)**：支持列出会话、切换活动会话、截取实时屏幕内容，甚至直接通过 IM 发送文本进行命令行键盘输入。
