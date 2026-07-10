@@ -543,14 +543,9 @@ export function initMobileKeyboard(mobileKeyboardBar) {
     }
 
     if (key === 'clear') {
-      if (activeSession) {
-        if (activeSession.term) {
-          activeSession.term.clear();
-        }
-        if (activeSession.socket) {
-          // Send Ctrl+L (Form Feed / Clear screen) to PTY
-          activeSession.socket.emit('terminal-input', '\x0c');
-        }
+      if (activeSession && activeSession.socket) {
+        // Send /clear command to agent running in the PTY
+        activeSession.socket.emit('terminal-input', '/clear\r');
       }
       return;
     }
