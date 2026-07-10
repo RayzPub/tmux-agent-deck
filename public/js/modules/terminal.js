@@ -338,31 +338,106 @@ export function attachSession(sessionName) {
     sessionTerm.open(container);
 
     let lastTouchY = 0;
+    let lastTouchTime = 0;
+    let touchVelocityY = 0;
+    let touchAccumulatorY = 0;
+    let inertiaAnimationFrame = null;
 
     container.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         lastTouchY = e.touches[0].clientY;
+        lastTouchTime = Date.now();
+        touchVelocityY = 0;
+        touchAccumulatorY = 0;
+        if (inertiaAnimationFrame) {
+          cancelAnimationFrame(inertiaAnimationFrame);
+          inertiaAnimationFrame = null;
+        }
       }
     }, { capture: true, passive: false });
 
     container.addEventListener('touchmove', (e) => {
       if (e.touches.length === 1) {
         const currentY = e.touches[0].clientY;
+        const currentTime = Date.now();
         const deltaY = lastTouchY - currentY;
-        lastTouchY = currentY;
+        const dt = currentTime - lastTouchTime;
 
-        const termEl = sessionTerm.element;
-        if (termEl) {
-          const wheelEvent = new WheelEvent('wheel', {
-            deltaY: deltaY * 2,
-            bubbles: true,
-            cancelable: true
-          });
-          termEl.dispatchEvent(wheelEvent);
+        if (dt > 0) {
+          const currentVelocity = deltaY / dt;
+          // Apply low-pass filter to smooth velocity
+          touchVelocityY = touchVelocityY * 0.7 + currentVelocity * 0.3;
+        }
+
+        lastTouchY = currentY;
+        lastTouchTime = currentTime;
+        touchAccumulatorY += deltaY;
+
+        const pixelsPerLine = (sessionTerm.options.fontSize || 14) * (sessionTerm.options.lineHeight || 1.2);
+
+        if (Math.abs(touchAccumulatorY) >= pixelsPerLine) {
+          const linesToScroll = Math.trunc(touchAccumulatorY / pixelsPerLine);
+          const termEl = sessionTerm.element;
+          if (termEl) {
+            const wheelEvent = new WheelEvent('wheel', {
+              deltaY: linesToScroll * 120,
+              bubbles: true,
+              cancelable: true
+            });
+            termEl.dispatchEvent(wheelEvent);
+          }
+          touchAccumulatorY -= linesToScroll * pixelsPerLine;
         }
         e.preventDefault();
       }
     }, { capture: true, passive: false });
+
+    container.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      // Decay velocity if the user paused before lifting finger
+      if (now - lastTouchTime > 100) {
+        touchVelocityY = 0;
+      }
+
+      if (Math.abs(touchVelocityY) > 0.1) {
+        let lastFrameTime = performance.now();
+
+        const animateInertia = (time) => {
+          const dt = time - lastFrameTime;
+          lastFrameTime = time;
+
+          // Frame-rate independent decay (friction)
+          const decay = Math.pow(0.992, dt);
+          touchVelocityY *= decay;
+
+          const frameDelta = touchVelocityY * dt;
+          touchAccumulatorY += frameDelta;
+
+          const pixelsPerLine = (sessionTerm.options.fontSize || 14) * (sessionTerm.options.lineHeight || 1.2);
+          if (Math.abs(touchAccumulatorY) >= pixelsPerLine) {
+            const linesToScroll = Math.trunc(touchAccumulatorY / pixelsPerLine);
+            const termEl = sessionTerm.element;
+            if (termEl) {
+              const wheelEvent = new WheelEvent('wheel', {
+                deltaY: linesToScroll * 120,
+                bubbles: true,
+                cancelable: true
+              });
+              termEl.dispatchEvent(wheelEvent);
+            }
+            touchAccumulatorY -= linesToScroll * pixelsPerLine;
+          }
+
+          if (Math.abs(touchVelocityY) > 0.05) {
+            inertiaAnimationFrame = requestAnimationFrame(animateInertia);
+          } else {
+            inertiaAnimationFrame = null;
+          }
+        };
+
+        inertiaAnimationFrame = requestAnimationFrame(animateInertia);
+      }
+    });
 
     let dragStart = null;
 
@@ -561,6 +636,8 @@ export function initMobileKeyboard(mobileKeyboardBar) {
       case 'down': seq = '\x1b[B'; break;
       case 'left': seq = '\x1b[D'; break;
       case 'right': seq = '\x1b[C'; break;
+      case 'pgup': seq = '\x1b[5~'; break;
+      case 'pgdn': seq = '\x1b[6~'; break;
     }
 
     if (seq && activeSession && activeSession.socket) {

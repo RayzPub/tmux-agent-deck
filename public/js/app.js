@@ -3,7 +3,7 @@ import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
 import { saveEditorFile } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
-import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js?v=1.0.2';
+import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js?v=1.0.5';
 import { initPushNotifications, togglePushSubscription } from './modules/push.js';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 

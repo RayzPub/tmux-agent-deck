@@ -17,7 +17,7 @@
   <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=1.0.5">
   <!-- Favicon / Tab Icon -->
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
@@ -543,6 +543,8 @@
     <div class="mobile-keyboard-bar" id="mobileKeyboardBar">
       <button class="helper-key" data-key="esc">ESC</button>
       <button class="helper-key" data-key="tab">TAB</button>
+      <button class="helper-key" data-key="pgup" title="Page Up">PgUp</button>
+      <button class="helper-key" data-key="pgdn" title="Page Down">PgDn</button>
       <button class="helper-key" data-key="clear" title="Send /clear to Agent">/clear</button>
       <button class="helper-key modifier-key" data-key="paste" title="Paste"><i data-lucide="clipboard-paste"></i></button>
       <button class="helper-key" data-key="ctrl-c">C-c</button>
@@ -591,7 +593,7 @@
   </div>
 
   <!-- Custom Client Script -->
-  <script type="module" src="/js/app.js?v=1.0.2"></script>
+  <script type="module" src="/js/app.js?v=1.0.5"></script>
   <script src="/js/im-bot-client.js"></script>
 </body>
 </html>
