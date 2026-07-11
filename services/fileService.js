@@ -1,9 +1,22 @@
 const fs = require('fs');
 const path = require('path');
-const { PROJECT_ROOT } = require('../config');
+const { execSync } = require('child_process');
+const { PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { getRunUser } = require('./tmuxService');
 
+const chownToSudoUser = (dirPath) => {
+  const runUser = getRunUser();
+  if (runUser && process.env.USER === 'root') {
+    try {
+      execSync(`chown -R ${runUser}:${runUser} "${dirPath}"`);
+    } catch (err) {
+      console.warn(`[fileService] Could not chown ${dirPath} to ${runUser}: ${err.message}`);
+    }
+  }
+};
+
 const WORKSPACES_FILE = path.join(PROJECT_ROOT, 'workspaces.json');
+const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 
 const getHomeDir = () => {
   const runUser = getRunUser();
@@ -13,8 +26,134 @@ const getHomeDir = () => {
   return process.env.HOME || require('os').homedir();
 };
 
-const resolveWorkspacePath = (p) => {
+const getUserWorkspaceRoot = (username) => {
+  if (MULTI_USER_ENABLED && username) {
+    const userRoot = path.join(PROJECT_ROOT, 'workspaces', username);
+    if (!fs.existsSync(userRoot)) {
+      fs.mkdirSync(userRoot, { recursive: true });
+      chownToSudoUser(userRoot);
+    }
+    return userRoot;
+  }
+  return PROJECT_ROOT;
+};
+
+const getDefaultWorkspacePath = (username) => {
+  const p = (MULTI_USER_ENABLED && username)
+    ? path.join(PROJECT_ROOT, 'workspaces', username, 'default')
+    : path.join(PROJECT_ROOT, 'workspaces', 'default');
+    
+  if (!fs.existsSync(p)) {
+    fs.mkdirSync(p, { recursive: true });
+    chownToSudoUser(p);
+  }
+  return p;
+};
+
+/**
+ * Returns the per-user HOME directory (user_data/[username]/home).
+ * This is set as $HOME when launching agent sessions so agents can write
+ * their own config (shell history, local overrides) without polluting the
+ * system home and without exposing config files in the workspace file browser.
+ *
+ * On first call it bootstraps the directory and creates read-only symlinks
+ * for agent config directories (e.g. .claude, .agy) pointing to the
+ * equivalent dirs in the real system home. This way agents find their API
+ * keys and settings without the files being accessible via the workspace
+ * file explorer.
+ */
+const getUserHomeDir = (username) => {
+  const sysHome = getHomeDir();
+  if (!MULTI_USER_ENABLED || !username) return sysHome;
+
+  const userHome = path.join(PROJECT_ROOT, 'user_data', username, 'home');
+  if (!fs.existsSync(userHome)) {
+    fs.mkdirSync(userHome, { recursive: true });
+    chownToSudoUser(path.join(PROJECT_ROOT, 'user_data', username));
+  }
+
+  // Suppress Ubuntu sudo hint and MOTD messages for new shells
+  const sudoHintFile = path.join(userHome, '.sudo_as_admin_successful');
+  if (!fs.existsSync(sudoHintFile)) {
+    try {
+      fs.writeFileSync(sudoHintFile, '');
+      chownToSudoUser(sudoHintFile);
+    } catch (e) {
+      console.warn(`[userHome] Could not create .sudo_as_admin_successful: ${e.message}`);
+    }
+  }
+
+  const hushloginFile = path.join(userHome, '.hushlogin');
+  if (!fs.existsSync(hushloginFile)) {
+    try {
+      fs.writeFileSync(hushloginFile, '');
+      chownToSudoUser(hushloginFile);
+    } catch (e) {
+      console.warn(`[userHome] Could not create .hushlogin: ${e.message}`);
+    }
+  }
+
+  // Config dirs/files to symlink from sysHome into userHome.
+  // These are read-only for the agent (symlink source is owned by root/ubuntu).
+  // Users cannot see them via the workspace file browser.
+  const configTargets = ['.agy', '.claude', '.claude.json', '.config/anthropic', '.local/share/agy', '.gemini'];
+  for (const rel of configTargets) {
+    const src = path.join(sysHome, rel);
+    const dest = path.join(userHome, rel);
+
+    // Skip if source doesn't exist yet
+    if (!fs.existsSync(src)) continue;
+
+    // Skip if dest already exists (file, dir, or symlink)
+    let destExists = false;
+    try { fs.lstatSync(dest); destExists = true; } catch { /* not found */ }
+    if (destExists) continue;
+
+    try {
+      const destDir = path.dirname(dest);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+        chownToSudoUser(destDir);
+      }
+      fs.symlinkSync(src, dest);
+      // Ensure the symlink file itself is owned by root/ubuntu but we need to chown userHome just in case
+    } catch (e) {
+      // Non-fatal: agent will just not find pre-existing config
+      console.warn(`[userHome] Could not symlink ${src} -> ${dest}: ${e.message}`);
+    }
+  }
+
+  return userHome;
+};
+
+const resolveWorkspacePath = (p, username) => {
   if (!p) return '';
+  
+  if (MULTI_USER_ENABLED && username) {
+    const userRoot = getUserWorkspaceRoot(username);
+
+    // Resolve relative to userRoot (sandbox root)
+    let target;
+    if (path.isAbsolute(p)) {
+      target = path.resolve(p);
+    } else if (p.startsWith('~/') || p === '~') {
+      const home = (username === 'admin') ? getHomeDir() : userRoot;
+      target = p.startsWith('~/') ? path.resolve(p.replace('~', home)) : home;
+    } else {
+      target = path.resolve(userRoot, p);
+    }
+
+    // Sandbox check: only restrict regular users, let admin bypass
+    if (username !== 'admin') {
+      const relative = path.relative(userRoot, target);
+      const isSafe = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+      if (!isSafe) {
+        return userRoot; // fallback to sandbox root
+      }
+    }
+    return target;
+  }
+
   let resolved = p;
   if (p.startsWith('~/') || p === '~') {
     resolved = p.replace('~', getHomeDir());
@@ -22,8 +161,29 @@ const resolveWorkspacePath = (p) => {
   return path.resolve(resolved);
 };
 
-const readWorkspaces = () => {
+const readWorkspaces = (username) => {
   try {
+    if (MULTI_USER_ENABLED && username) {
+      const userWorkspacesFile = path.join(DATA_DIR, `workspaces_${username}.json`);
+      if (fs.existsSync(userWorkspacesFile)) {
+        const list = JSON.parse(fs.readFileSync(userWorkspacesFile, 'utf8'));
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+
+      // Auto-initialize with default workspace folder
+      const defaultWorkspacePath = path.join(PROJECT_ROOT, 'workspaces', username, 'default');
+      const defaultWorkspaces = [{ name: 'default', path: defaultWorkspacePath }];
+      writeWorkspaces(defaultWorkspaces, username);
+
+      if (!fs.existsSync(defaultWorkspacePath)) {
+        fs.mkdirSync(defaultWorkspacePath, { recursive: true });
+        chownToSudoUser(path.join(PROJECT_ROOT, 'workspaces', username));
+      }
+      return defaultWorkspaces;
+    }
+
     if (fs.existsSync(WORKSPACES_FILE)) {
       return JSON.parse(fs.readFileSync(WORKSPACES_FILE, 'utf8'));
     }
@@ -33,8 +193,17 @@ const readWorkspaces = () => {
   return [];
 };
 
-const writeWorkspaces = (workspaces) => {
+const writeWorkspaces = (workspaces, username) => {
   try {
+    if (MULTI_USER_ENABLED && username) {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      const userWorkspacesFile = path.join(DATA_DIR, `workspaces_${username}.json`);
+      fs.writeFileSync(userWorkspacesFile, JSON.stringify(workspaces, null, 2), 'utf8');
+      return true;
+    }
+
     fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(workspaces, null, 2), 'utf8');
     return true;
   } catch (err) {
@@ -43,11 +212,20 @@ const writeWorkspaces = (workspaces) => {
   }
 };
 
-const safeResolve = (workspacePath, reqPath) => {
-  const root = workspacePath ? resolveWorkspacePath(workspacePath) : PROJECT_ROOT;
+const safeResolve = (workspacePath, reqPath, username) => {
+  // Resolve the workspace root — may be an arbitrary registered absolute path
+  const root = workspacePath ? resolveWorkspacePath(workspacePath, username) : getDefaultWorkspacePath(username);
   const resolved = path.resolve(root, reqPath || '.');
+  
+  // If username is admin, we allow accessing upper directories (bypass containment check)
+  if (username === 'admin') {
+    return resolved;
+  }
+  
+  // Containment check: resolved file must be inside the workspace root itself
   const relative = path.relative(root, resolved);
   const isSafe = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  
   if (!isSafe) {
     throw new Error('Access denied: Out of workspace root');
   }
@@ -61,5 +239,8 @@ module.exports = {
   resolveWorkspacePath,
   readWorkspaces,
   writeWorkspaces,
-  safeResolve
+  safeResolve,
+  getUserWorkspaceRoot,
+  getUserHomeDir,
+  getDefaultWorkspacePath
 };

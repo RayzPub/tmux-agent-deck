@@ -16,6 +16,9 @@ export const state = {
   activeTargetInput: null,
   pickerCurrentPath: '',
   stopVoiceInputGlobal: null,
+  multiUserEnabled: false,
+  username: null,
+  role: null,
   lastDragWithoutShiftTime: 0,
   lastSelection: '',
   themeConstants: {

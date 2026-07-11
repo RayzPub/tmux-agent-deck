@@ -6,13 +6,17 @@ const path = require('path');
 const socketIo = require('socket.io');
 const cookieParser = require('cookie-parser');
 
-const { PROJECT_ROOT, PORT, HTTPS_PORT, PASSWORD, JWT_SECRET, useHttps, sslOptions } = require('./config');
+const { PROJECT_ROOT, PORT, HTTPS_PORT, PASSWORD, JWT_SECRET, useHttps, sslOptions, MULTI_USER_ENABLED } = require('./config');
 const { requireAuth, verifyToken } = require('./middlewares/auth');
 const { execTmux, getRunUser } = require('./services/tmuxService');
 const { startMonitoring } = require('./services/monitorService');
 const { initSocket } = require('./sockets/terminal');
+const { runMigration } = require('./services/dbService');
 const apiRoutes = require('./routes/api');
 const imBot = require('./im-bot');
+
+// Run data migrations on boot
+runMigration();
 
 const app = express();
 
@@ -44,8 +48,13 @@ imBot.init(app, execTmux, getRunUser, requireAuth);
 // Serve login page without authentication
 app.get('/login.html', (req, res) => {
   // If already logged in, redirect to index
-  if (verifyToken(req)) {
-    return res.redirect('/');
+  const decoded = verifyToken(req);
+  if (decoded) {
+    if (MULTI_USER_ENABLED && (!decoded.username || !decoded.role || !decoded.isMultiUser)) {
+      res.clearCookie('token');
+    } else {
+      return res.redirect('/');
+    }
   }
   res.sendFile(path.join(PROJECT_ROOT, 'public', 'login.html'));
 });

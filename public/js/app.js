@@ -488,6 +488,28 @@ explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
 explorerNewWorkspaceBtn.addEventListener('click', () => {
   newWorkspaceNameInput.value = '';
   newWorkspacePathInput.value = '';
+  // Adjust UI based on multi-user mode
+  const pathLabel = document.getElementById('workspacePathLabel');
+  const pathHint = document.getElementById('workspacePathHint');
+  const browseBtn = document.getElementById('browseNewWorkspacePathBtn');
+  if (state.multiUserEnabled) {
+    if (state.username === 'admin') {
+      if (pathLabel) pathLabel.textContent = '// WORKSPACE_PATH (optional)';
+      if (pathHint) pathHint.classList.add('hidden');
+      if (browseBtn) browseBtn.style.display = '';
+      newWorkspacePathInput.placeholder = 'e.g. /home/ubuntu/project-x or my-project';
+    } else {
+      if (pathLabel) pathLabel.textContent = '// SUBDIRECTORY_NAME (optional)';
+      if (pathHint) pathHint.classList.remove('hidden');
+      if (browseBtn) browseBtn.style.display = 'none';
+      newWorkspacePathInput.placeholder = 'e.g. my-project (leave blank to use workspace name)';
+    }
+  } else {
+    if (pathLabel) pathLabel.textContent = '// WORKSPACE_ABSOLUTE_PATH';
+    if (pathHint) pathHint.classList.add('hidden');
+    if (browseBtn) browseBtn.style.display = '';
+    newWorkspacePathInput.placeholder = 'e.g. /home/ubuntu/project-x';
+  }
   workspaceModal.classList.remove('hidden');
 });
 
@@ -501,7 +523,12 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const wsName = newWorkspaceNameInput.value.trim();
   const wsPath = newWorkspacePathInput.value.trim();
-  if (!wsName || !wsPath) return;
+  if (!wsName) return;
+  // In single-user mode, path is required
+  if (!state.multiUserEnabled && !wsPath) {
+    alert('Please enter a workspace path.');
+    return;
+  }
 
   try {
     const response = await fetch('/api/workspaces', {
@@ -513,8 +540,10 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
     });
 
     if (response.ok) {
+      const data = await response.json();
       closeWorkspaceModal();
-      state.currentWorkspacePath = wsPath;
+      // Use the resolved path returned by the server
+      state.currentWorkspacePath = (data.workspace && data.workspace.path) ? data.workspace.path : wsPath;
       localStorage.setItem('lastWorkspacePath', state.currentWorkspacePath);
       await loadWorkspaces();
       refreshFileTree();
@@ -984,8 +1013,14 @@ async function loadWorkspaces() {
       return;
     }
     state.workspacesList = await response.json();
+
+    // If currentWorkspacePath is empty, default to the first workspace in the list
+    if (!state.currentWorkspacePath && state.workspacesList.length > 0) {
+      state.currentWorkspacePath = state.workspacesList[0].path;
+      localStorage.setItem('lastWorkspacePath', state.currentWorkspacePath);
+    }
     
-    explorerWorkspaceSelect.innerHTML = '<option value="">Default</option>';
+    explorerWorkspaceSelect.innerHTML = '';
     state.workspacesList.forEach(w => {
       const opt = document.createElement('option');
       opt.value = w.path;
@@ -994,7 +1029,7 @@ async function loadWorkspaces() {
     });
     explorerWorkspaceSelect.value = state.currentWorkspacePath;
 
-    sessionWorkspaceSelect.innerHTML = '<option value="">Default</option>';
+    sessionWorkspaceSelect.innerHTML = '';
     state.workspacesList.forEach(w => {
       const opt = document.createElement('option');
       opt.value = w.path;
@@ -1013,7 +1048,7 @@ async function loadWorkspaces() {
       modalNewWorkspaceName.setAttribute('required', 'true');
       modalNewWorkspacePath.setAttribute('required', 'true');
     } else {
-      sessionWorkspaceSelect.value = state.currentWorkspacePath || '';
+      sessionWorkspaceSelect.value = state.currentWorkspacePath || state.workspacesList[0].path;
       newWorkspaceFields.classList.add('hidden');
       modalNewWorkspaceName.removeAttribute('required');
       modalNewWorkspacePath.removeAttribute('required');
@@ -1071,9 +1106,192 @@ loadWorkspaces().then(async () => {
 
     deckControlDropdownMenu.addEventListener('click', (e) => {
       const target = e.target.closest('button, .header-btn');
-      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn')) {
+      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'adminInviteBtn')) {
         deckControlDropdownMenu.classList.add('hidden');
       }
     });
   }
+
+  // Invite Codes Modal Handlers
+  const adminInviteBtn = document.getElementById('adminInviteBtn');
+  const inviteModal = document.getElementById('inviteModal');
+  const closeInviteModalBtn = document.getElementById('closeInviteModalBtn');
+  const generateCodeBtn = document.getElementById('generateCodeBtn');
+  const inviteNoteInput = document.getElementById('inviteNoteInput');
+  const inviteCodesTableBody = document.getElementById('inviteCodesTableBody');
+
+  async function loadInviteCodes() {
+    try {
+      const res = await fetch('/api/admin/invite-codes');
+      if (res.ok) {
+        const codes = await res.json();
+        renderInviteCodes(codes);
+      }
+    } catch (err) {
+      console.error('Failed to load invite codes:', err);
+    }
+  }
+
+  function renderInviteCodes(codes) {
+    inviteCodesTableBody.innerHTML = '';
+    if (codes.length === 0) {
+      inviteCodesTableBody.innerHTML = `<tr><td colspan="5" style="padding: 12px; text-align: center; color: var(--text-muted);">// NO ACTIVE CODES</td></tr>`;
+      return;
+    }
+    codes.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid rgba(255, 255, 255, 0.05)';
+      
+      const inviteLink = `${window.location.origin}/register.html?code=${c.code}`;
+      const statusColor = c.status === 'used' ? 'var(--text-muted)' : 'var(--neon-cyan)';
+      const statusText = c.status === 'used' ? 'USED' : 'PENDING';
+      
+      tr.innerHTML = `
+        <td style="padding: 8px; font-weight: bold; color: var(--neon-pink); cursor: pointer;" title="Click to copy registration link" class="invite-code-cell" data-link="${inviteLink}">
+          ${c.code} <i data-lucide="copy" style="width: 10px; height: 10px; display: inline-block; margin-left: 4px; vertical-align: middle;"></i>
+        </td>
+        <td style="padding: 8px; color: var(--text-secondary); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.note || '-'}</td>
+        <td style="padding: 8px; color: ${statusColor}; font-weight: bold;">${statusText}</td>
+        <td style="padding: 8px; color: var(--text-secondary);">${c.usedBy || '-'}</td>
+        <td style="padding: 8px;">
+          <button class="delete-invite-btn" data-code="${c.code}" style="background: none; border: none; color: var(--neon-pink); cursor: pointer; padding: 2px;"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+        </td>
+      `;
+      inviteCodesTableBody.appendChild(tr);
+    });
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  }
+
+  if (adminInviteBtn && inviteModal) {
+    adminInviteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      inviteModal.classList.remove('hidden');
+      if (deckControlDropdownMenu) {
+        deckControlDropdownMenu.classList.add('hidden');
+      }
+      loadInviteCodes();
+    });
+  }
+
+  if (closeInviteModalBtn && inviteModal) {
+    closeInviteModalBtn.addEventListener('click', () => {
+      inviteModal.classList.add('hidden');
+    });
+  }
+
+  if (inviteModal) {
+    inviteModal.addEventListener('click', (e) => {
+      if (e.target === inviteModal) {
+        inviteModal.classList.add('hidden');
+      }
+    });
+  }
+
+  if (generateCodeBtn) {
+    generateCodeBtn.addEventListener('click', async () => {
+      const note = inviteNoteInput.value.trim();
+      try {
+        const res = await fetch('/api/admin/invite-codes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note })
+        });
+        if (res.ok) {
+          inviteNoteInput.value = '';
+          loadInviteCodes();
+        } else {
+          const data = await res.json();
+          alert(data.error || 'Failed to generate invite code');
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    });
+  }
+
+  if (inviteCodesTableBody) {
+    inviteCodesTableBody.addEventListener('click', async (e) => {
+      const cell = e.target.closest('.invite-code-cell');
+      if (cell) {
+        const link = cell.getAttribute('data-link');
+        try {
+          await navigator.clipboard.writeText(link);
+          alert('Invitation link copied to clipboard!');
+        } catch (err) {
+          const input = document.createElement('input');
+          input.value = link;
+          document.body.appendChild(input);
+          input.select();
+          document.execCommand('copy');
+          document.body.removeChild(input);
+          alert('Invitation link copied to clipboard!');
+        }
+      }
+      
+      const deleteBtn = e.target.closest('.delete-invite-btn');
+      if (deleteBtn) {
+        const code = deleteBtn.getAttribute('data-code');
+        if (confirm(`Are you sure you want to revoke invite code ${code}?`)) {
+          try {
+            const res = await fetch('/api/admin/invite-codes', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code })
+            });
+            if (res.ok) {
+              loadInviteCodes();
+            } else {
+              const data = await res.json();
+              alert(data.error || 'Failed to revoke invite code');
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      }
+    });
+  }
+
+  // Auth check and role check on load
+  fetch('/api/auth-status')
+    .then(res => res.json())
+    .then(data => {
+      if (!data.authenticated) {
+        window.location.href = '/login.html';
+        return;
+      }
+      // Store multi-user mode in state for use across the UI
+      state.multiUserEnabled = !!data.multiUserEnabled;
+      state.username = data.username;
+      state.role = data.role;
+      if (data.multiUserEnabled) {
+        if (data.role === 'admin') {
+          if (adminInviteBtn) {
+            adminInviteBtn.classList.remove('hidden');
+          }
+        }
+        // Update DECK CONTROLS to show the current username directly
+        if (data.username) {
+          const maxBtnLen = 10;
+          const maxHeaderLen = 18;
+          const truncatedBtnUser = data.username.length > maxBtnLen ? data.username.substring(0, maxBtnLen) + '...' : data.username;
+          const truncatedHeaderUser = data.username.length > maxHeaderLen ? data.username.substring(0, maxHeaderLen) + '...' : data.username;
+
+          if (deckControlToggleBtn) {
+            const toggleBtnSpan = deckControlToggleBtn.querySelector('span');
+            if (toggleBtnSpan) {
+              toggleBtnSpan.textContent = truncatedBtnUser.toUpperCase();
+            }
+            deckControlToggleBtn.title = `System Settings & Connections (${data.username})`;
+          }
+          const dropdownHeader = document.querySelector('.deck-dropdown-header');
+          if (dropdownHeader) {
+            dropdownHeader.textContent = `// ${truncatedHeaderUser.toUpperCase()}`;
+          }
+        }
+      }
+    })
+    .catch(err => console.error('Auth check error:', err));
 });

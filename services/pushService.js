@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const webpush = require('web-push');
-const { PROJECT_ROOT, JWT_SECRET } = require('../config');
+const { PROJECT_ROOT, JWT_SECRET, MULTI_USER_ENABLED } = require('../config');
 const imBot = require('../im-bot');
 
 const VAPID_FILE = path.join(PROJECT_ROOT, 'vapid.json');
@@ -67,7 +67,7 @@ const isSessionBeingViewed = (io, sessionName) => {
 const lastPushTimeMap = new Map();
 const PUSH_THROTTLE_MS = process.env.PUSH_THROTTLE_MS !== undefined ? parseInt(process.env.PUSH_THROTTLE_MS, 10) : 30000;
 
-const sendPushToAll = (io, payload) => {
+const sendPushToAll = (io, payload, targetUsername = null) => {
   if (payload.session) {
     if (isSessionBeingViewed(io, payload.session)) {
       console.log(`📡 [Push Bypassed] Session ${payload.session} is currently focused and viewed in active tab.`);
@@ -86,10 +86,25 @@ const sendPushToAll = (io, payload) => {
   // Notify IM Bot (Telegram, etc.)
   imBot.notify(payload).catch(err => console.error('[IM Bot] Notification error:', err));
 
+  // Determine target user in multi-user mode
+  let userToMatch = targetUsername;
+  if (MULTI_USER_ENABLED && payload.session && payload.session.startsWith('u_')) {
+    const parts = payload.session.split('_');
+    if (parts.length >= 3) {
+      userToMatch = parts[1];
+    }
+  }
+
+  let targetSubs = subscriptions;
+  if (MULTI_USER_ENABLED) {
+    const matchUser = userToMatch || 'admin';
+    targetSubs = subscriptions.filter(sub => (sub.webUsername || 'admin') === matchUser);
+  }
+
   const payloadString = JSON.stringify(payload);
-  console.log(`📡 Sending push to ${subscriptions.length} devices...`);
+  console.log(`📡 Sending push to ${targetSubs.length} devices (target: ${userToMatch || 'all'})...`);
   
-  const promises = subscriptions.map((sub) => {
+  const promises = targetSubs.map((sub) => {
     return webpush.sendNotification(sub, payloadString)
       .catch((err) => {
         if (err.statusCode === 410 || err.statusCode === 404) {
@@ -107,19 +122,24 @@ const sendPushToAll = (io, payload) => {
 
 const getPublicKey = () => vapidKeys.publicKey;
 
-const registerSubscription = (subscription) => {
+const registerSubscription = (subscription, username) => {
   const exists = subscriptions.some(sub => sub.endpoint === subscription.endpoint);
   if (!exists) {
-    subscriptions.push(subscription);
+    const subWithUser = {
+      ...subscription,
+      webUsername: username || 'admin'
+    };
+    subscriptions.push(subWithUser);
     saveSubscriptions();
-    console.log(`📱 New subscription added. Total: ${subscriptions.length}`);
+    console.log(`📱 New subscription added for ${username || 'admin'}. Total: ${subscriptions.length}`);
   }
 };
 
-const unregisterSubscription = (subscription) => {
+const unregisterSubscription = (subscription, username) => {
+  const matchUser = username || 'admin';
   subscriptions = subscriptions.filter(sub => sub.endpoint !== subscription.endpoint);
   saveSubscriptions();
-  console.log(`📱 Subscription removed. Total: ${subscriptions.length}`);
+  console.log(`📱 Subscription removed for ${matchUser}. Total: ${subscriptions.length}`);
 };
 
 module.exports = {

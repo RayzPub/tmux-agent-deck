@@ -19,6 +19,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <!-- Custom Styles -->
   <link rel="stylesheet" href="/css/style.css?v=1.0.5">
+  <link rel="stylesheet" href="/css/invite-modal.css?v=1.0.0">
   <!-- Favicon / Tab Icon -->
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
@@ -69,6 +70,10 @@
             <span>PUSH: OFF</span>
           </button>
           <!-- IM BOT will be inserted here dynamically -->
+          <button id="adminInviteBtn" class="header-btn hidden" title="Manage Invite Codes">
+            <i data-lucide="ticket"></i>
+            <span>INVITE CODES</span>
+          </button>
           <button id="themeToggleBtn" class="header-btn" title="Toggle Theme Style">
             <i data-lucide="moon"></i>
             <span>CYBERPUNK</span>
@@ -510,7 +515,7 @@
 
         <div class="input-group">
           <label for="newWorkspacePathInput">
-            <span class="label-tech-text">// WORKSPACE_ABSOLUTE_PATH</span>
+            <span class="label-tech-text" id="workspacePathLabel">// WORKSPACE_ABSOLUTE_PATH</span>
           </label>
           <div style="display: flex; gap: 8px; width: 100%;">
             <div class="input-wrapper" style="flex: 1;">
@@ -519,7 +524,6 @@
                 type="text" 
                 id="newWorkspacePathInput" 
                 placeholder="e.g. /home/ubuntu/project-x" 
-                required
                 style="width: 100%;"
               >
               <div class="input-indicator"></div>
@@ -528,6 +532,7 @@
               <i data-lucide="folder-search" style="width: 18px; height: 18px;"></i>
             </button>
           </div>
+          <p id="workspacePathHint" class="hidden" style="margin: 4px 0 0 0; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);">// Optional: leave blank to auto-create a directory with the workspace name</p>
         </div>
 
         <div class="modal-actions">
@@ -668,6 +673,46 @@
           <button type="button" class="cyber-btn-outline" id="cancelDirPickerBtn">CANCEL</button>
           <button type="button" class="cyber-btn" id="confirmDirPickerBtn">CHOOSE</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invite Codes Modal -->
+  <div id="inviteModal" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-card invite-modal-card" style="width: 90%; max-width: 600px; padding: 24px; position: relative;">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      <div class="auth-glow"></div>
+
+      <div class="modal-header invite-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px;">
+        <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 16px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">// INVITATION CODES</h3>
+        <button id="closeInviteModalBtn" class="modal-close" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px;"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="action-bar" style="margin-bottom: 20px; display: flex; gap: 10px;">
+        <input type="text" id="inviteNoteInput" class="cyber-input" placeholder="Enter recipient name / note" style="flex: 1; height: 34px; font-family: var(--font-mono); font-size: 12px; border-radius: 4px; outline: none; padding: 0 10px;">
+        <button id="generateCodeBtn" class="cyber-btn" style="height: 34px; padding: 0 16px; font-size: 12px; font-weight: bold; min-width: 130px; position: relative;">
+          <span class="btn-text">GENERATE</span>
+        </button>
+      </div>
+
+      <div class="invite-table-container" style="max-height: 300px; overflow-y: auto; border-radius: 4px; padding: 10px;">
+        <table class="invite-table" style="width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; text-align: left;">
+          <thead>
+            <tr class="invite-table-header-row">
+              <th style="padding: 8px;">CODE</th>
+              <th style="padding: 8px;">NOTE</th>
+              <th style="padding: 8px;">STATUS</th>
+              <th style="padding: 8px;">USED BY</th>
+              <th style="padding: 8px; width: 50px;">ACTION</th>
+            </tr>
+          </thead>
+          <tbody id="inviteCodesTableBody">
+            <!-- populated dynamically -->
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

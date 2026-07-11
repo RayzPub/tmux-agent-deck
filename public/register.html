@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>CYBERNETIC CORE - Access Control</title>
+  <title>CYBERNETIC CORE - Registry Portal</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,7 @@
 </head>
 <body class="cyberpunk-auth-body">
   <script>
-    // Initialize Theme immediately to prevent FOUC (Flash of Unstyled Content)
+    // Initialize Theme immediately
     (function() {
       const savedTheme = localStorage.getItem('theme-style');
       if (savedTheme === 'light-minimalist') {
@@ -32,13 +32,13 @@
   <!-- Scanning Line Effect -->
   <div class="scanline"></div>
 
-  <!-- Cyber Background Grid (Animated 3D Grid) -->
+  <!-- Cyber Background Grid -->
   <div class="welcome-grid-container">
     <div class="welcome-grid-3d" id="welcomeGrid3D"></div>
     <div class="welcome-grid-overlay"></div>
   </div>
 
-  <!-- Login Container -->
+  <!-- Register Container -->
   <div class="auth-container">
     <div class="auth-card">
       <div class="auth-glow"></div>
@@ -51,23 +51,41 @@
 
       <!-- Header -->
       <div class="auth-header">
-        <div class="cyber-badge">SYSTEM SECURE</div>
-        <h1 class="glitch-text" data-text="TMUX ACCESS">TMUX ACCESS</h1>
-        <p class="auth-subtitle">ENTER DECRYPT KEY FOR CONSOLE CONTROL</p>
+        <div class="cyber-badge">REGISTRY CORE</div>
+        <h1 class="glitch-text" data-text="NEW ACCESS">NEW ACCESS</h1>
+        <p class="auth-subtitle">ENTER INVITATION CODE TO INITIALIZE ACCOUNT</p>
       </div>
 
       <!-- Form -->
-      <form id="loginForm" class="auth-form">
-        <div class="input-group" id="usernameGroup" style="display: none;">
+      <form id="registerForm" class="auth-form">
+        <div class="input-group">
+          <label for="code">
+            <span class="label-tech-text">// INVITATION_CODE</span>
+          </label>
+          <div class="input-wrapper">
+            <i data-lucide="ticket" class="input-icon"></i>
+            <input 
+              type="text" 
+              id="code" 
+              placeholder="INV-XXXXXX" 
+              required 
+              autocomplete="off"
+            >
+            <div class="input-indicator"></div>
+          </div>
+        </div>
+
+        <div class="input-group">
           <label for="username">
             <span class="label-tech-text">// USERNAME</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="user" class="input-icon"></i>
-            <input
-              type="text"
-              id="username"
-              placeholder="Enter username"
+            <input 
+              type="text" 
+              id="username" 
+              placeholder="Select username" 
+              required 
               autocomplete="username"
             >
             <div class="input-indicator"></div>
@@ -76,7 +94,7 @@
 
         <div class="input-group">
           <label for="password">
-            <span class="label-tech-text" id="passwordLabel">// SECURITY_TOKEN</span>
+            <span class="label-tech-text">// PASSWORD</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="key-round" class="input-icon"></i>
@@ -85,21 +103,20 @@
               id="password" 
               placeholder="••••••••••••••" 
               required 
-              autocomplete="current-password"
-              autofocus
+              autocomplete="new-password"
             >
             <div class="input-indicator"></div>
           </div>
         </div>
 
-        <button type="submit" class="cyber-btn" id="loginBtn">
-          <span class="btn-text">AUTHENTICATE</span>
+        <button type="submit" class="cyber-btn" id="registerBtn">
+          <span class="btn-text">INITIALIZE IDENTITY</span>
           <span class="btn-glitch"></span>
-          <i data-lucide="shield-check" class="btn-icon"></i>
+          <i data-lucide="user-plus" class="btn-icon"></i>
         </button>
 
-        <div class="register-link-container" id="registerLinkContainer" style="margin-top: 15px; text-align: center; display: none;">
-          <a href="/register.html" class="tech-link" style="color: #00f0ff; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// Register Account</a>
+        <div class="login-link-container" style="margin-top: 15px; text-align: center;">
+          <a href="/login.html" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// Back to Login</a>
         </div>
       </form>
 
@@ -108,11 +125,19 @@
         <div class="alert-border"></div>
         <i data-lucide="alert-triangle" class="alert-icon"></i>
         <div class="alert-content">
-          <span class="alert-title">ACCESS DENIED</span>
-          <span class="alert-message">INCORRECT DECRYPTION KEY</span>
+          <span class="alert-title">REGISTRY FAILED</span>
+          <span class="alert-message">INVALID OR EXPIRED INVITE CODE</span>
         </div>
       </div>
-      
+
+      <div id="successAlert" class="auth-alert hidden" style="border-color: #00ff66;">
+        <div class="alert-border" style="background: #00ff66;"></div>
+        <i data-lucide="check-circle" class="alert-icon" style="color: #00ff66;"></i>
+        <div class="alert-content">
+          <span class="alert-title" style="color: #00ff66;">SUCCESS</span>
+          <span class="alert-message" style="color: #ffffff;">IDENTITY PROVISIONED. REDIRECTING...</span>
+        </div>
+      </div>
 
     </div>
   </div>
@@ -121,80 +146,66 @@
     // Initialize Lucide Icons
     lucide.createIcons();
 
-    // Check if already authenticated, if so, redirect
+    // Check if multi-user mode is enabled
     fetch('/api/auth-status')
       .then(res => res.json())
       .then(data => {
-        console.log('[Login] auth-status:', data);
-        if (data.authenticated) {
-          window.location.href = '/';
-          return;
+        if (!data.multiUserEnabled) {
+          // If multi user is not enabled, redirect to login
+          window.location.href = '/login.html';
         }
-        if (data.multiUserEnabled) {
-          console.log('[Login] Multi-user mode detected, showing username field');
-          const usernameGroup = document.getElementById('usernameGroup');
-          if (usernameGroup) {
-            usernameGroup.style.display = 'flex';
-          }
-          const usernameInput = document.getElementById('username');
-          if (usernameInput) {
-            usernameInput.required = true;
-          }
-          const passwordLabel = document.getElementById('passwordLabel');
-          if (passwordLabel) {
-            passwordLabel.textContent = '// PASSWORD';
-          }
-          const registerLink = document.getElementById('registerLinkContainer');
-          if (registerLink) {
-            registerLink.style.display = 'block';
-          }
-          // Re-render icons
-          if (window.lucide) {
-            window.lucide.createIcons();
-          }
-        }
-      })
-      .catch(err => {
-        console.error('[Login] auth-status error:', err);
       });
 
+    // Auto-fill invitation code from URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeParam = urlParams.get('code');
+    if (codeParam) {
+      document.getElementById('code').value = codeParam;
+    }
+
     // Handle Form Submit
-    const form = document.getElementById('loginForm');
+    const form = document.getElementById('registerForm');
+    const codeInput = document.getElementById('code');
+    const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
-    const loginBtn = document.getElementById('loginBtn');
+    const registerBtn = document.getElementById('registerBtn');
     const errorAlert = document.getElementById('errorAlert');
+    const successAlert = document.getElementById('successAlert');
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
       // Reset UI state
       errorAlert.classList.add('hidden');
-      loginBtn.classList.add('loading');
-      loginBtn.disabled = true;
+      successAlert.classList.add('hidden');
+      registerBtn.classList.add('loading');
+      registerBtn.disabled = true;
 
+      const code = codeInput.value;
+      const username = usernameInput.value;
       const password = passwordInput.value;
-      const username = document.getElementById('username').value;
 
       try {
-        const response = await fetch('/api/login', {
+        const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ code, username, password })
         });
 
         const data = await response.json();
 
         if (response.ok && data.success) {
           // Success
-          loginBtn.querySelector('.btn-text').innerText = 'AUTHORIZED';
+          successAlert.classList.remove('hidden');
+          registerBtn.querySelector('.btn-text').innerText = 'PROVISIONED';
           setTimeout(() => {
-            window.location.href = '/';
-          }, 800);
+            window.location.href = '/login.html';
+          }, 1500);
         } else {
           // Failed
-          throw new Error(data.error || 'Authentication failed');
+          throw new Error(data.error || 'Registration failed');
         }
       } catch (err) {
         console.error(err);
@@ -204,8 +215,6 @@
         if (alertMsg && err.message) {
           alertMsg.textContent = err.message.toUpperCase();
         }
-        passwordInput.value = '';
-        passwordInput.focus();
         
         // Add shake animation to the card
         const card = document.querySelector('.auth-card');
@@ -214,12 +223,10 @@
           card.classList.remove('shake-anim');
         }, 500);
       } finally {
-        loginBtn.classList.remove('loading');
-        loginBtn.disabled = false;
+        registerBtn.classList.remove('loading');
+        registerBtn.disabled = false;
       }
     });
-
-
 
     // Welcome Panel Interactive 3D Parallax Effect
     const welcomeGrid3D = document.getElementById('welcomeGrid3D');
@@ -233,7 +240,6 @@
         const centerX = width / 2;
         const centerY = height / 2;
         
-        // Calculate tilts (Max +/- 5 degrees on X, Max +/- 6 degrees on Y)
         const tiltX = ((e.clientY - centerY) / centerY) * -5;
         const tiltY = ((e.clientX - centerX) / centerX) * 6;
         
@@ -244,21 +250,6 @@
         if (window.innerWidth <= 768) return;
         welcomeGrid3D.style.transform = 'rotateX(30deg) rotateY(0deg) translate3d(0, 0, 0)';
       });
-    }
-    // Check query params for scan errors
-    const urlParams = new URLSearchParams(window.location.search);
-    const errorParam = urlParams.get('error');
-    if (errorParam && errorAlert) {
-      errorAlert.classList.remove('hidden');
-      const titleEl = errorAlert.querySelector('.alert-title');
-      const messageEl = errorAlert.querySelector('.alert-message');
-      if (errorParam === 'scan_expired') {
-        if (titleEl) titleEl.textContent = 'SCAN EXPIRED';
-        if (messageEl) messageEl.textContent = 'THE 60S SCAN CODE HAS EXPIRED. RE-SCAN THE NEW CODE.';
-      } else if (errorParam === 'scan_invalid') {
-        if (titleEl) titleEl.textContent = 'SCAN INVALID';
-        if (messageEl) messageEl.textContent = 'THE SCAN CODE IS INVALID OR HAS BEEN USED.';
-      }
     }
   </script>
 </body>

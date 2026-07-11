@@ -39,7 +39,8 @@
 
 ## 🌟 核心特性
 
-- 🔒 **安全访问控制**：采用基于 JWT 的单密码认证（主密码在环境变量中配置，支持 HTTP-Only Cookie 保持会话）。
+- 👥 **多用户隔离系统 (Multi-User System)**：支持开启多用户隔离模式。非 Admin 用户拥有独立的沙盒工作区、独立代理运行配置（`$HOME` 隔离）与专属会话，有效防止敏感凭证越权访问与环境变量污染。支持管理员邀请注册制。
+- 🔒 **安全访问控制**：采用基于 JWT 的访问认证（单用户模式基于全局主密码；多用户模式基于用户独立密码，支持 HTTP-Only Cookie 保持会话）。
 - 🎨 **赛博霓虹设计**：基于暗黑极客风格精心打造，拥有发光特效、科幻扫描线、动态霓虹边框与平滑的微交互动画。
 - 🤖 **AI 编程智能体集成**：
   - 在创建 Tmux 会话时，可一键选择直接运行 **Claude Code**、**Antigravity (agy)** 或 **Codex Agent** 等编程 Agent。
@@ -84,10 +85,16 @@ PORT=80
 PASSWORD=your_secure_password
 JWT_SECRET=your_jwt_secret_key
 DEFAULT_SHELL=/bin/bash
+
+# 多用户隔离模式配置
+MULTI_USER_ENABLED=true
 ```
 
 > [!IMPORTANT]
 > **安全警示**：将该项目部署于公网前，请务必修改 `.env` 中的 `PASSWORD` 和 `JWT_SECRET`，防止未经授权的终端访问！
+
+> [!NOTE]
+> 在多用户模式下，系统首次启动时会自动根据配置的 `PASSWORD` 创建默认管理员账号 `admin`。
 
 ### 2. 启动服务
 
@@ -129,6 +136,33 @@ sudo ./stop.sh
 2. 页面会重定向到授权中心 `/login.html`。
 3. 输入您的主访问密码（在 `.env` 中设置的 `PASSWORD` 值），点击 **AUTHENTICATE** 登录。
 4. 授权成功后，即可进入控制大厅管理与连接您的 Tmux 终端，并启动 AI 编程智能体！
+
+---
+
+## 👥 多用户隔离模式 / Multi-User Mode
+
+通过在 `.env` 中设置 `MULTI_USER_ENABLED=true` 可以开启多用户隔离模式。此模式专为团队协作或多 AI 代理实例独立运行设计：
+
+### 1. 账号与邀请码机制 (Accounts & Invitation Codes)
+* **默认管理员**：首次启用多用户模式时，系统会在首次运行迁移时，根据 `.env` 中的 `PASSWORD` 自动初始化 `admin`（管理员）账户。
+* **邀请码注册**：非 admin 用户必须通过邀请码进行注册。`admin` 用户可以在网页控制台的 header 栏中点击 **INVITE CODES** 按钮打开管理面板，输入受邀者备注并生成一次性邀请码（形如 `INV-XXXXXX`），同时可以直接复制包含邀请码的注册链接。
+* **密码存储**：采用安全的 PBKDF2 对用户密码进行加盐哈希存储（数据保存在 `data/users.json` 中）。
+
+### 2. 沙盒隔离与目录防护 (Sandbox & File Isolation)
+* **工作区隔离 (Workspace Sandbox)**：
+  * 普通用户的工作区统一存放在 `workspaces/[username]/` 下。
+  * 普通用户在新建工作区时，仅能使用相对路径在其名下了的隔离目录下创建，无法通过绝对路径或 `..` 越权浏览和读写服务器的其他文件。
+  * 管理员 `admin` 依然保留全局根路径的完全访问与绝对路径工作区创建能力。
+* **环境变量隔离 (Home Directory Isolation)**：
+  * 普通用户的 Shell 会话运行在独立的虚拟 Home 目录中（路径为 `user_data/[username]/home`）。
+  * 首次启动会话时，系统会自动在虚拟 Home 中创建只读符号链接，指向宿主机的 `.claude`、`.gemini`、`.agy` 等全局 AI 配置文件夹。
+  * **优势**：各用户的 Shell 历史记录（如 `.bash_history`）和缓存完全独立；同时 AI 智能体可以读取所需的 API Key（防止重复配置），但用户无法通过工作区文件浏览器看到或修改这些隐藏敏感配置文件。
+
+### 3. 数据迁移与兼容性 (Legacy Data Migration)
+系统包含全自动迁移机制（在服务启动时自动执行）：
+* **配置平滑迁移**：若检测到单用户模式下的 `workspaces.json` 存在，且 `admin` 用户的工作区文件尚未创建，系统会自动将原先的工作区配置复制到 `data/workspaces_admin.json` 中。
+* **绑定与微信多实例升级**：老版本的 IM 机器人绑定数据（`im_bindings.json`）会被自动升级，为原有绑定的微信号和 Telegram 账号默认指派 `admin` Web 用户身份。同时，老版本全局唯一的微信 `wechatConfig` 会被自动迁移至具体用户配置内。现在，微信扫码（ClawBot）支持多用户独立登录，每个绑定的用户都拥有独立的前后台微信轮询实例，互不干扰。
+* **会话重命名**：为避免命名冲突，原先命名的 Tmux 会话（如 `agy`、`claude`、`codex`）会在后台自动重命名为多用户规范格式（如 `u_admin_agy`、`u_admin_claude`、`u_admin_codex`）。
 
 ---
 

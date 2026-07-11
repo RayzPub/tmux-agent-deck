@@ -4,26 +4,56 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 
-const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT } = require('../config');
-const { requireAuth, verifyToken } = require('../middlewares/auth');
+const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
+const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath } = require('../services/fileService');
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
+const db = require('../services/dbService');
+
+// Shell escape utility for safe command interpolation
+const shellescape = (s) => {
+  if (s == null) return "''";
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+};
 
 // API: Login
 router.post('/login', (req, res) => {
-  const { password } = req.body;
-  if (password === PASSWORD) {
-    const token = jwt.sign({ authenticated: true }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: useHttps,
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
-    return res.json({ success: true });
+  const { username, password } = req.body;
+
+  // Single-user mode compatibility
+  if (!MULTI_USER_ENABLED) {
+    if (password === PASSWORD) {
+      const token = jwt.sign({ username: 'admin', role: 'admin', isMultiUser: false }, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: useHttps,
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+      return res.json({ success: true });
+    }
+    return res.status(401).json({ error: 'Invalid password' });
   }
-  return res.status(401).json({ error: 'Invalid password' });
+
+  // Multi-user login
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  const users = db.getUsers();
+  const user = users[username.toLowerCase()];
+  if (!user || !db.verifyPassword(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  const token = jwt.sign({ username: user.username, role: user.role, isMultiUser: true }, JWT_SECRET, { expiresIn: '7d' });
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: useHttps,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+  res.json({ success: true });
 });
 
 // API: Logout
@@ -35,7 +65,122 @@ router.post('/logout', (req, res) => {
 // API: Check Auth status
 router.get('/auth-status', (req, res) => {
   const decoded = verifyToken(req);
-  res.json({ authenticated: !!decoded });
+
+  // Not authenticated
+  if (!decoded) {
+    return res.json({
+      authenticated: false,
+      multiUserEnabled: MULTI_USER_ENABLED,
+      username: null,
+      role: null
+    });
+  }
+
+  // Multi-user mode: only accept tokens with username and role
+  if (MULTI_USER_ENABLED) {
+    if (!decoded.username || !decoded.role || !decoded.isMultiUser) {
+      res.clearCookie('token');
+      return res.json({
+        authenticated: false,
+        multiUserEnabled: MULTI_USER_ENABLED,
+        username: null,
+        role: null
+      });
+    }
+  }
+
+  // Valid token
+  res.json({
+    authenticated: true,
+    multiUserEnabled: MULTI_USER_ENABLED,
+    username: decoded.username || 'admin',
+    role: decoded.role || 'admin'
+  });
+});
+
+// API: Register with invite code
+router.post('/auth/register', (req, res) => {
+  if (!MULTI_USER_ENABLED) {
+    return res.status(400).json({ error: 'Registration is not enabled in single-user mode' });
+  }
+
+  const { code, username, password } = req.body;
+  if (!code || !username || !password) {
+    return res.status(400).json({ error: 'Code, username and password are required' });
+  }
+
+  if (!/^[a-zA-Z0-9_-]{3,15}$/.test(username)) {
+    return res.status(400).json({ error: 'Invalid username. Use 3-15 alphanumeric characters.' });
+  }
+
+  const codes = db.getCodes();
+  const invite = codes.find(c => c.code === code && c.status === 'pending');
+  if (!invite) {
+    return res.status(400).json({ error: 'Invalid or already used invite code' });
+  }
+
+  const users = db.getUsers();
+  const reservedUsernames = ['default', 'admin', 'system', 'guest', 'user_data', 'workspaces'];
+  if (reservedUsernames.includes(username.toLowerCase()) || users[username.toLowerCase()]) {
+    return res.status(400).json({ error: 'Username already exists or is reserved.' });
+  }
+
+  // Create user
+  users[username.toLowerCase()] = {
+    username,
+    passwordHash: db.hashPassword(password),
+    role: 'user',
+    createdAt: new Date().toISOString()
+  };
+  db.saveUsers(users);
+
+  // Update invite code status
+  invite.status = 'used';
+  invite.usedBy = username;
+  invite.usedAt = new Date().toISOString();
+  db.saveCodes(codes);
+
+  res.json({ success: true, message: 'Account registered successfully!' });
+});
+
+// API: Get invite codes (Admin only)
+router.get('/admin/invite-codes', requireAdmin, (req, res) => {
+  res.json(db.getCodes());
+});
+
+// API: Generate new invite code (Admin only)
+router.post('/admin/invite-codes', requireAdmin, (req, res) => {
+  const { note } = req.body;
+  const codes = db.getCodes();
+  
+  // Generate random 8-character code
+  const code = 'INV-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
+  
+  const newInvite = {
+    code,
+    createdBy: req.user.username,
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    usedBy: null,
+    usedAt: null,
+    note: note || ''
+  };
+
+  codes.push(newInvite);
+  db.saveCodes(codes);
+  res.json({ success: true, invite: newInvite });
+});
+
+// API: Delete invite code (Admin only)
+router.delete('/admin/invite-codes/:code', requireAdmin, (req, res) => {
+  const { code } = req.params;
+  let codes = db.getCodes();
+  const filtered = codes.filter(c => c.code !== code);
+  if (filtered.length === codes.length) {
+    return res.status(404).json({ error: 'Invite code not found' });
+  }
+  db.saveCodes(filtered);
+  res.json({ success: true });
 });
 
 // API: Tmux Commands (Protected)
@@ -49,17 +194,38 @@ router.get('/sessions', requireAuth, (req, res) => {
       return res.status(500).json({ error: 'Failed to list tmux sessions', details: stderr });
     }
     
-    const sessions = stdout.trim().split('\n').filter(Boolean).map(line => {
-      const [name, attached, created, sessionPath, workspaceName, agentType] = line.split('|');
-      return {
-        name,
-        attached: parseInt(attached, 10) > 0,
-        created: new Date(parseInt(created) * 1000).toLocaleString(),
-        path: sessionPath || '',
-        workspaceName: workspaceName || '',
-        agentType: agentType || ''
-      };
-    });
+    const rawSessions = stdout.trim().split('\n').filter(Boolean);
+    const prefix = `u_${req.user.username}_`;
+
+    const sessions = [];
+    for (const line of rawSessions) {
+      const [fullName, attached, created, sessionPath, workspaceName, agentType] = line.split('|');
+      
+      // If MULTI_USER_ENABLED is true, filter by prefix and strip it
+      if (MULTI_USER_ENABLED) {
+        if (!fullName.startsWith(prefix)) {
+          continue;
+        }
+        const shortName = fullName.substring(prefix.length);
+        sessions.push({
+          name: shortName,
+          attached: parseInt(attached, 10) > 0,
+          created: new Date(parseInt(created) * 1000).toLocaleString(),
+          path: sessionPath || '',
+          workspaceName: workspaceName || '',
+          agentType: agentType || ''
+        });
+      } else {
+        sessions.push({
+          name: fullName,
+          attached: parseInt(attached, 10) > 0,
+          created: new Date(parseInt(created) * 1000).toLocaleString(),
+          path: sessionPath || '',
+          workspaceName: workspaceName || '',
+          agentType: agentType || ''
+        });
+      }
+    }
     res.json(sessions);
   });
 });
@@ -73,17 +239,28 @@ router.post('/sessions', requireAuth, (req, res) => {
 
   let resolvedWorkspacePath = workspacePath;
   if (workspaceName && !resolvedWorkspacePath) {
-    const workspaces = readWorkspaces();
+    const workspaces = readWorkspaces(req.user.username);
     const ws = workspaces.find(w => w.name.toLowerCase() === workspaceName.toLowerCase());
     if (ws) {
       resolvedWorkspacePath = ws.path;
     }
   }
 
-  const args = ['new-session', '-d', '-s', name];
+  if (!resolvedWorkspacePath) {
+    resolvedWorkspacePath = getDefaultWorkspacePath(req.user ? req.user.username : null);
+  }
 
+  let physicalSession = name;
+  if (MULTI_USER_ENABLED) {
+    physicalSession = `u_${req.user.username}_${name}`;
+  }
+
+  const args = ['new-session', '-d', '-s', physicalSession];
+
+  // resolvedPath is the validated absolute path on disk for this session
+  let resolvedPath = null;
   if (resolvedWorkspacePath) {
-    const resolvedPath = resolveWorkspacePath(resolvedWorkspacePath);
+    resolvedPath = resolveWorkspacePath(resolvedWorkspacePath, req.user.username);
     if (!fs.existsSync(resolvedPath)) {
       try {
         fs.mkdirSync(resolvedPath, { recursive: true });
@@ -92,26 +269,32 @@ router.post('/sessions', requireAuth, (req, res) => {
       }
     }
     
-    // Inject local hooks for the target agent
-    injectAgentHooks(resolvedWorkspacePath, agent, resolveWorkspacePath);
+    // Inject local hooks for the target agent — use the already-resolved path
+    injectAgentHooks(resolvedPath, agent, (p) => resolveWorkspacePath(p, req.user.username));
 
     args.push('-c', resolvedPath);
   }
 
-  const userHome = getHomeDir();
+  // userHome: the $HOME directory set for the session shell.
+  // In multi-user mode each user gets user_data/[username]/home with
+  // read-only symlinks to agent config dirs from sysHome — so agents
+  // find their API keys without exposing config files in the workspace browser.
+  const userHome = getUserHomeDir(req.user ? req.user.username : null);
+  const sysHome = getHomeDir(); // always the system user's home (for finding binaries)
   const binDir = path.resolve(PROJECT_ROOT, 'bin');
+
+  // Shell prefix: cd into workspace and set HOME so agents write config into the right place.
+  // In single-user mode HOME is already correct; in multi-user mode we point HOME at user sandbox.
+  // Use shellescape to prevent command injection via workspace path.
+  const workDir = resolvedPath || userHome;
+  const envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:$PATH`;
+
   if (agent === 'agy') {
-    args.push(`export PATH="${binDir}:$PATH"; ${userHome}/.local/bin/agy --dangerously-skip-permissions; exec bash`);
+    const agyBin = `${sysHome}/.local/bin/agy`;
+    args.push(`${envPrefix}; ${agyBin} --dangerously-skip-permissions; exec bash`);
   } else if (agent === 'claude') {
     let claudePath = null;
-    const possiblePaths = [
-      `${userHome}/.nvm/versions/node`,
-      `${userHome}/.local/bin/claude`,
-      '/usr/local/bin/claude',
-      '/usr/bin/claude'
-    ];
-
-    const nvmNodeDir = `${userHome}/.nvm/versions/node`;
+    const nvmNodeDir = `${sysHome}/.nvm/versions/node`;
     if (fs.existsSync(nvmNodeDir)) {
       try {
         const nodeVersions = fs.readdirSync(nvmNodeDir).filter(d => d.startsWith('v'));
@@ -125,39 +308,29 @@ router.post('/sessions', requireAuth, (req, res) => {
         }
       } catch (e) {}
     }
-
     if (!claudePath || !fs.existsSync(claudePath)) {
-      for (const p of possiblePaths.slice(1)) {
-        if (fs.existsSync(p)) {
-          claudePath = p;
-          break;
-        }
+      for (const p of [`${sysHome}/.local/bin/claude`, '/usr/local/bin/claude', '/usr/bin/claude']) {
+        if (fs.existsSync(p)) { claudePath = p; break; }
       }
     }
-
     if (claudePath) {
-      args.push(`export PATH="${binDir}:$PATH"; ${claudePath} --permission-mode auto; exec bash`);
+      args.push(`${envPrefix}; ${claudePath} --permission-mode auto; exec bash`);
     } else {
-      args.push(`export PATH="${binDir}:$PATH"; exec bash`);
+      args.push(`${envPrefix}; exec bash`);
     }
   } else if (agent === 'codex') {
     let codexPath = null;
-    const possiblePaths = [
-      `${userHome}/.local/bin/codex`,
-      '/usr/local/bin/codex',
-      '/usr/bin/codex'
-    ];
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        codexPath = p;
-        break;
-      }
+    for (const p of [`${sysHome}/.local/bin/codex`, '/usr/local/bin/codex', '/usr/bin/codex']) {
+      if (fs.existsSync(p)) { codexPath = p; break; }
     }
     if (codexPath) {
-      args.push(`export PATH="${binDir}:$PATH"; ${codexPath} --dangerously-bypass-hook-trust; exec bash`);
+      args.push(`${envPrefix}; ${codexPath} --dangerously-bypass-hook-trust; exec bash`);
     } else {
-      args.push(`export PATH="${binDir}:$PATH"; exec bash`);
+      args.push(`${envPrefix}; exec bash`);
     }
+  } else {
+    // Plain bash session — still ensure correct HOME and working directory
+    args.push(`${envPrefix}; exec bash`);
   }
 
   execTmux(args, (err, stdout, stderr) => {
@@ -166,14 +339,14 @@ router.post('/sessions', requireAuth, (req, res) => {
     }
 
     const optionsToSet = [
-      ['set-option', '-t', name, 'status', 'off'],
-      ['set-option', '-t', name, 'mouse', 'on']
+      ['set-option', '-t', physicalSession, 'status', 'off'],
+      ['set-option', '-t', physicalSession, 'mouse', 'on']
     ];
     if (workspaceName) {
-      optionsToSet.push(['set-option', '-t', name, '@workspace_name', workspaceName]);
+      optionsToSet.push(['set-option', '-t', physicalSession, '@workspace_name', workspaceName]);
     }
     if (agent) {
-      optionsToSet.push(['set-option', '-t', name, '@agent_type', agent]);
+      optionsToSet.push(['set-option', '-t', physicalSession, '@agent_type', agent]);
     }
 
     let chain = Promise.resolve();
@@ -200,7 +373,11 @@ router.delete('/sessions/:name', requireAuth, (req, res) => {
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
     return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
   }
-  execTmux(['kill-session', '-t', name], (err, stdout, stderr) => {
+  let physicalSession = name;
+  if (MULTI_USER_ENABLED) {
+    physicalSession = `u_${req.user.username}_${name}`;
+  }
+  execTmux(['kill-session', '-t', physicalSession], (err, stdout, stderr) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to kill session', details: stderr });
     }
@@ -210,16 +387,28 @@ router.delete('/sessions/:name', requireAuth, (req, res) => {
 
 // Workspaces Endpoints
 router.get('/workspaces', requireAuth, (req, res) => {
-  res.json(readWorkspaces());
+  res.json(readWorkspaces(req.user.username));
 });
 
 router.post('/workspaces', requireAuth, (req, res) => {
   const { name, path: wsPath } = req.body;
-  if (!name || !wsPath) {
-    return res.status(400).json({ error: 'Name and path are required.' });
+  if (!name) {
+    return res.status(400).json({ error: 'Workspace name is required.' });
   }
 
-  const resolvedPath = resolveWorkspacePath(wsPath);
+  let resolvedPath;
+  if (MULTI_USER_ENABLED && req.user.username) {
+    // In multi-user mode, path is treated as a relative sub-directory name under the user's sandbox by default.
+    // If omitted, default to using the workspace name as the directory name.
+    const subDir = (wsPath && wsPath.trim()) ? wsPath.trim() : name.trim();
+    resolvedPath = resolveWorkspacePath(subDir, req.user.username);
+  } else {
+    if (!wsPath) {
+      return res.status(400).json({ error: 'Path is required.' });
+    }
+    resolvedPath = resolveWorkspacePath(wsPath, req.user.username);
+  }
+
   if (!fs.existsSync(resolvedPath)) {
     try {
       fs.mkdirSync(resolvedPath, { recursive: true });
@@ -228,33 +417,33 @@ router.post('/workspaces', requireAuth, (req, res) => {
     }
   }
 
-  const workspaces = readWorkspaces();
-  const exists = workspaces.find(w => w.name.toLowerCase() === name.toLowerCase() || resolveWorkspacePath(w.path) === resolvedPath);
+  const workspaces = readWorkspaces(req.user.username);
+  const exists = workspaces.find(w => w.name.toLowerCase() === name.toLowerCase() || resolveWorkspacePath(w.path, req.user.username) === resolvedPath);
   if (exists) {
     return res.status(400).json({ error: 'Workspace with this name or path already exists.' });
   }
 
   workspaces.push({ name, path: resolvedPath });
-  writeWorkspaces(workspaces);
+  writeWorkspaces(workspaces, req.user.username);
   res.json({ success: true, workspace: { name, path: resolvedPath } });
 });
 
 router.delete('/workspaces/:name', requireAuth, (req, res) => {
   const { name } = req.params;
-  const workspaces = readWorkspaces();
+  const workspaces = readWorkspaces(req.user.username);
   const filtered = workspaces.filter(w => w.name.toLowerCase() !== name.toLowerCase());
   if (filtered.length === workspaces.length) {
     return res.status(404).json({ error: 'Workspace not found.' });
   }
-  writeWorkspaces(filtered);
+  writeWorkspaces(filtered, req.user.username);
   res.json({ success: true });
 });
 
 // List subdirectories only (for workspace directory picker)
 router.get('/directories', requireAuth, (req, res) => {
   try {
-    const rawPath = req.query.path || getHomeDir();
-    const targetDir = resolveWorkspacePath(rawPath);
+    const rawPath = req.query.path || '~';
+    const targetDir = resolveWorkspacePath(rawPath, req.user.username);
     
     if (!fs.existsSync(targetDir)) {
       return res.status(404).json({ error: 'Directory not found' });
@@ -282,9 +471,10 @@ router.get('/directories', requireAuth, (req, res) => {
       
     result.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     
+    const baseLimit = (MULTI_USER_ENABLED && req.user.username !== 'admin') ? getUserWorkspaceRoot(req.user.username) : '/';
     res.json({
       currentPath: targetDir,
-      parentPath: targetDir === '/' ? null : path.dirname(targetDir),
+      parentPath: targetDir === baseLimit ? null : path.dirname(targetDir),
       directories: result
     });
   } catch (err) {
@@ -297,8 +487,8 @@ router.get('/files/list', requireAuth, (req, res) => {
   try {
     const workspacePath = req.query.workspacePath || '';
     const relativePath = req.query.path || '';
-    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath) : PROJECT_ROOT;
-    const targetDir = safeResolve(workspacePath, relativePath);
+    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
+    const targetDir = safeResolve(workspacePath, relativePath, req.user.username);
     
     if (!fs.existsSync(targetDir)) {
       return res.status(404).json({ error: 'Directory not found' });
@@ -353,7 +543,7 @@ router.get('/files/content', requireAuth, (req, res) => {
     if (!relativePath) {
       return res.status(400).json({ error: 'Path is required' });
     }
-    const targetPath = safeResolve(workspacePath, relativePath);
+    const targetPath = safeResolve(workspacePath, relativePath, req.user.username);
     
     if (!fs.existsSync(targetPath)) {
       return res.status(404).json({ error: 'File not found' });
@@ -387,7 +577,7 @@ router.post('/files/save', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'filePath is required' });
     }
     
-    const targetPath = safeResolve(workspacePath, filePath);
+    const targetPath = safeResolve(workspacePath, filePath, req.user.username);
     const parentDir = path.dirname(targetPath);
     if (!fs.existsSync(parentDir)) {
       return res.status(400).json({ error: 'Parent directory does not exist' });
@@ -411,7 +601,7 @@ router.post('/files/save', requireAuth, (req, res) => {
 router.get('/git/status', requireAuth, (req, res) => {
   try {
     const workspacePath = req.query.workspacePath || '';
-    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath) : PROJECT_ROOT;
+    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
     
     if (!fs.existsSync(rootDir)) {
       return res.status(404).json({ error: 'Workspace directory not found' });
@@ -466,14 +656,14 @@ router.get('/git/diff', requireAuth, (req, res) => {
   try {
     const workspacePath = req.query.workspacePath || '';
     const filePath = req.query.path || '';
-    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath) : PROJECT_ROOT;
+    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
     
     if (!fs.existsSync(rootDir)) {
       return res.status(404).json({ error: 'Workspace directory not found' });
     }
     
     if (filePath) {
-      const targetPath = safeResolve(workspacePath, filePath);
+      const targetPath = safeResolve(workspacePath, filePath, req.user.username);
       const relPath = path.relative(rootDir, targetPath);
       
       execCommand('git', ['status', '--porcelain', '--', relPath], rootDir, (statusErr, statusStdout) => {
@@ -512,7 +702,7 @@ router.post('/push/register', requireAuth, (req, res) => {
   if (!subscription || !subscription.endpoint) {
     return res.status(400).json({ error: 'Invalid subscription object' });
   }
-  registerSubscription(subscription);
+  registerSubscription(subscription, req.user.username);
   res.json({ success: true });
 });
 
@@ -521,7 +711,7 @@ router.post('/push/unregister', requireAuth, (req, res) => {
   if (!subscription || !subscription.endpoint) {
     return res.status(400).json({ error: 'Invalid subscription' });
   }
-  unregisterSubscription(subscription);
+  unregisterSubscription(subscription, req.user.username);
   res.json({ success: true });
 });
 
@@ -570,8 +760,14 @@ router.post('/push/trigger', (req, res) => {
     if (match) targetSession = match[1];
   }
   
+  let username = null;
+  const decoded = verifyToken(req);
+  if (decoded) {
+    username = decoded.username;
+  }
+
   const io = req.app.get('io');
-  sendPushToAll(io, { title, body, url: url || '/', session: targetSession });
+  sendPushToAll(io, { title, body, url: url || '/', session: targetSession }, username);
   res.json({ success: true });
 });
 
@@ -609,8 +805,12 @@ router.post('/system/temp-login-token', requireAuth, (req, res) => {
     const expiresIn = 60; // 60 seconds
     const expiresAt = Date.now() + expiresIn * 1000;
     
-    // Store in map
-    tempLoginTokens.set(token, { expiresAt });
+    // Store in map with user info for multi-user mode
+    tempLoginTokens.set(token, {
+      expiresAt,
+      username: req.user.username,
+      role: req.user.role
+    });
     
     // Periodically clean up expired tokens to prevent leak
     if (tempLoginTokens.size > 100) {
@@ -647,8 +847,11 @@ router.get('/login-by-token', (req, res) => {
     return res.redirect('/login.html?error=scan_expired');
   }
 
-  // Generate standard JWT cookie (same as standard login)
-  const jwtToken = jwt.sign({ authenticated: true }, JWT_SECRET, { expiresIn: '7d' });
+  // Generate standard JWT cookie with user context
+  const jwtPayload = MULTI_USER_ENABLED
+    ? { username: tokenData.username, role: tokenData.role, isMultiUser: true }
+    : { username: 'admin', role: 'admin', isMultiUser: false };
+  const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: '7d' });
   res.cookie('token', jwtToken, {
     httpOnly: true,
     secure: useHttps,

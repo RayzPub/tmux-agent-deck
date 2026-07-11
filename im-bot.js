@@ -13,6 +13,18 @@ let bindings = {
 // In-memory binding tokens: token -> metadata
 const pendingBindings = new Map();
 
+const getWebUsername = (id) => {
+  if (bindings.telegram && Array.isArray(bindings.telegram)) {
+    const user = bindings.telegram.find(u => u.chatId === id);
+    if (user) return user.webUsername || 'admin';
+  }
+  if (bindings.wechat && Array.isArray(bindings.wechat)) {
+    const user = bindings.wechat.find(u => u.openid === id);
+    if (user) return user.webUsername || 'admin';
+  }
+  return null; // Changed from 'admin' - unbound users should not default to admin
+};
+
 function loadBindings() {
   if (fs.existsSync(BINDINGS_FILE)) {
     try {
@@ -241,6 +253,14 @@ function startSessionMonitor(sessionName, chatId, execTmux) {
     clearInterval(activeMonitors.get(sessionName).intervalId);
   }
 
+  const { MULTI_USER_ENABLED } = require('./config');
+  const webUsername = getWebUsername(chatId);
+  if (!webUsername) {
+    console.warn(`[startSessionMonitor] No webUsername found for chatId ${chatId}, skipping monitor`);
+    return;
+  }
+  const physicalSession = MULTI_USER_ENABLED ? `u_${webUsername}_${sessionName}` : sessionName;
+
   const monitorState = {
     lastContent: '',
     changeCount: 0,
@@ -250,7 +270,7 @@ function startSessionMonitor(sessionName, chatId, execTmux) {
   };
 
   // We perform an initial capture right away
-  execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+  execTmux(['capture-pane', '-t', physicalSession, '-p'], (err, stdout) => {
     if (!err) {
       monitorState.lastContent = stdout.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
     }
@@ -267,7 +287,7 @@ function startSessionMonitor(sessionName, chatId, execTmux) {
       return;
     }
 
-    execTmux(['capture-pane', '-t', sessionName, '-p'], async (err, stdout) => {
+    execTmux(['capture-pane', '-t', physicalSession, '-p'], async (err, stdout) => {
       if (err) {
         clearInterval(monitorState.intervalId);
         activeMonitors.delete(sessionName);
@@ -307,22 +327,58 @@ function startSessionMonitor(sessionName, chatId, execTmux) {
   activeMonitors.set(sessionName, monitorState);
 }
 
-let wechatLoopRunning = false;
+const activeWechatLoops = new Set(); // Stores openid of running loops
 
-function startWechatUpdateLoop(execTmux) {
-  if (wechatLoopRunning) return;
-  wechatLoopRunning = true;
-  runWechatUpdateLoop(execTmux).catch(err => {
-    console.error('[IM Bot] Wechat update loop crashed:', err);
-    wechatLoopRunning = false;
-  });
+function startWechatUserUpdateLoops(execTmux) {
+  // 1. Backward compatibility: Migrate legacy single bindings.wechatConfig to the matching user in bindings.wechat
+  if (bindings.wechatConfig && bindings.wechatConfig.botToken && bindings.wechatConfig.userId) {
+    const userId = bindings.wechatConfig.userId;
+    if (!bindings.wechat) bindings.wechat = [];
+    const existing = bindings.wechat.find(u => u.openid === userId);
+    if (existing) {
+      if (!existing.config) {
+        existing.config = { ...bindings.wechatConfig };
+      }
+    } else {
+      bindings.wechat.push({
+        openid: userId,
+        username: '微信主账号',
+        webUsername: 'admin',
+        config: { ...bindings.wechatConfig }
+      });
+    }
+    delete bindings.wechatConfig;
+    saveBindings();
+  }
+
+  // 2. Start dynamic polling loop for every bound wechat user with a valid token
+  if (bindings.wechat && Array.isArray(bindings.wechat)) {
+    bindings.wechat.forEach(user => {
+      if (user.openid && user.config && user.config.botToken) {
+        if (!activeWechatLoops.has(user.openid)) {
+          activeWechatLoops.add(user.openid);
+          runWechatUserUpdateLoop(user.openid, execTmux).catch(err => {
+            console.error(`[IM Bot] WeChat update loop for ${user.openid} crashed:`, err);
+            activeWechatLoops.delete(user.openid);
+          });
+        }
+      }
+    });
+  }
 }
 
-async function runWechatUpdateLoop(execTmux) {
-  console.log('🤖 [IM Bot] Starting WeChat ClawBot Update Loop...');
-  while (bindings.wechatConfig && bindings.wechatConfig.botToken) {
+async function runWechatUserUpdateLoop(openid, execTmux) {
+  console.log(`🤖 [IM Bot] Starting WeChat ClawBot Update Loop for user: ${openid}...`);
+  while (true) {
+    // Dynamically retrieve the user object to detect unbinding/config removal
+    const user = (bindings.wechat || []).find(u => u.openid === openid);
+    if (!user || !user.config || !user.config.botToken) {
+      console.log(`[IM Bot] WeChat config for ${openid} removed. Stopping update loop.`);
+      break;
+    }
+
     try {
-      const config = bindings.wechatConfig;
+      const config = user.config;
       const body = {
         get_updates_buf: config.getUpdatesBuf || "",
         base_info: {
@@ -339,10 +395,10 @@ async function runWechatUpdateLoop(execTmux) {
       );
 
       if (res.ret && res.ret !== 0) {
-        console.error(`[IM Bot] WeChat polling API error: ret=${res.ret}, errcode=${res.errcode}, message=${res.errmsg}`);
+        console.error(`[IM Bot] WeChat polling API error for ${openid}: ret=${res.ret}, errcode=${res.errcode}, message=${res.errmsg}`);
         if (res.ret === -14 || res.errcode === -14 || (res.errmsg && res.errmsg.toLowerCase().includes('token'))) {
-          console.warn('[IM Bot] WeChat session token expired or bound to another instance. Stopping update loop.');
-          delete bindings.wechatConfig;
+          console.warn(`[IM Bot] WeChat session token expired or bound to another instance for ${openid}. Stopping update loop.`);
+          delete user.config;
           saveBindings();
           break;
         }
@@ -357,20 +413,20 @@ async function runWechatUpdateLoop(execTmux) {
 
       if (res.msgs && res.msgs.length > 0) {
         for (const msg of res.msgs) {
-          await handleWechatInboundMessage(msg, execTmux);
+          await handleWechatInboundMessage(msg, openid, execTmux);
         }
       }
 
       await new Promise(r => setTimeout(r, 1000));
     } catch (err) {
-      console.error('[IM Bot] WeChat polling connection error:', err);
+      console.error(`[IM Bot] WeChat polling connection error for ${openid}:`, err);
       await new Promise(r => setTimeout(r, 5000));
     }
   }
-  wechatLoopRunning = false;
+  activeWechatLoops.delete(openid);
 }
 
-async function handleWechatInboundMessage(msg, execTmux) {
+async function handleWechatInboundMessage(msg, ownerOpenid, execTmux) {
   const fromUser = msg.from_user_id;
   const contextToken = msg.context_token;
   
@@ -385,11 +441,13 @@ async function handleWechatInboundMessage(msg, execTmux) {
   if (!text) return;
 
   if (!bindings.wechat) bindings.wechat = [];
-  const isBound = bindings.wechat.some(u => u.openid === fromUser);
+  const userBinding = bindings.wechat.find(u => u.openid === fromUser);
+  const ownerBinding = bindings.wechat.find(u => u.openid === ownerOpenid);
 
   async function reply(replyText) {
     try {
-      const config = bindings.wechatConfig;
+      const config = ownerBinding ? ownerBinding.config : null;
+      if (!config || !config.botToken) return;
       const body = {
         msg: {
           from_user_id: "",
@@ -406,16 +464,19 @@ async function handleWechatInboundMessage(msg, execTmux) {
           context_token: contextToken
         }
       };
-      await ilinkPostFetch(config.baseUrl, "ilink/bot/sendmessage", body, config.botToken);
+      await ilinkPostFetch(config.baseUrl || "https://ilinkai.weixin.qq.com", "ilink/bot/sendmessage", body, config.botToken);
     } catch (err) {
       console.error('[IM Bot] Failed to send WeChat reply:', err);
     }
   }
 
-  if (!isBound) {
-    return reply('🔒 未授权访问。请让管理员在控制端扫码登录以自动授权。');
+  if (!userBinding) {
+    return reply('🔒 未授权访问。请在网页控制端扫码绑定后自动授权。');
   }
 
+  const webUsername = userBinding.webUsername || 'admin';
+  const { MULTI_USER_ENABLED } = require('./config');
+  const prefix = `u_${webUsername}_`;
   const lowerText = text.toLowerCase();
 
   // 1. Help Command
@@ -446,9 +507,19 @@ async function handleWechatInboundMessage(msg, execTmux) {
 
       lines.forEach(line => {
         const [name, attached, pathStr] = line.split('|');
-        const numAttached = parseInt(attached, 10) || 0;
-        const attachedStatus = numAttached > 0 ? '🟢 活跃' : '⚪ 挂起';
-        replyText += `• ${name} [${attachedStatus}]\n  路径: ${pathStr}\n`;
+        if (MULTI_USER_ENABLED) {
+          if (!name.startsWith(prefix)) {
+            return;
+          }
+          const shortName = name.substring(prefix.length);
+          const numAttached = parseInt(attached, 10) || 0;
+          const attachedStatus = numAttached > 0 ? '🟢 活跃' : '⚪ 挂起';
+          replyText += `• ${shortName} [${attachedStatus}]\n  路径: ${pathStr}\n`;
+        } else {
+          const numAttached = parseInt(attached, 10) || 0;
+          const attachedStatus = numAttached > 0 ? '🟢 活跃' : '⚪ 挂起';
+          replyText += `• ${name} [${attachedStatus}]\n  路径: ${pathStr}\n`;
+        }
       });
       replyText += `\n🎯 当前活动会话：${activeSession}\n回复 "切换 <名>" 或 "switch <名>" 可切换。`;
       reply(replyText);
@@ -475,12 +546,14 @@ async function handleWechatInboundMessage(msg, execTmux) {
       return reply('⚠️ 使用方法：切换 <会话名称> 或 switch <会话名称>');
     }
 
+    const physicalSession = MULTI_USER_ENABLED ? `${prefix}${sessionName}` : sessionName;
+
     execTmux(['list-sessions', '-F', '#{session_name}'], (err, stdout) => {
       if (err) {
         return reply('❌ 获取会话列表时发生错误。');
       }
       const sessions = stdout.split('\n').map(s => s.trim()).filter(Boolean);
-      if (!sessions.includes(sessionName)) {
+      if (!sessions.includes(physicalSession)) {
         return reply(`❌ 会话 ${sessionName} 不存在。`);
       }
       
@@ -498,7 +571,9 @@ async function handleWechatInboundMessage(msg, execTmux) {
       return reply('⚠️ 您当前尚未选择活动 TMUX 会话。请回复 "切换 <名称>" 绑定一个会话，或回复 "帮助" 查看说明。');
     }
 
-    execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+    const physicalSession = MULTI_USER_ENABLED ? `${prefix}${sessionName}` : sessionName;
+
+    execTmux(['capture-pane', '-t', physicalSession, '-p'], (err, stdout) => {
       if (err) {
         return reply(`❌ 截取屏幕失败：${err.message}`);
       }
@@ -520,12 +595,14 @@ async function handleWechatInboundMessage(msg, execTmux) {
     );
   }
 
-  execTmux(['send-keys', '-t', sessionName, text, 'Enter'], (err) => {
+  const physicalSession = MULTI_USER_ENABLED ? `${prefix}${sessionName}` : sessionName;
+
+  execTmux(['send-keys', '-t', physicalSession, text, 'Enter'], (err) => {
     if (err) {
       reply(`❌ 发送键盘输入失败：${err.message}`);
     } else {
       setTimeout(() => {
-        execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+        execTmux(['capture-pane', '-t', physicalSession, '-p'], (err, stdout) => {
           if (err) {
             reply(`📥 输入已投递，但获取最新屏幕失败。`);
           } else {
@@ -551,7 +628,7 @@ async function pollWechatLogin(PIN, execTmux) {
       pBinding.status = res.status;
 
       if (res.status === 'confirmed' && res.bot_token && res.ilink_bot_id) {
-        bindings.wechatConfig = {
+        const userConfig = {
           botToken: res.bot_token,
           accountId: res.ilink_bot_id,
           baseUrl: res.baseurl || 'https://ilinkai.weixin.qq.com',
@@ -559,12 +636,21 @@ async function pollWechatLogin(PIN, execTmux) {
           getUpdatesBuf: ""
         };
         if (!bindings.wechat) bindings.wechat = [];
-        if (!bindings.wechat.some(u => u.openid === res.ilink_user_id)) {
-          bindings.wechat.push({ openid: res.ilink_user_id, username: '微信主账号' });
+        const existing = bindings.wechat.find(u => u.openid === res.ilink_user_id);
+        if (existing) {
+          existing.webUsername = pBinding.webUsername || 'admin';
+          existing.config = userConfig;
+        } else {
+          bindings.wechat.push({ 
+            openid: res.ilink_user_id, 
+            username: '微信主账号',
+            webUsername: pBinding.webUsername || 'admin',
+            config: userConfig
+          });
         }
         saveBindings();
         
-        startWechatUpdateLoop(execTmux);
+        startWechatUserUpdateLoops(execTmux);
 
         pBinding.bound = true;
         pBinding.username = '微信主账号';
@@ -591,11 +677,13 @@ async function pollWechatLogin(PIN, execTmux) {
 module.exports = {
   init(app, execTmux, getRunUser, requireAuth) {
     loadBindings();
-    if (bindings.wechatConfig && bindings.wechatConfig.botToken) {
-      startWechatUpdateLoop(execTmux);
-    }
+    startWechatUserUpdateLoops(execTmux);
 
     function getSessionsListMessage(chatId) {
+      const { MULTI_USER_ENABLED } = require('./config');
+      const webUsername = getWebUsername(chatId);
+      const prefix = webUsername ? `u_${webUsername}_` : 'u_unknown_';
+
       return new Promise((resolve) => {
         execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_path}'], (err, stdout) => {
           if (err) {
@@ -614,17 +702,36 @@ module.exports = {
 
           lines.forEach(line => {
             const [name, attached, pathStr] = line.split('|');
-            const numAttached = parseInt(attached, 10) || 0;
-            const attachedStatus = numAttached > 0 
-              ? `🟢 前台查看 (Active${numAttached > 1 ? ` x${numAttached}` : ''})` 
-              : '⚪ 后台挂起 (Background)';
-            reply += `• <b>${escapeHTML(name)}</b> - ${attachedStatus}\n  <code>${escapeHTML(pathStr)}</code>\n`;
             
-            const isActive = name === currentActive;
-            inlineKeyboard.push([{
-              text: `${isActive ? '🎯' : '🔘'} ${name}`,
-              callback_data: `switch:${name}`
-            }]);
+            if (MULTI_USER_ENABLED) {
+              if (!name.startsWith(prefix)) {
+                return;
+              }
+              const shortName = name.substring(prefix.length);
+              const numAttached = parseInt(attached, 10) || 0;
+              const attachedStatus = numAttached > 0 
+                ? `🟢 前台查看 (Active${numAttached > 1 ? ` x${numAttached}` : ''})` 
+                : '⚪ 后台挂起 (Background)';
+              reply += `• <b>${escapeHTML(shortName)}</b> - ${attachedStatus}\n  <code>${escapeHTML(pathStr)}</code>\n`;
+              
+              const isActive = shortName === currentActive;
+              inlineKeyboard.push([{
+                text: `${isActive ? '🎯' : '🔘'} ${shortName}`,
+                callback_data: `switch:${shortName}`
+              }]);
+            } else {
+              const numAttached = parseInt(attached, 10) || 0;
+              const attachedStatus = numAttached > 0 
+                ? `🟢 前台查看 (Active${numAttached > 1 ? ` x${numAttached}` : ''})` 
+                : '⚪ 后台挂起 (Background)';
+              reply += `• <b>${escapeHTML(name)}</b> - ${attachedStatus}\n  <code>${escapeHTML(pathStr)}</code>\n`;
+              
+              const isActive = name === currentActive;
+              inlineKeyboard.push([{
+                text: `${isActive ? '🎯' : '🔘'} ${name}`,
+                callback_data: `switch:${name}`
+              }]);
+            }
           });
           
           reply += `\n🎯 <b>当前的活动会话：</b> <code>${escapeHTML(currentActive)}</code>`;
@@ -687,6 +794,7 @@ module.exports = {
             token,
             platform: 'wechat',
             bound: false,
+            webUsername: req.user.username,
             qrcode: qrResponse.qrcode,
             qrcodeUrl: qrResponse.qrcode_img_content,
             currentApiBaseUrl: 'https://ilinkai.weixin.qq.com',
@@ -720,6 +828,7 @@ module.exports = {
         token,
         platform: 'telegram',
         bound: false,
+        webUsername: req.user.username,
         chatId: null,
         username: null,
         expiresAt: now + 5 * 60 * 1000 // 5 minutes validity
@@ -781,20 +890,31 @@ module.exports = {
 
     // 3. Get list of bound users (Auth required)
     app.get('/api/im/status', requireAuth, (req, res) => {
+      const username = req.user.username;
+      const filteredTelegram = (bindings.telegram || []).filter(b => b.webUsername === username);
+      const filteredWechat = (bindings.wechat || []).filter(b => b.webUsername === username);
       res.json({
         enabled: !!process.env.TELEGRAM_BOT_TOKEN,
-        bindings: bindings.telegram,
+        bindings: filteredTelegram,
         wechatEnabled: true,
-        wechatBindings: bindings.wechat || []
+        wechatBindings: filteredWechat
       });
     });
 
     // 4. Unbind specific device (Auth required)
     app.post('/api/im/unbind', requireAuth, (req, res) => {
       const { chatId, openid, platform } = req.body;
+      const username = req.user.username;
       
       if (platform === 'wechat' || openid) {
         const idToUnbind = openid || chatId;
+        
+        // Find the binding first to verify ownership
+        const binding = (bindings.wechat || []).find(user => user.openid === idToUnbind);
+        if (binding && binding.webUsername !== username) {
+          return res.status(403).json({ error: 'Permission denied: Cannot unbind this device' });
+        }
+        
         bindings.wechat = (bindings.wechat || []).filter(user => user.openid !== idToUnbind);
         delete bindings.activeSessions[idToUnbind];
         saveBindings();
@@ -803,6 +923,12 @@ module.exports = {
 
       if (!chatId) {
         return res.status(400).json({ error: 'chatId is required' });
+      }
+
+      // Find the binding first to verify ownership
+      const binding = (bindings.telegram || []).find(user => user.chatId === chatId);
+      if (binding && binding.webUsername !== username) {
+        return res.status(403).json({ error: 'Permission denied: Cannot unbind this device' });
       }
 
       bindings.telegram = bindings.telegram.filter(user => user.chatId !== chatId);
@@ -1024,9 +1150,9 @@ module.exports = {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         
         // Verify that the Chat ID inside the token is still bound
-        const isStillBound = bindings.telegram.some(user => user.chatId === decoded.chatId);
-        if (!isStillBound) {
-          return res.status(401).send('<h1>登录失败</h1><p>发起此请求的 Telegram 账号已被解除绑定。</p>');
+        const boundUser = bindings.telegram.find(user => user.chatId === decoded.chatId);
+        if (!boundUser) {
+          return res.status(401).send('<h1>登录失败</h1><p>发起此请求的 Telegram 账号未绑定或已被解除绑定。</p>');
         }
 
         // Mark token as used
@@ -1034,7 +1160,21 @@ module.exports = {
 
         // Issue standard session cookie (valid for 7 days)
         const useHttps = !!(process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH);
-        const sessionToken = jwt.sign({ authenticated: true }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const { MULTI_USER_ENABLED } = require('./config');
+        
+        let jwtPayload;
+        if (MULTI_USER_ENABLED) {
+          const db = require('./services/dbService');
+          const users = db.getUsers();
+          const username = boundUser.webUsername || 'admin';
+          const storedUser = users[username.toLowerCase()];
+          const role = storedUser ? storedUser.role : 'user';
+          jwtPayload = { username, role, isMultiUser: true };
+        } else {
+          jwtPayload = { username: 'admin', role: 'admin', isMultiUser: false };
+        }
+
+        const sessionToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
         res.cookie('token', sessionToken, {
           httpOnly: true,
           secure: useHttps,
@@ -1183,8 +1323,16 @@ module.exports = {
           const pBinding = pendingBindings.get(token);
           if (pBinding && pBinding.expiresAt > Date.now()) {
             // Add user
-            if (!bindings.telegram.some(user => user.chatId === chatId)) {
-              bindings.telegram.push({ chatId, username });
+            const existing = bindings.telegram.find(user => user.chatId === chatId);
+            if (existing) {
+              existing.username = username;
+              existing.webUsername = pBinding.webUsername || 'admin';
+            } else {
+              bindings.telegram.push({
+                chatId,
+                username,
+                webUsername: pBinding.webUsername || 'admin'
+              });
             }
             pBinding.bound = true;
             pBinding.username = username;
@@ -1204,11 +1352,16 @@ module.exports = {
       }
 
       // Verify authorization for all other commands
-      const isUserBound = bindings.telegram.some(user => user.chatId === chatId);
-      if (!isUserBound) {
+      const boundUser = bindings.telegram.find(user => user.chatId === chatId);
+      if (!boundUser) {
         await sendTelegramMessage(chatId, `🔒 <b>未授权访问。</b>\n\n请先在网页端仪表盘扫描绑定二维码。`);
         return;
       }
+
+      // Get user context for multi-user mode
+      const { MULTI_USER_ENABLED } = require('./config');
+      const webUsername = boundUser.webUsername || 'admin';
+      const prefix = `u_${webUsername}_`;
 
       // Command: /help
       if (text === '/help') {
@@ -1258,17 +1411,19 @@ module.exports = {
           return;
         }
         const sessionName = parts[1];
+        const physicalSession = MULTI_USER_ENABLED ? `${prefix}${sessionName}` : sessionName;
+
         execTmux(['list-sessions', '-F', '#{session_name}'], async (err, stdout) => {
           if (err) {
             await sendTelegramMessage(chatId, `❌ 获取会话列表时发生错误。`);
             return;
           }
           const sessions = stdout.split('\n').map(s => s.trim()).filter(Boolean);
-          if (!sessions.includes(sessionName)) {
+          if (!sessions.includes(physicalSession)) {
             await sendTelegramMessage(chatId, `❌ 会话 <b>${escapeHTML(sessionName)}</b> 不存在。`);
             return;
           }
-          
+
           bindings.activeSessions[chatId] = sessionName;
           saveBindings();
           await sendTelegramMessage(chatId, `🎯 活动会话已切换为：<b>${escapeHTML(sessionName)}</b>`);
@@ -1283,8 +1438,9 @@ module.exports = {
           await sendTelegramMessage(chatId, `⚠️ 尚未选择活动会话。使用 /list 查看会话，然后通过 <code>/switch &lt;name&gt;</code> 选择一个。`);
           return;
         }
+        const physicalSession = MULTI_USER_ENABLED ? `${prefix}${sessionName}` : sessionName;
 
-        execTmux(['capture-pane', '-t', sessionName, '-p'], async (err, stdout) => {
+        execTmux(['capture-pane', '-t', physicalSession, '-p'], async (err, stdout) => {
           if (err) {
             await sendTelegramMessage(chatId, `❌ 截取屏幕失败：${escapeHTML(err.message)}`);
             return;
@@ -1305,8 +1461,10 @@ module.exports = {
         return;
       }
 
+      const physicalSession = MULTI_USER_ENABLED ? `${prefix}${sessionName}` : sessionName;
+
       // Send inputs to session
-      execTmux(['send-keys', '-t', sessionName, text, 'Enter'], (err) => {
+      execTmux(['send-keys', '-t', physicalSession, text, 'Enter'], (err) => {
         if (err) {
           sendTelegramMessage(chatId, `❌ 发送键盘输入失败：${escapeHTML(err.message)}`);
         } else {
@@ -1325,12 +1483,25 @@ module.exports = {
     const body = payload.body || '';
     const session = payload.session;
 
+    const { MULTI_USER_ENABLED } = require('./config');
+    
+    // Extract target user and clean session name
+    let targetUser = null;
+    let displaySession = session;
+    if (MULTI_USER_ENABLED && session && session.startsWith('u_')) {
+      const parts = session.split('_');
+      if (parts.length >= 3) {
+        targetUser = parts[1];
+        displaySession = parts.slice(2).join('_');
+      }
+    }
+
     // 1. Send Telegram Notification if enabled
     const tgToken = process.env.TELEGRAM_BOT_TOKEN;
     if (tgToken && bindings.telegram && bindings.telegram.length > 0) {
       let text = `🔔 <b>${escapeHTML(title)}</b>\n${escapeHTML(body)}`;
       if (session) {
-        text += `\n\n会话：<code>${escapeHTML(session)}</code>`;
+        text += `\n\n会话：<code>${escapeHTML(displaySession)}</code>`;
       }
 
       let replyMarkup = null;
@@ -1348,8 +1519,11 @@ module.exports = {
       }
 
       for (const user of bindings.telegram) {
+        if (targetUser && user.webUsername !== targetUser) {
+          continue;
+        }
         if (session && !bindings.activeSessions[user.chatId]) {
-          bindings.activeSessions[user.chatId] = session;
+          bindings.activeSessions[user.chatId] = displaySession;
           saveBindings();
         }
         await sendTelegramMessage(user.chatId, text, replyMarkup);
@@ -1370,10 +1544,14 @@ module.exports = {
           const accessToken = tokenData.access_token;
           let text = `🔔 ${title}\n${body}`;
           if (session) {
-            text += `\n\n会话：${session}`;
+            text += `\n\n会话：${displaySession}`;
           }
 
-          const users = bindings.wechat.map(u => u.openid).join('|');
+          const users = bindings.wechat
+            .filter(u => !targetUser || u.webUsername === targetUser)
+            .map(u => u.openid)
+            .join('|');
+          if (!users) return;
           const sendUrl = `https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`;
           
           await fetch(sendUrl, {
@@ -1394,14 +1572,20 @@ module.exports = {
     }
 
     // 3. Send WeChat ClawBot Notification if enabled
-    if (bindings.wechatConfig && bindings.wechatConfig.botToken && bindings.wechat && bindings.wechat.length > 0) {
-      const config = bindings.wechatConfig;
-      let text = `🔔 ${title}\n${body}`;
-      if (session) {
-        text += `\n\n会话/Session: ${session}`;
-      }
-
+    if (bindings.wechat && Array.isArray(bindings.wechat)) {
       for (const user of bindings.wechat) {
+        if (targetUser && user.webUsername !== targetUser) {
+          continue;
+        }
+        if (!user.config || !user.config.botToken) {
+          continue;
+        }
+        
+        let text = `🔔 ${title}\n${body}`;
+        if (session) {
+          text += `\n\n会话/Session: ${displaySession}`;
+        }
+        
         try {
           const bodyPayload = {
             msg: {
@@ -1418,9 +1602,9 @@ module.exports = {
               ]
             }
           };
-          await ilinkPostFetch(config.baseUrl, "ilink/bot/sendmessage", bodyPayload, config.botToken);
+          await ilinkPostFetch(user.config.baseUrl || "https://ilinkai.weixin.qq.com", "ilink/bot/sendmessage", bodyPayload, user.config.botToken);
         } catch (err) {
-          console.error('[IM Bot] WeChat ClawBot notify error:', err);
+          console.error(`[IM Bot] WeChat ClawBot notify error for ${user.openid}:`, err);
         }
       }
     }

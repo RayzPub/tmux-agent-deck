@@ -137,3 +137,12 @@ vapid.json
 
 # IM Bot Bindings Data
 im_bindings.json
+
+# Database & Multi-User Runtime data
+data/
+user_data/
+
+workspaces/
+
+# Backup files
+*.bak

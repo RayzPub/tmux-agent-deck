@@ -1,0 +1,163 @@
+/* ============================================
+   Invite Codes Modal Styles
+   ============================================ */
+
+#inviteModal {
+  background: rgba(3, 3, 7, 0.85);
+  backdrop-filter: blur(10px);
+}
+
+.invite-modal-card {
+  background: #070912;
+  border: 2px solid var(--neon-cyan);
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.25);
+}
+
+.invite-modal-header {
+  border-bottom: 1px solid rgba(0, 240, 255, 0.15);
+}
+
+.invite-modal-title {
+  color: var(--neon-cyan);
+}
+
+#inviteModal .modal-close {
+  color: var(--text-secondary);
+}
+
+#inviteModal .modal-close:hover {
+  color: var(--text-primary);
+}
+
+#inviteNoteInput {
+  background: rgba(7, 9, 18, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 2px solid var(--text-muted);
+  color: #fff;
+}
+
+#inviteNoteInput:focus {
+  border-color: var(--neon-cyan);
+}
+
+.invite-table-container {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(3, 3, 7, 0.6);
+}
+
+.invite-table {
+  color: var(--text-primary);
+}
+
+.invite-table-header-row {
+  border-bottom: 1px solid rgba(0, 240, 255, 0.15);
+  color: var(--neon-pink);
+}
+
+.invite-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.invite-table td {
+  padding: 8px;
+}
+
+.invite-code-cell {
+  color: var(--neon-pink);
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.invite-code-cell:hover {
+  text-decoration: underline;
+}
+
+.delete-invite-btn {
+  color: var(--neon-pink);
+}
+
+.delete-invite-btn:hover {
+  color: #ff3377;
+}
+
+/* ============================================
+   Light Minimalist Theme - Invite Modal
+   ============================================ */
+
+body.light-minimalist #inviteModal {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+body.light-minimalist .invite-modal-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+body.light-minimalist .invite-modal-header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+body.light-minimalist .invite-modal-title {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+body.light-minimalist #inviteModal .modal-close {
+  color: #94a3b8;
+}
+
+body.light-minimalist #inviteModal .modal-close:hover {
+  color: #0f172a;
+}
+
+body.light-minimalist #inviteNoteInput {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-bottom: 2px solid #cbd5e1;
+  color: #0f172a;
+}
+
+body.light-minimalist #inviteNoteInput:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+body.light-minimalist #inviteNoteInput::placeholder {
+  color: #94a3b8;
+}
+
+body.light-minimalist .invite-table-container {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+body.light-minimalist .invite-table {
+  color: #1e293b;
+}
+
+body.light-minimalist .invite-table-header-row {
+  border-bottom: 1px solid #e2e8f0;
+  color: #dc2626;
+}
+
+body.light-minimalist .invite-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+body.light-minimalist .invite-code-cell {
+  color: #2563eb;
+}
+
+body.light-minimalist .invite-code-cell:hover {
+  color: #1d4ed8;
+}
+
+body.light-minimalist .delete-invite-btn {
+  color: #dc2626;
+}
+
+body.light-minimalist .delete-invite-btn:hover {
+  color: #b91c1c;
+}

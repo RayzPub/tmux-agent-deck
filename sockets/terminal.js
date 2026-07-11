@@ -1,8 +1,8 @@
 const pty = require('node-pty');
 const jwt = require('jsonwebtoken');
 const { getRunUser } = require('../services/tmuxService');
-const { getHomeDir } = require('../services/fileService');
-const { JWT_SECRET } = require('../config');
+const { getHomeDir, getUserWorkspaceRoot, getDefaultWorkspacePath, getUserHomeDir } = require('../services/fileService');
+const { JWT_SECRET, MULTI_USER_ENABLED } = require('../config');
 
 const initSocket = (io) => {
   // Socket.io Authentication Middleware
@@ -64,26 +64,33 @@ const initSocket = (io) => {
         return;
       }
 
-      console.log(`Spawning pty for tmux session: ${sessionName} (${cols}x${rows})`);
+      let physicalSession = sessionName;
+      if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
+        physicalSession = `u_${socket.user.username}_${sessionName}`;
+      }
+
+      console.log(`Spawning pty for tmux session: ${physicalSession} (${cols}x${rows})`);
 
       const runUser = getRunUser();
       const shell = runUser ? '/usr/bin/sudo' : 'tmux';
       const args = runUser
-        ? ['-u', runUser, 'tmux', 'new-session', '-A', '-s', sessionName]
-        : ['new-session', '-A', '-s', sessionName];
-      const userHome = getHomeDir();
+        ? ['-u', runUser, 'tmux', 'new-session', '-A', '-s', physicalSession]
+        : ['new-session', '-A', '-s', physicalSession];
+      const workspacePath = getDefaultWorkspacePath(socket.user ? socket.user.username : null);
+      const userHome = getUserHomeDir(socket.user ? socket.user.username : null);
 
       try {
         ptyProcess = pty.spawn(shell, args, {
           name: 'xterm-256color',
           cols: cols || 80,
           rows: rows || 24,
-          cwd: userHome,
+          cwd: workspacePath,
           env: {
             ...process.env,
             TERM: 'xterm-256color',
             HOME: userHome,
-            USER: runUser || process.env.USER || require('os').userInfo().username
+            USER: runUser || process.env.USER || require('os').userInfo().username,
+            SKIP_SUDO_HINT: '1'
           }
         });
 

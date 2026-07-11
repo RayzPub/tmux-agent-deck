@@ -12,6 +12,7 @@ const PASSWORD = process.env.PASSWORD;
 const JWT_SECRET = process.env.JWT_SECRET;
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
+const MULTI_USER_ENABLED = process.env.MULTI_USER_ENABLED === 'true';
 
 let useHttps = false;
 let sslOptions = null;
@@ -54,5 +55,7 @@ module.exports = {
   SSL_CERT_PATH,
   SSL_KEY_PATH,
   useHttps,
-  sslOptions
+  sslOptions,
+  MULTI_USER_ENABLED
 };
+
