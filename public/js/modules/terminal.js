@@ -455,6 +455,12 @@ export function attachSession(sessionName) {
         }
         dragStart = null;
       }
+
+      // Capture native browser selection (e.g. Option-drag on Mac or Shift-drag)
+      const browserSel = window.getSelection() ? window.getSelection().toString() : '';
+      if (browserSel && browserSel.trim().length > 0) {
+        state.lastSelection = browserSel;
+      }
     });
 
     cached = {
@@ -511,14 +517,16 @@ export function attachSession(sessionName) {
       const key = e.key.toLowerCase();
 
       if (isCtrlOrCmd && key === 'c' && !e.shiftKey) {
-        const selection = sessionTerm.getSelection();
+        const termSelection = sessionTerm.getSelection();
+        const browserSelection = window.getSelection() ? window.getSelection().toString() : '';
+        const selection = (termSelection && termSelection.trim().length > 0) ? termSelection : browserSelection;
         if (selection && selection.trim().length > 0) {
           writeToClipboard(selection);
           return false;
         } else {
           const timeSinceDrag = Date.now() - state.lastDragWithoutShiftTime;
           if (timeSinceDrag < 4000) {
-            showTipToast('💡 提示：tmux 鼠标模式已开启。请按住 Shift 键再用鼠标拖拽选择以进行复制。');
+            showTipToast('💡 提示：tmux 鼠标模式已开启。请按住 Shift 键（Mac上按住 Option 键）再用鼠标拖拽选择以进行复制。');
           }
         }
       }

@@ -23,21 +23,33 @@ export function updateThemeButtonUI(isLight) {
   }
 }
 
+export function updateMetaThemeColor(isLight) {
+  const meta = document.getElementById('pwaThemeColor');
+  if (meta) {
+    // In light mode, make it white (#ffffff) to blend with the light theme header
+    // In dark mode, make it cyan (#00f0ff) to match the cyberpunk neon theme color
+    meta.setAttribute('content', isLight ? '#ffffff' : '#00f0ff');
+  }
+}
+
 export function initTheme() {
   const savedTheme = localStorage.getItem('theme-style');
-  if (savedTheme === 'light-minimalist') {
+  const isLight = savedTheme === 'light-minimalist';
+  if (isLight) {
     document.body.classList.add('light-minimalist');
     updateThemeButtonUI(true);
   } else {
     document.body.classList.remove('light-minimalist');
     updateThemeButtonUI(false);
   }
+  updateMetaThemeColor(isLight);
 }
 
 export function toggleTheme() {
   const isLight = document.body.classList.toggle('light-minimalist');
   localStorage.setItem('theme-style', isLight ? 'light-minimalist' : 'dark-cyberpunk');
   updateThemeButtonUI(isLight);
+  updateMetaThemeColor(isLight);
   
   // Update all terminal instances themes
   for (const cached of state.sessionCache.values()) {
