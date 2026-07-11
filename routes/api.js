@@ -575,4 +575,88 @@ router.post('/push/trigger', (req, res) => {
   res.json({ success: true });
 });
 
+// Store temporary scan-to-login tokens
+const tempLoginTokens = new Map();
+
+// API: Get server network IPs for mobile scanning
+router.get('/system/network-ips', requireAuth, (req, res) => {
+  try {
+    const os = require('os');
+    const networkInterfaces = os.networkInterfaces();
+    const ips = [];
+    for (const interfaceName of Object.keys(networkInterfaces)) {
+      for (const intf of networkInterfaces[interfaceName]) {
+        // Only return IPv4 and skip internal loopback addresses
+        if (intf.family === 'IPv4' && !intf.internal) {
+          ips.push({
+            name: interfaceName,
+            address: intf.address
+          });
+        }
+      }
+    }
+    res.json({ success: true, ips });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve network interfaces', details: err.message });
+  }
+});
+
+// API: Generate short-lived temp token for mobile login
+router.post('/system/temp-login-token', requireAuth, (req, res) => {
+  try {
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(24).toString('hex');
+    const expiresIn = 60; // 60 seconds
+    const expiresAt = Date.now() + expiresIn * 1000;
+    
+    // Store in map
+    tempLoginTokens.set(token, { expiresAt });
+    
+    // Periodically clean up expired tokens to prevent leak
+    if (tempLoginTokens.size > 100) {
+      const now = Date.now();
+      for (const [key, value] of tempLoginTokens.entries()) {
+        if (now > value.expiresAt) {
+          tempLoginTokens.delete(key);
+        }
+      }
+    }
+    
+    res.json({ success: true, token, expiresIn });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate login token', details: err.message });
+  }
+});
+
+// API: Login using short-lived temp token (No Auth required for this endpoint)
+router.get('/login-by-token', (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.redirect('/login.html?error=scan_invalid');
+  }
+
+  const tokenData = tempLoginTokens.get(token);
+  if (!tokenData) {
+    return res.redirect('/login.html?error=scan_invalid');
+  }
+
+  // Delete immediately (one-time use)
+  tempLoginTokens.delete(token);
+
+  if (Date.now() > tokenData.expiresAt) {
+    return res.redirect('/login.html?error=scan_expired');
+  }
+
+  // Generate standard JWT cookie (same as standard login)
+  const jwtToken = jwt.sign({ authenticated: true }, JWT_SECRET, { expiresIn: '7d' });
+  res.cookie('token', jwtToken, {
+    httpOnly: true,
+    secure: useHttps,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+
+  // Redirect to main deck
+  res.redirect('/');
+});
+
 module.exports = router;

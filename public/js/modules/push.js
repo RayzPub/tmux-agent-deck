@@ -71,8 +71,9 @@ export async function initPushNotifications() {
   }
 
   try {
-    state.swRegistration = await navigator.serviceWorker.register('/sw.js');
-    console.log('Service Worker registered successfully:', state.swRegistration);
+    await navigator.serviceWorker.register('/sw.js');
+    state.swRegistration = await navigator.serviceWorker.ready;
+    console.log('Service Worker registered and ready:', state.swRegistration);
 
     const subscription = await state.swRegistration.pushManager.getSubscription();
     state.isSubscribed = !(subscription === null);
@@ -87,7 +88,20 @@ export async function initPushNotifications() {
 }
 
 export async function togglePushSubscription() {
-  if (!state.swRegistration) return;
+  if (!state.swRegistration) {
+    if ('serviceWorker' in navigator) {
+      try {
+        state.swRegistration = await navigator.serviceWorker.ready;
+      } catch (err) {
+        console.error('Service Worker ready check failed:', err);
+      }
+    }
+  }
+
+  if (!state.swRegistration) {
+    alert('Push notifications are not ready or not supported. Please make sure you are using a secure connection (HTTPS) with a valid SSL certificate.');
+    return;
+  }
   
   if (state.isSubscribed) {
     try {
@@ -100,6 +114,7 @@ export async function togglePushSubscription() {
       updatePushBtnUI();
     } catch (err) {
       console.error('Error unsubscribing:', err);
+      alert('Failed to unsubscribe: ' + err.message);
     }
   } else {
     try {
@@ -110,6 +125,9 @@ export async function togglePushSubscription() {
       }
 
       const keyRes = await fetch('/api/push/key');
+      if (!keyRes.ok) {
+        throw new Error('Failed to fetch VAPID public key from server');
+      }
       const keyData = await keyRes.json();
       const applicationServerKey = urlB64ToUint8Array(keyData.publicKey);
 

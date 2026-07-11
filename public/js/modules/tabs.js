@@ -127,7 +127,9 @@ export function activateTab(tabId) {
     activeFilePath.textContent = tab.path;
     const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
     const wsPrefix = ws ? `[${ws.name}] ` : '';
-    currentPathLabel.textContent = wsPrefix + '/' + tab.path;
+    if (currentPathLabel) {
+      currentPathLabel.textContent = wsPrefix + '/' + tab.path;
+    }
     loadEditorFile(tab.path);
   } else if (tab.type === 'git-diff') {
     terminalPanel.classList.add('hidden');
@@ -143,7 +145,9 @@ export function activateTab(tabId) {
     activeFilePath.textContent = tab.path || 'All Changes';
     const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
     const wsPrefix = ws ? `[${ws.name}] ` : '';
-    currentPathLabel.textContent = wsPrefix + (tab.path ? '/git-diff/' + tab.path : '/git-diff');
+    if (currentPathLabel) {
+      currentPathLabel.textContent = wsPrefix + (tab.path ? '/git-diff/' + tab.path : '/git-diff');
+    }
     loadGitDiff(tab.path);
   }
 }

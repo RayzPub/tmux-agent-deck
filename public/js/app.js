@@ -1,11 +1,12 @@
 import { state } from './modules/state.js';
 import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
-import { saveEditorFile } from './modules/editor.js';
+import { saveEditorFile, updateMarkdownPreview, updatePreviewUI } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
 import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js?v=1.0.5';
-import { initPushNotifications, togglePushSubscription } from './modules/push.js';
+import { initPushNotifications, togglePushSubscription } from './modules/push.js?v=1.0.6';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
+import { initQrCode } from './modules/qrcode.js';
 
 // Elements
 const sessionList = document.getElementById('sessionList');
@@ -14,6 +15,7 @@ const newSessionBtn = document.getElementById('newSessionBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const hostIpText = document.getElementById('hostIp');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
+const pushToggleBtn = document.getElementById('pushToggleBtn');
 const reloadBtn = document.getElementById('reloadBtn');
 
 const welcomePanel = document.getElementById('welcomePanel');
@@ -60,7 +62,6 @@ const closeSidebarBtnFiles = document.getElementById('closeSidebarBtnFiles');
 
 const refreshFilesBtn = document.getElementById('refreshFilesBtn');
 const collapseAllBtn = document.getElementById('collapseAllBtn');
-const currentPathLabel = document.getElementById('currentPathLabel');
 const fileTreeContainer = document.getElementById('fileTreeContainer');
 
 const explorerWorkspaceSelect = document.getElementById('explorerWorkspaceSelect');
@@ -105,6 +106,11 @@ if (themeToggleBtn) {
   themeToggleBtn.addEventListener('click', toggleTheme);
 }
 initTheme();
+
+// Push notification toggling initialization
+if (pushToggleBtn) {
+  pushToggleBtn.addEventListener('click', togglePushSubscription);
+}
 
 // Monaco initialization
 if (typeof require !== 'undefined') {
@@ -154,6 +160,10 @@ if (typeof require !== 'undefined') {
 
     state.editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       saveEditorFile();
+    });
+
+    state.editorInstance.onDidChangeModelContent(() => {
+      updateMarkdownPreview();
     });
   });
 }
@@ -361,6 +371,45 @@ if (sidebar && sidebarOverlay) {
   if (closeSidebarBtnFiles) {
     closeSidebarBtnFiles.addEventListener('click', closeSidebar);
   }
+
+  // Swipe to open/close sidebar on mobile
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  document.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (window.innerWidth > 768) return;
+
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+
+    const deltaX = touchEndX - touchStartX;
+    const deltaY = touchEndY - touchStartY;
+
+    // Horizontal swipe threshold of 60px, must be mostly horizontal
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
+      const isSidebarOpen = sidebar.classList.contains('open');
+
+      if (deltaX > 0) {
+        // Swipe Right (Left-to-right) -> Open Sidebar
+        // Only trigger if starting from the left edge of the screen (< 50px)
+        if (!isSidebarOpen && touchStartX < 50) {
+          sidebar.classList.add('open');
+          sidebarOverlay.classList.remove('hidden');
+        }
+      } else {
+        // Swipe Left (Right-to-left) -> Close Sidebar
+        if (isSidebarOpen) {
+          sidebar.classList.remove('open');
+          sidebarOverlay.classList.add('hidden');
+        }
+      }
+    }
+  }, { passive: true });
 }
 
 // Prevent bouncing drag scrolls
@@ -563,6 +612,16 @@ saveFileBtn.addEventListener('click', saveEditorFile);
 closeEditorBtn.addEventListener('click', () => {
   if (state.activeTabId) closeTab(state.activeTabId);
 });
+
+const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+if (togglePreviewBtn) {
+  togglePreviewBtn.addEventListener('click', () => {
+    state.markdownPreviewActive = !state.markdownPreviewActive;
+    const activeTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'editor');
+    const path = activeTab ? activeTab.path : null;
+    updatePreviewUI(path);
+  });
+}
 
 editorTextarea.addEventListener('keydown', (e) => {
   if (!state.editorInstance && (e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -980,6 +1039,7 @@ if ('serviceWorker' in navigator) {
 // Convert native selects to custom ones
 convertSelectToCustom(explorerWorkspaceSelect);
 convertSelectToCustom(sessionWorkspaceSelect);
+convertSelectToCustom(document.getElementById('qrCodeUrlSelect'));
 
 // Initial Load Handler
 loadWorkspaces().then(async () => {
@@ -990,6 +1050,7 @@ loadWorkspaces().then(async () => {
   setInterval(loadSessions, 5000);
   initPushNotifications();
   initVoiceInput();
+  initQrCode();
 
   // Control Dropdown settings panel
   const deckControlToggleBtn = document.getElementById('deckControlToggleBtn');
@@ -1009,7 +1070,7 @@ loadWorkspaces().then(async () => {
 
     deckControlDropdownMenu.addEventListener('click', (e) => {
       const target = e.target.closest('button, .header-btn');
-      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn')) {
+      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn')) {
         deckControlDropdownMenu.classList.add('hidden');
       }
     });

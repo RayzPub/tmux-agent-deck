@@ -210,6 +210,15 @@ export function applyGitTreeClasses() {
   }
 }
 
+function closeSidebarOnMobile() {
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (sidebarOverlay) sidebarOverlay.classList.add('hidden');
+  }
+}
+
 export function openFile(path) {
   const filename = path.split('/').pop();
   let tab = state.tabs.find(t => t.type === 'editor' && t.path === path);
@@ -223,6 +232,7 @@ export function openFile(path) {
     state.tabs.push(tab);
   }
   activateTab(tab.id);
+  closeSidebarOnMobile();
 }
 
 export function openGitDiff(filePath = '') {
@@ -240,6 +250,7 @@ export function openGitDiff(filePath = '') {
     state.tabs.push(tab);
   }
   activateTab(tab.id);
+  closeSidebarOnMobile();
 }
 
 export async function loadDirectory(dirPath, containerEl) {
@@ -390,5 +401,7 @@ export async function refreshFileTree() {
   const fileTreeContainer = document.getElementById('fileTreeContainer');
   const currentPathLabel = document.getElementById('currentPathLabel');
   loadDirectory('', fileTreeContainer);
-  currentPathLabel.textContent = getWorkspacePrefix() + '/';
+  if (currentPathLabel) {
+    currentPathLabel.textContent = getWorkspacePrefix() + '/';
+  }
 }

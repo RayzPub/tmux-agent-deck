@@ -191,6 +191,20 @@
         if (window.innerWidth <= 768) return;
         welcomeGrid3D.style.transform = 'rotateX(30deg) rotateY(0deg) translate3d(0, 0, 0)';
       });
+    // Check query params for scan errors
+    const urlParams = new URLSearchParams(window.location.search);
+    const errorParam = urlParams.get('error');
+    if (errorParam && errorAlert) {
+      errorAlert.classList.remove('hidden');
+      const titleEl = errorAlert.querySelector('.alert-title');
+      const messageEl = errorAlert.querySelector('.alert-message');
+      if (errorParam === 'scan_expired') {
+        if (titleEl) titleEl.textContent = 'SCAN EXPIRED';
+        if (messageEl) messageEl.textContent = 'THE 60S SCAN CODE HAS EXPIRED. RE-SCAN THE NEW CODE.';
+      } else if (errorParam === 'scan_invalid') {
+        if (titleEl) titleEl.textContent = 'SCAN INVALID';
+        if (messageEl) messageEl.textContent = 'THE SCAN CODE IS INVALID OR HAS BEEN USED.';
+      }
     }
   </script>
 </body>

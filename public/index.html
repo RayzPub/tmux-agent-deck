@@ -24,6 +24,10 @@
   <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
+  <!-- QRCode Generator -->
+  <script src="/js/qrcode.min.js"></script>
+  <!-- Marked Markdown Parser -->
+  <script src="/js/marked.umd.js"></script>
   <!-- Monaco Editor Loader -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
 </head>
@@ -67,6 +71,10 @@
           <button id="themeToggleBtn" class="header-btn" title="Toggle Theme Style">
             <i data-lucide="moon"></i>
             <span>CYBERPUNK</span>
+          </button>
+          <button id="qrCodeBtn" class="header-btn hidden-mobile" title="手机扫码打开网页">
+            <i data-lucide="qr-code"></i>
+            <span>MOBILE CONNECT</span>
           </button>
           <button id="reloadBtn" class="header-btn" title="Reload Deck">
             <i data-lucide="refresh-cw"></i>
@@ -161,7 +169,6 @@
           <button id="gitDiffWorkspaceBtn" class="cyber-btn-outline" title="Show Only Modified Files">
             <i data-lucide="git-compare"></i>
           </button>
-          <span class="current-path-label" id="currentPathLabel">/</span>
         </div>
 
         <div class="file-tree-container" id="fileTreeContainer">
@@ -263,6 +270,10 @@
           </div>
           <div class="editor-controls">
             <span class="editor-status-msg" id="editorStatusMsg"></span>
+            <button id="togglePreviewBtn" class="terminal-control-btn hidden" title="Toggle Markdown Preview">
+              <i data-lucide="eye"></i>
+              <span>PREVIEW</span>
+            </button>
             <button id="saveFileBtn" class="terminal-control-btn" title="Save File (Ctrl+S)">
               <i data-lucide="save"></i>
               <span>SAVE</span>
@@ -277,6 +288,7 @@
         <!-- Editor Content -->
         <div class="editor-container-wrapper">
           <div id="editorTextarea" class="editor-textarea"></div>
+          <div id="markdownPreview" class="markdown-preview hidden"></div>
         </div>
       </section>
 
@@ -307,7 +319,7 @@
         </div>
 
         <!-- Diff Content -->
-        <div class="editor-container-wrapper" style="overflow: auto; background: rgba(5, 7, 13, 0.95); padding: 16px; display: block;">
+        <div class="editor-container-wrapper" style="overflow: auto; padding: 16px; display: block;">
           <div id="diffContentContainer" class="diff-viewer-content">
             <!-- Diff output parsed as lines will be rendered here -->
           </div>
@@ -525,6 +537,73 @@
     </div>
   </div>
 
+  <!-- QR Code Modal -->
+  <div class="modal-overlay hidden" id="qrCodeModal" style="z-index: 1000;">
+    <div class="modal-card" style="max-width: 420px; text-align: center;">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      <div class="auth-glow"></div>
+
+      <div class="modal-header" style="justify-content: center; position: relative;">
+        <h3><i data-lucide="qr-code" style="vertical-align: middle; margin-right: 8px;"></i> MOBILE SCAN</h3>
+        <button class="modal-close" id="closeQrCodeModalBtn" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%);"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-form" style="display: flex; flex-direction: column; align-items: center; gap: 15px; padding: 10px 0;">
+        <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 5px 0; font-family: var(--font-mono); line-height: 1.5;">
+          请使用手机相机或微信/浏览器扫码<br>在移动端打开此控制台页面。
+        </p>
+
+        <!-- Dropdown to select different interfaces / current URL -->
+        <div class="input-group" style="width: 100%; margin-bottom: 0;">
+          <label style="text-align: left; display: block; margin-bottom: 5px;">
+            <span class="label-tech-text">// SELECT_HOST_IP_OR_URL</span>
+          </label>
+          <div class="input-wrapper" style="position: relative; display: flex; align-items: center; width: 100%;">
+            <i data-lucide="network" class="input-icon" style="position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-secondary);"></i>
+            <select id="qrCodeUrlSelect" class="cyber-select" style="width: 100%; padding: 8px 10px 8px 36px; font-size: 13px; height: 34px; line-height: 1; background: rgba(7, 9, 18, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-bottom: 2px solid var(--text-muted); color: #fff; border-radius: 4px; outline: none; font-family: var(--font-mono); letter-spacing: 1px;">
+              <!-- populated dynamically -->
+            </select>
+          </div>
+        </div>
+        
+        <div id="qrcodeContainer" style="background: white; padding: 16px; border-radius: 8px; box-shadow: 0 0 20px rgba(0, 240, 255, 0.2); display: flex; justify-content: center; align-items: center; margin: 10px 0;">
+          <!-- QR Code Canvas will be inserted here -->
+        </div>
+
+        <div id="qrcodeTimer" style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); margin: -5px 0 5px 0; display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
+          <i data-lucide="timer" style="width: 14px; height: 14px;"></i>
+          <span>VALID FOR: --s</span>
+        </div>
+
+        <div class="input-group" style="width: 100%; margin-bottom: 0;">
+          <label style="text-align: left; display: block; margin-bottom: 5px;">
+            <span class="label-tech-text">// TARGET_URL</span>
+          </label>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <div class="input-wrapper" style="flex: 1; display: flex; align-items: center;">
+              <i data-lucide="link-2" class="input-icon" style="position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-secondary);"></i>
+              <input type="text" id="qrCodeUrlInput" readonly style="font-size: 11px; padding: 8px 8px 8px 36px; font-family: var(--font-mono); flex: 1; min-width: 0; height: 34px; background: rgba(0, 240, 255, 0.03); border: 1px solid rgba(0, 240, 255, 0.2); color: var(--neon-cyan); outline: none;">
+            </div>
+            <button type="button" class="cyber-btn-outline" id="copyQrCodeUrlBtn" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;" title="复制链接">
+              <i data-lucide="copy" style="width: 16px; height: 16px;"></i>
+            </button>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: var(--neon-pink); font-family: var(--font-mono); margin-top: 5px; width: 100%; text-align: left; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 10px; line-height: 1.4;">
+          * 提示：如果扫码后无法打开，请确保您的手机和服务器处于同一个局域网（例如连接到同一个 Wi-Fi）。
+        </div>
+
+        <div class="modal-actions" style="margin-top: 10px; width: 100%; justify-content: center;">
+          <button type="button" class="cyber-btn" id="closeQrCodeModalOkBtn" style="min-width: 100px;">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Sidebar Overlay for mobile -->
   <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
 
@@ -593,7 +672,7 @@
   </div>
 
   <!-- Custom Client Script -->
-  <script type="module" src="/js/app.js?v=1.0.5"></script>
+  <script type="module" src="/js/app.js?v=1.0.6"></script>
   <script src="/js/im-bot-client.js"></script>
 </body>
 </html>

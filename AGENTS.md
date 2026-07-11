@@ -9,6 +9,7 @@ This file defines the project standards, directory layout, commands, and coding 
 - **Run Commands**:
   - Run Production/Staging: `sudo npm start` or `sudo node server.js`
   - Non-Privileged Staging/Test Run: `PORT=3888 HTTPS_PORT=3889 SSL_CERT_PATH="" SSL_KEY_PATH="" node server.js`
+  - **Restart Guidelines**: Do NOT restart the server for frontend resource changes (e.g., changes under `public/` or static files). Only restart the server when backend code (e.g., `server.js`, `config/`, `routes/`, `services/`, `sockets/`, `middlewares/`) is modified.
 
 ## 2. Directory Layout & Architecture
 This project is fully refactored into a modular architecture. All logic must follow this layout:
