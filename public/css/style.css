@@ -3412,6 +3412,7 @@ body.light-minimalist .deck-dropdown-divider {
 .markdown-preview {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 24px;
   background: rgba(3, 4, 8, 0.95);
   border-left: 1px solid var(--border-neon);

@@ -425,6 +425,7 @@ if (terminalWorkspace) {
   terminalWorkspace.addEventListener('touchmove', (e) => {
     if (window.innerWidth <= 768) {
       if (e.target.closest('#editorTextarea') || 
+          e.target.closest('#markdownPreview') || 
           e.target.closest('#diffPanel .editor-container-wrapper') || 
           e.target.closest('#workspaceTabs')) {
         return;
