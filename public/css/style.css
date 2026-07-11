@@ -2637,6 +2637,48 @@ body.light-minimalist .label-tech-text {
   text-shadow: none;
 }
 
+/* Agent cards styling in light mode */
+body.light-minimalist .agent-card-inner {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+}
+
+body.light-minimalist .agent-card-inner:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+body.light-minimalist .agent-title {
+  color: #0f172a;
+}
+
+body.light-minimalist .agent-card-option input[type="radio"]:checked + .agent-card-inner {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: none;
+}
+
+body.light-minimalist .agent-card-option input[type="radio"]:checked + .agent-card-inner i {
+  color: #4f46e5;
+  filter: none;
+}
+
+body.light-minimalist .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-title {
+  color: #4f46e5;
+  text-shadow: none;
+}
+
+/* Directory Picker List Styles */
+#dirPickerList {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+body.light-minimalist #dirPickerList {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
 /* Auth / Login Page Overrides in Light Theme */
 body.light-minimalist.cyberpunk-auth-body {
   background: var(--bg-core);

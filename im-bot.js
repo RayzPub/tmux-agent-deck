@@ -6,6 +6,7 @@ const BINDINGS_FILE = path.join(__dirname, 'im_bindings.json');
 let bindings = {
   telegram: [],
   feishu: [],
+  wechat: [],
   activeSessions: {}
 };
 
@@ -18,6 +19,7 @@ function loadBindings() {
       bindings = JSON.parse(fs.readFileSync(BINDINGS_FILE, 'utf8'));
       if (!bindings.telegram) bindings.telegram = [];
       if (!bindings.feishu) bindings.feishu = [];
+      if (!bindings.wechat) bindings.wechat = [];
       if (!bindings.activeSessions) bindings.activeSessions = {};
     } catch (e) {
       console.error('[IM Bot] Error loading bindings:', e);
@@ -40,6 +42,94 @@ function escapeHTML(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function getCleanTerminalOutput(stdout, lineCount) {
+  // Remove ANSI escape codes
+  const cleanOutput = stdout.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+  
+  const lines = cleanOutput.split('\n');
+  const filteredLines = lines.map(line => {
+    const trimmed = line.trim();
+    // Filter out lines that are mostly horizontal borders or prompt separators (e.g. ─, ━, -, _, =)
+    if (trimmed.length >= 5) {
+      const nonDivider = trimmed.replace(/[─━┄┅┆┇┈┉┊┏═━─\-_=]/g, '');
+      if (nonDivider.length / trimmed.length < 0.25) {
+        return null; // Filter out this line
+      }
+    }
+    return line;
+  }).filter(line => line !== null);
+
+  // Return the last N lines
+  return filteredLines.slice(-lineCount).join('\n');
+}
+
+function randomWechatUin() {
+  const uint32 = Math.floor(Math.random() * 4294967296);
+  return Buffer.from(String(uint32), "utf-8").toString("base64");
+}
+
+async function ilinkPostFetch(baseUrl, endpoint, body, token) {
+  const url = `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}${endpoint}`;
+  
+  const headers = {
+    "Content-Type": "application/json",
+    "AuthorizationType": "ilink_bot_token",
+    "X-WECHAT-UIN": randomWechatUin(),
+    "iLink-App-Id": "bot",
+    "iLink-App-ClientVersion": String(((2 & 0xff) << 16) | ((4 & 0xff) << 8) | (6 & 0xff))
+  };
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`iLink POST error ${res.status}: ${text}`);
+  }
+  return JSON.parse(text);
+}
+
+async function ilinkGetFetch(baseUrl, endpoint) {
+  const url = `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}${endpoint}`;
+  
+  const headers = {
+    "iLink-App-Id": "bot",
+    "iLink-App-ClientVersion": String(((2 & 0xff) << 16) | ((4 & 0xff) << 8) | (6 & 0xff))
+  };
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`iLink GET error ${res.status}: ${text}`);
+  }
+  return JSON.parse(text);
+}
+
+async function fetchQRCode() {
+  const body = { local_token_list: [] };
+  const res = await ilinkPostFetch("https://ilinkai.weixin.qq.com", "ilink/bot/get_bot_qrcode?bot_type=3", body);
+  return res;
+}
+
+async function pollQRStatus(baseUrl, qrcode, verifyCode) {
+  let endpoint = `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`;
+  if (verifyCode) {
+    endpoint += `&verify_code=${encodeURIComponent(verifyCode)}`;
+  }
+  return await ilinkGetFetch(baseUrl, endpoint);
 }
 
 // Send helper to Telegram
@@ -217,9 +307,293 @@ function startSessionMonitor(sessionName, chatId, execTmux) {
   activeMonitors.set(sessionName, monitorState);
 }
 
+let wechatLoopRunning = false;
+
+function startWechatUpdateLoop(execTmux) {
+  if (wechatLoopRunning) return;
+  wechatLoopRunning = true;
+  runWechatUpdateLoop(execTmux).catch(err => {
+    console.error('[IM Bot] Wechat update loop crashed:', err);
+    wechatLoopRunning = false;
+  });
+}
+
+async function runWechatUpdateLoop(execTmux) {
+  console.log('🤖 [IM Bot] Starting WeChat ClawBot Update Loop...');
+  while (bindings.wechatConfig && bindings.wechatConfig.botToken) {
+    try {
+      const config = bindings.wechatConfig;
+      const body = {
+        get_updates_buf: config.getUpdatesBuf || "",
+        base_info: {
+          channel_version: "2.4.6",
+          bot_agent: "OpenClaw"
+        }
+      };
+
+      const res = await ilinkPostFetch(
+        config.baseUrl || "https://ilinkai.weixin.qq.com",
+        "ilink/bot/getupdates",
+        body,
+        config.botToken
+      );
+
+      if (res.ret && res.ret !== 0) {
+        console.error(`[IM Bot] WeChat polling API error: ret=${res.ret}, errcode=${res.errcode}, message=${res.errmsg}`);
+        if (res.ret === -14 || res.errcode === -14 || (res.errmsg && res.errmsg.toLowerCase().includes('token'))) {
+          console.warn('[IM Bot] WeChat session token expired or bound to another instance. Stopping update loop.');
+          delete bindings.wechatConfig;
+          saveBindings();
+          break;
+        }
+        await new Promise(r => setTimeout(r, 5000));
+        continue;
+      }
+
+      if (res.get_updates_buf) {
+        config.getUpdatesBuf = res.get_updates_buf;
+        saveBindings();
+      }
+
+      if (res.msgs && res.msgs.length > 0) {
+        for (const msg of res.msgs) {
+          await handleWechatInboundMessage(msg, execTmux);
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
+    } catch (err) {
+      console.error('[IM Bot] WeChat polling connection error:', err);
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  wechatLoopRunning = false;
+}
+
+async function handleWechatInboundMessage(msg, execTmux) {
+  const fromUser = msg.from_user_id;
+  const contextToken = msg.context_token;
+  
+  let text = "";
+  if (msg.item_list && msg.item_list.length > 0) {
+    const textItem = msg.item_list.find(item => item.type === 1 && item.text_item);
+    if (textItem) {
+      text = (textItem.text_item.text || "").trim();
+    }
+  }
+
+  if (!text) return;
+
+  if (!bindings.wechat) bindings.wechat = [];
+  const isBound = bindings.wechat.some(u => u.openid === fromUser);
+
+  async function reply(replyText) {
+    try {
+      const config = bindings.wechatConfig;
+      const body = {
+        msg: {
+          from_user_id: "",
+          to_user_id: fromUser,
+          client_id: `openclaw-weixin-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          message_type: 2,
+          message_state: 2,
+          item_list: [
+            {
+              type: 1,
+              text_item: { text: replyText }
+            }
+          ],
+          context_token: contextToken
+        }
+      };
+      await ilinkPostFetch(config.baseUrl, "ilink/bot/sendmessage", body, config.botToken);
+    } catch (err) {
+      console.error('[IM Bot] Failed to send WeChat reply:', err);
+    }
+  }
+
+  if (!isBound) {
+    return reply('🔒 未授权访问。请让管理员在控制端扫码登录以自动授权。');
+  }
+
+  const lowerText = text.toLowerCase();
+
+  // 1. Help Command
+  if (lowerText === '帮助' || lowerText === 'help' || lowerText === '?' || lowerText === '/help' || lowerText === '/start') {
+    return reply(
+      '🤖 微信终端助手可用命令：\n\n' +
+      '• 帮助 / help\n' +
+      '  - 查看本帮助消息\n\n' +
+      '• 会话 / list\n' +
+      '  - 列出所有 TMUX 会话\n\n' +
+      '• 切换 <名> / switch <名>\n' +
+      '  - 切换当前活动会话\n\n' +
+      '• 状态 / status\n' +
+      '  - 查看当前活动会话屏幕\n\n' +
+      '直接回复任何非指令文本，我将直接投递至活动会话终端输入中！'
+    );
+  }
+
+  // 2. List Sessions Command
+  if (lowerText === '会话' || lowerText === 'list' || lowerText === '/list' || lowerText === 'list会话' || lowerText === '列出会话') {
+    execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_path}'], (err, stdout) => {
+      if (err) {
+        return reply('🖥️ 服务器上当前没有活跃的 Tmux 会话。');
+      }
+      const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+      let replyText = '🖥️ TMUX 会话列表：\n';
+      const activeSession = bindings.activeSessions[fromUser] || '无';
+
+      lines.forEach(line => {
+        const [name, attached, pathStr] = line.split('|');
+        const numAttached = parseInt(attached, 10) || 0;
+        const attachedStatus = numAttached > 0 ? '🟢 活跃' : '⚪ 挂起';
+        replyText += `• ${name} [${attachedStatus}]\n  路径: ${pathStr}\n`;
+      });
+      replyText += `\n🎯 当前活动会话：${activeSession}\n回复 "切换 <名>" 或 "switch <名>" 可切换。`;
+      reply(replyText);
+    });
+    return;
+  }
+
+  // 3. Switch Session Command
+  if (lowerText.startsWith('切换') || lowerText.startsWith('switch ') || lowerText.startsWith('/switch ') || lowerText.startsWith('switch会话') || lowerText.startsWith('切换会话')) {
+    let sessionName = "";
+    if (lowerText.startsWith('切换')) {
+      sessionName = text.substring(2).trim();
+    } else if (lowerText.startsWith('switch ')) {
+      sessionName = text.substring(7).trim();
+    } else if (lowerText.startsWith('/switch ')) {
+      sessionName = text.substring(8).trim();
+    } else if (lowerText.startsWith('switch会话')) {
+      sessionName = text.substring(8).trim();
+    } else if (lowerText.startsWith('切换会话')) {
+      sessionName = text.substring(4).trim();
+    }
+
+    if (!sessionName) {
+      return reply('⚠️ 使用方法：切换 <会话名称> 或 switch <会话名称>');
+    }
+
+    execTmux(['list-sessions', '-F', '#{session_name}'], (err, stdout) => {
+      if (err) {
+        return reply('❌ 获取会话列表时发生错误。');
+      }
+      const sessions = stdout.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!sessions.includes(sessionName)) {
+        return reply(`❌ 会话 ${sessionName} 不存在。`);
+      }
+      
+      bindings.activeSessions[fromUser] = sessionName;
+      saveBindings();
+      reply(`🎯 活动会话已切换为：${sessionName}`);
+    });
+    return;
+  }
+
+  // 4. Status Command
+  if (lowerText === '状态' || lowerText === 'status' || lowerText === '/status' || lowerText === '查看状态') {
+    const sessionName = bindings.activeSessions[fromUser];
+    if (!sessionName) {
+      return reply('⚠️ 您当前尚未选择活动 TMUX 会话。请回复 "切换 <名称>" 绑定一个会话，或回复 "帮助" 查看说明。');
+    }
+
+    execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+      if (err) {
+        return reply(`❌ 截取屏幕失败：${err.message}`);
+      }
+      const lastLines = getCleanTerminalOutput(stdout, 20);
+      reply(`🖥️ 会话实时屏幕：${sessionName}\n\n${lastLines}`);
+    });
+    return;
+  }
+
+  // 5. Send Keys Command
+  const sessionName = bindings.activeSessions[fromUser];
+  if (!sessionName) {
+    return reply(
+      '⚠️ 您当前尚未选择活动 TMUX 会话。请先绑定会话后再发送键盘输入。\n\n' +
+      '🤖 快速命令说明：\n' +
+      '• 会话 / list - 查看可用会话\n' +
+      '• 切换 <名称> / switch <名称> - 选择要控制的会话\n' +
+      '• 帮助 / help - 查看完整指令列表'
+    );
+  }
+
+  execTmux(['send-keys', '-t', sessionName, text, 'Enter'], (err) => {
+    if (err) {
+      reply(`❌ 发送键盘输入失败：${err.message}`);
+    } else {
+      setTimeout(() => {
+        execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+          if (err) {
+            reply(`📥 输入已投递，但获取最新屏幕失败。`);
+          } else {
+            const lastLines = getCleanTerminalOutput(stdout, 15);
+            reply(`📥 输入已投递：${text}\n\n${lastLines}`);
+          }
+        });
+      }, 2000);
+    }
+  });
+}
+
+async function pollWechatLogin(PIN, execTmux) {
+  let count = 0;
+  const maxAttempts = 150;
+  
+  while (pendingBindings.has(PIN) && count < maxAttempts) {
+    const pBinding = pendingBindings.get(PIN);
+    if (!pBinding || pBinding.bound) break;
+
+    try {
+      const res = await pollQRStatus(pBinding.currentApiBaseUrl, pBinding.qrcode, pBinding.pendingVerifyCode);
+      pBinding.status = res.status;
+
+      if (res.status === 'confirmed' && res.bot_token && res.ilink_bot_id) {
+        bindings.wechatConfig = {
+          botToken: res.bot_token,
+          accountId: res.ilink_bot_id,
+          baseUrl: res.baseurl || 'https://ilinkai.weixin.qq.com',
+          userId: res.ilink_user_id,
+          getUpdatesBuf: ""
+        };
+        if (!bindings.wechat) bindings.wechat = [];
+        if (!bindings.wechat.some(u => u.openid === res.ilink_user_id)) {
+          bindings.wechat.push({ openid: res.ilink_user_id, username: '微信主账号' });
+        }
+        saveBindings();
+        
+        startWechatUpdateLoop(execTmux);
+
+        pBinding.bound = true;
+        pBinding.username = '微信主账号';
+        break;
+      } else if (res.status === 'need_verifycode') {
+        pBinding.verifyCodeRequired = true;
+      } else if (res.status === 'scaned_but_redirect' && res.redirect_host) {
+        pBinding.currentApiBaseUrl = `https://${res.redirect_host}`;
+      } else if (res.status === 'scaned') {
+        pBinding.pendingVerifyCode = undefined;
+      } else if (res.status === 'expired') {
+        pendingBindings.delete(PIN);
+        break;
+      }
+    } catch (err) {
+      console.error('[IM Bot] Error polling WeChat login:', err);
+    }
+
+    count++;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
 module.exports = {
   init(app, execTmux, getRunUser, requireAuth) {
     loadBindings();
+    if (bindings.wechatConfig && bindings.wechatConfig.botToken) {
+      startWechatUpdateLoop(execTmux);
+    }
 
     function getSessionsListMessage(chatId) {
       return new Promise((resolve) => {
@@ -294,13 +668,8 @@ module.exports = {
 
     // 1. Generate binding token (Auth required)
     app.get('/api/im/binding-token', requireAuth, (req, res) => {
-      if (!process.env.TELEGRAM_BOT_TOKEN) {
-        return res.status(400).json({ error: 'IM Bot is not configured on this server.' });
-      }
+      const platform = req.query.platform || 'telegram';
 
-      // Generate a unique 6-digit pin
-      let token = Math.floor(100000 + Math.random() * 900000).toString();
-      
       // Clean up expired ones first
       const now = Date.now();
       for (const [t, data] of pendingBindings.entries()) {
@@ -309,8 +678,47 @@ module.exports = {
         }
       }
 
+      let token = Math.floor(100000 + Math.random() * 900000).toString();
+
+      if (platform === 'wechat') {
+        // WeChat ClawBot integration using public iLink AI API
+        fetchQRCode().then(qrResponse => {
+          pendingBindings.set(token, {
+            token,
+            platform: 'wechat',
+            bound: false,
+            qrcode: qrResponse.qrcode,
+            qrcodeUrl: qrResponse.qrcode_img_content,
+            currentApiBaseUrl: 'https://ilinkai.weixin.qq.com',
+            verifyCodeRequired: false,
+            pendingVerifyCode: undefined,
+            expiresAt: now + 5 * 60 * 1000
+          });
+
+          // Start polling in background
+          pollWechatLogin(token, execTmux);
+
+          res.json({
+            token,
+            platform: 'wechat',
+            qrCodeUrl: qrResponse.qrcode_img_content,
+            instructions: '请用手机微信扫描下方二维码，并在确认登录后，在微信中向 Bot 发送此 PIN 码进行绑定。'
+          });
+        }).catch(err => {
+          console.error('[IM Bot] Failed to fetch WeChat QR Code:', err);
+          res.status(500).json({ error: '获取微信登录二维码失败：' + err.message });
+        });
+        return;
+      }
+
+      // Default to Telegram
+      if (!process.env.TELEGRAM_BOT_TOKEN) {
+        return res.status(400).json({ error: 'IM Bot is not configured on this server.' });
+      }
+
       pendingBindings.set(token, {
         token,
+        platform: 'telegram',
         bound: false,
         chatId: null,
         username: null,
@@ -319,6 +727,7 @@ module.exports = {
 
       res.json({
         token,
+        platform: 'telegram',
         botUsername,
         bindingUrl: `https://t.me/${botUsername}?start=${token}`
       });
@@ -346,20 +755,52 @@ module.exports = {
         return res.json({ status: 'bound', username: pBinding.username });
       }
 
+      if (pBinding.verifyCodeRequired) {
+        return res.json({ status: 'need_verifycode', message: '请输入手机微信上显示的两位数验证码：' });
+      }
+
       res.json({ status: 'pending' });
+    });
+
+    // Verify code submission (Auth required)
+    app.post('/api/im/wechat/verify-code', requireAuth, (req, res) => {
+      const { token, code } = req.body;
+      if (!token || !code) {
+        return res.status(400).json({ error: 'Token and Code are required' });
+      }
+
+      const pBinding = pendingBindings.get(token);
+      if (!pBinding) {
+        return res.status(404).json({ error: 'Session not found or expired' });
+      }
+
+      pBinding.pendingVerifyCode = code;
+      pBinding.verifyCodeRequired = false;
+      res.json({ success: true });
     });
 
     // 3. Get list of bound users (Auth required)
     app.get('/api/im/status', requireAuth, (req, res) => {
       res.json({
         enabled: !!process.env.TELEGRAM_BOT_TOKEN,
-        bindings: bindings.telegram
+        bindings: bindings.telegram,
+        wechatEnabled: true,
+        wechatBindings: bindings.wechat || []
       });
     });
 
     // 4. Unbind specific device (Auth required)
     app.post('/api/im/unbind', requireAuth, (req, res) => {
-      const { chatId } = req.body;
+      const { chatId, openid, platform } = req.body;
+      
+      if (platform === 'wechat' || openid) {
+        const idToUnbind = openid || chatId;
+        bindings.wechat = (bindings.wechat || []).filter(user => user.openid !== idToUnbind);
+        delete bindings.activeSessions[idToUnbind];
+        saveBindings();
+        return res.json({ success: true });
+      }
+
       if (!chatId) {
         return res.status(400).json({ error: 'chatId is required' });
       }
@@ -369,6 +810,195 @@ module.exports = {
       saveBindings();
 
       res.json({ success: true });
+    });
+
+    // WeChat Webhook verification and message receiver
+    const crypto = require('crypto');
+
+    app.get('/api/im/wechat/webhook', (req, res) => {
+      const token = process.env.WECHAT_TOKEN;
+      if (!token) {
+        return res.status(400).send('WeChat integration not enabled.');
+      }
+
+      const { signature, timestamp, nonce, echostr } = req.query;
+      const array = [token, timestamp, nonce].sort();
+      const tempStr = array.join('');
+      const hashCode = crypto.createHash('sha1').update(tempStr).digest('hex');
+
+      if (hashCode === signature) {
+        res.send(echostr);
+      } else {
+        res.status(403).send('Invalid signature');
+      }
+    });
+
+    app.post('/api/im/wechat/webhook', require('express').text({ type: '*/xml' }), (req, res) => {
+      const token = process.env.WECHAT_TOKEN;
+      if (!token) {
+        return res.status(400).send('Forbidden');
+      }
+
+      // Validate signature
+      const { signature, timestamp, nonce } = req.query;
+      const array = [token, timestamp, nonce].sort();
+      const tempStr = array.join('');
+      const hashCode = crypto.createHash('sha1').update(tempStr).digest('hex');
+
+      if (hashCode !== signature) {
+        console.warn('[IM Bot] WeChat invalid signature in POST webhook');
+        return res.status(403).send('Invalid signature');
+      }
+
+      const xml = req.body;
+      if (!xml) {
+        return res.status(400).send('Empty body');
+      }
+
+      function extractXmlTag(xmlString, tag) {
+        const match = xmlString.match(new RegExp(`<${tag}>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?\\s*</${tag}>`));
+        return match ? match[1].trim() : null;
+      }
+
+      const fromUser = extractXmlTag(xml, 'FromUserName');
+      const toUser = extractXmlTag(xml, 'ToUserName');
+      const msgType = extractXmlTag(xml, 'MsgType');
+      const text = (extractXmlTag(xml, 'Content') || '').trim();
+
+      if (msgType !== 'text') {
+        return sendWechatTextReply(res, fromUser, toUser, '🤖 抱歉，当前仅支持文本指令。');
+      }
+
+      function sendWechatTextReply(response, to, from, replyText) {
+        response.type('application/xml');
+        const replyXml = `<xml>
+          <ToUserName><![CDATA[${to}]]></ToUserName>
+          <FromUserName><![CDATA[${from}]]></FromUserName>
+          <CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime>
+          <MsgType><![CDATA[text]]></MsgType>
+          <Content><![CDATA[${replyText}]]></Content>
+        </xml>`;
+        response.send(replyXml);
+      }
+
+      // Check if user is bound
+      if (!bindings.wechat) bindings.wechat = [];
+      const isBound = bindings.wechat.some(user => user.openid === fromUser);
+
+      if (!isBound) {
+        const pBinding = pendingBindings.get(text);
+        if (pBinding && pBinding.platform === 'wechat' && pBinding.expiresAt > Date.now()) {
+          bindings.wechat.push({ openid: fromUser, username: `微信用户-${text}` });
+          pBinding.bound = true;
+          pBinding.username = `微信用户-${text}`;
+          saveBindings();
+
+          return sendWechatTextReply(res, fromUser, toUser, '🎉 微信绑定成功！\n\n您已成功将微信账号绑定至 Cyberpunk TMUX Agent Deck。\n\n输入 "list会话" 查看活跃会话，或回复 "帮助" 查看可用指令列表。');
+        } else {
+          return sendWechatTextReply(res, fromUser, toUser, '🔒 未授权访问。\n\n请前往网页控制面板中的 IM BOT 面板生成 6 位 PIN 码，并将该 PIN 码直接发送给我以完成微信绑定。');
+        }
+      }
+
+      // Help command
+      if (text === '帮助' || text.toLowerCase() === 'help' || text === '/help') {
+        return sendWechatTextReply(res, fromUser, toUser, 
+          '🤖 微信终端助手可用命令：\n' +
+          '• list会话 - 列出所有 TMUX 会话\n' +
+          '• switch会话 <会话名> - 切换当前活动会话\n' +
+          '• 查看状态 - 查看当前活动会话屏幕\n' +
+          '• 帮助 - 查看本帮助消息\n\n' +
+          '直接回复任何非指令文本，我将直接投递至活动会话终端输入中！'
+        );
+      }
+
+      // List sessions command
+      if (text === 'list会话' || text.toLowerCase() === '/list' || text.toLowerCase() === 'list') {
+        execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_path}'], (err, stdout) => {
+          if (err) {
+            return sendWechatTextReply(res, fromUser, toUser, '🖥️ 服务器上当前没有活跃的 Tmux 会话。');
+          }
+          const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+          let reply = '🖥️ TMUX 会话列表：\n';
+          const activeSession = bindings.activeSessions[fromUser] || '无';
+
+          lines.forEach(line => {
+            const [name, attached, pathStr] = line.split('|');
+            const attachedStatus = parseInt(attached, 10) > 0 ? '🟢 活跃' : '⚪ 挂起';
+            reply += `• ${name} [${attachedStatus}]\n  路径: ${pathStr}\n`;
+          });
+          reply += `\n🎯 当前活动会话：${activeSession}\n回复 "switch会话 <名>" 可切换。`;
+          sendWechatTextReply(res, fromUser, toUser, reply);
+        });
+        return;
+      }
+
+      // Switch session command
+      if (text.startsWith('switch会话') || text.startsWith('/switch') || text.startsWith('switch')) {
+        const parts = text.split(/\s+/);
+        if (parts.length < 2) {
+          return sendWechatTextReply(res, fromUser, toUser, '⚠️ 使用方法：switch会话 <会话名称>');
+        }
+        const sessionName = parts[1];
+        execTmux(['list-sessions', '-F', '#{session_name}'], (err, stdout) => {
+          if (err) {
+            return sendWechatTextReply(res, fromUser, toUser, '❌ 获取会话列表时发生错误。');
+          }
+          const sessions = stdout.split('\n').map(s => s.trim()).filter(Boolean);
+          if (!sessions.includes(sessionName)) {
+            return sendWechatTextReply(res, fromUser, toUser, `❌ 会话 ${sessionName} 不存在。`);
+          }
+          
+          bindings.activeSessions[fromUser] = sessionName;
+          saveBindings();
+          sendWechatTextReply(res, fromUser, toUser, `🎯 活动会话已切换为：${sessionName}`);
+        });
+        return;
+      }
+
+      // Status command
+      if (text === '查看状态' || text.toLowerCase() === 'status' || text.toLowerCase() === '/status') {
+        const sessionName = bindings.activeSessions[fromUser];
+        if (!sessionName) {
+          return sendWechatTextReply(res, fromUser, toUser, '⚠️ 尚未选择活动会话。使用 "list会话" 查看，然后通过 "switch会话 <名>" 绑定一个。');
+        }
+
+        execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+          if (err) {
+            return sendWechatTextReply(res, fromUser, toUser, `❌ 截取屏幕失败：${err.message}`);
+          }
+          const cleanOutput = stdout.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+          const lastLines = cleanOutput.split('\n').slice(-20).join('\n');
+          
+          sendWechatTextReply(res, fromUser, toUser, `🖥️ 会话实时屏幕：${sessionName}\n\n${lastLines}`);
+        });
+        return;
+      }
+
+      // Regular message input (Send keys to active session)
+      const sessionName = bindings.activeSessions[fromUser];
+      if (!sessionName) {
+        return sendWechatTextReply(res, fromUser, toUser, '⚠️ 尚未选择活动会话。请先回复 "switch会话 <名>" 选择一个会话，再发送键盘输入。');
+      }
+
+      // Send inputs to session
+      execTmux(['send-keys', '-t', sessionName, text, 'Enter'], (err) => {
+        if (err) {
+          sendWechatTextReply(res, fromUser, toUser, `❌ 发送键盘输入失败：${err.message}`);
+        } else {
+          // Confirm keys were sent and wait 2 seconds to capture the command output
+          setTimeout(() => {
+            execTmux(['capture-pane', '-t', sessionName, '-p'], (err, stdout) => {
+              if (err) {
+                sendWechatTextReply(res, fromUser, toUser, `📥 输入已投递，但获取最新屏幕失败。`);
+              } else {
+                const cleanOutput = stdout.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+                const lastLines = cleanOutput.split('\n').slice(-15).join('\n');
+                sendWechatTextReply(res, fromUser, toUser, `📥 输入已投递：${text}\n\n${lastLines}`);
+              }
+            });
+          }, 2000);
+        }
+      });
     });
 
     // 5. Magic Link login handler (No auth required because token acts as auth)
@@ -691,40 +1321,108 @@ module.exports = {
 
   // Notify method
   async notify(payload) {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token || bindings.telegram.length === 0) return;
-
     const title = payload.title || 'Notification';
     const body = payload.body || '';
     const session = payload.session;
 
-    let text = `🔔 <b>${escapeHTML(title)}</b>\n${escapeHTML(body)}`;
-    if (session) {
-      text += `\n\n会话：<code>${escapeHTML(session)}</code>`;
-    }
-
-    // Set buttons if it looks like a request for permission
-    let replyMarkup = null;
-    const isPermissionRequest = title.includes('请求') || title.includes('Request') || title.includes('权限') || body.includes('确认') || body.includes('authorize') || body.includes('approve');
-    
-    if (isPermissionRequest && session) {
-      replyMarkup = {
-        inline_keyboard: [
-          [
-            { text: "✅ 允许 (Approve)", callback_data: `approve:${session}` },
-            { text: "❌ 拒绝 (Deny)", callback_data: `deny:${session}` }
-          ]
-        ]
-      };
-    }
-
-    for (const user of bindings.telegram) {
-      // Set active session for the user if they don't have one set yet
-      if (session && !bindings.activeSessions[user.chatId]) {
-        bindings.activeSessions[user.chatId] = session;
-        saveBindings();
+    // 1. Send Telegram Notification if enabled
+    const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (tgToken && bindings.telegram && bindings.telegram.length > 0) {
+      let text = `🔔 <b>${escapeHTML(title)}</b>\n${escapeHTML(body)}`;
+      if (session) {
+        text += `\n\n会话：<code>${escapeHTML(session)}</code>`;
       }
-      await sendTelegramMessage(user.chatId, text, replyMarkup);
+
+      let replyMarkup = null;
+      const isPermissionRequest = title.includes('请求') || title.includes('Request') || title.includes('权限') || body.includes('确认') || body.includes('authorize') || body.includes('approve');
+      
+      if (isPermissionRequest && session) {
+        replyMarkup = {
+          inline_keyboard: [
+            [
+              { text: "✅ 允许 (Approve)", callback_data: `approve:${session}` },
+              { text: "❌ 拒绝 (Deny)", callback_data: `deny:${session}` }
+            ]
+          ]
+        };
+      }
+
+      for (const user of bindings.telegram) {
+        if (session && !bindings.activeSessions[user.chatId]) {
+          bindings.activeSessions[user.chatId] = session;
+          saveBindings();
+        }
+        await sendTelegramMessage(user.chatId, text, replyMarkup);
+      }
+    }
+
+    // 2. Send WeChat Work (WeCom) Notification if enabled
+    const corpId = process.env.WECHAT_CORPID;
+    const corpSecret = process.env.WECHAT_CORPSECRET;
+    const agentId = process.env.WECHAT_AGENTID;
+
+    if (corpId && corpSecret && agentId && bindings.wechat && bindings.wechat.length > 0) {
+      try {
+        const tokenUrl = `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${corpId}&corpsecret=${corpSecret}`;
+        const tokenRes = await fetch(tokenUrl);
+        const tokenData = await tokenRes.json();
+        if (tokenData.errcode === 0 && tokenData.access_token) {
+          const accessToken = tokenData.access_token;
+          let text = `🔔 ${title}\n${body}`;
+          if (session) {
+            text += `\n\n会话：${session}`;
+          }
+
+          const users = bindings.wechat.map(u => u.openid).join('|');
+          const sendUrl = `https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`;
+          
+          await fetch(sendUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              touser: users,
+              msgtype: 'text',
+              agentid: parseInt(agentId, 10),
+              text: { content: text },
+              safe: 0
+            })
+          });
+        }
+      } catch (err) {
+        console.error('[IM Bot] WeCom notify network error:', err);
+      }
+    }
+
+    // 3. Send WeChat ClawBot Notification if enabled
+    if (bindings.wechatConfig && bindings.wechatConfig.botToken && bindings.wechat && bindings.wechat.length > 0) {
+      const config = bindings.wechatConfig;
+      let text = `🔔 ${title}\n${body}`;
+      if (session) {
+        text += `\n\n会话/Session: ${session}`;
+      }
+
+      for (const user of bindings.wechat) {
+        try {
+          const bodyPayload = {
+            msg: {
+              from_user_id: "",
+              to_user_id: user.openid,
+              client_id: `openclaw-weixin-notify-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              message_type: 2,
+              message_state: 2,
+              item_list: [
+                {
+                  type: 1,
+                  text_item: { text }
+                }
+              ]
+            }
+          };
+          await ilinkPostFetch(config.baseUrl, "ilink/bot/sendmessage", bodyPayload, config.botToken);
+        } catch (err) {
+          console.error('[IM Bot] WeChat ClawBot notify error:', err);
+        }
+      }
     }
   }
 };
