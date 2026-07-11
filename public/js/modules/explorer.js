@@ -103,16 +103,20 @@ export async function updateGitStatus() {
       const data = await response.json();
       if (data.isGit && data.files) {
         data.files.forEach(file => {
-          state.gitStatusMap.set(file.path, file);
+          let cleanPath = file.path;
+          if (cleanPath.endsWith('/')) {
+            cleanPath = cleanPath.slice(0, -1);
+          }
+          state.gitStatusMap.set(cleanPath, file);
           
-          const parts = file.path.split('/');
+          const parts = cleanPath.split('/');
           let currentParent = '';
           for (let i = 0; i < parts.length - 1; i++) {
             currentParent = currentParent ? `${currentParent}/${parts[i]}` : parts[i];
             if (!state.gitDirStatusMap.has(currentParent)) {
               state.gitDirStatusMap.set(currentParent, new Set());
             }
-            const statusChar = file.status.includes('M') ? 'M' : (file.status.includes('A') ? 'A' : 'U');
+            const statusChar = file.status.includes('M') ? 'M' : (file.status.includes('A') ? 'A' : (file.status.includes('!') ? 'I' : 'U'));
             state.gitDirStatusMap.get(currentParent).add(statusChar);
           }
         });
@@ -129,7 +133,7 @@ export function applyGitTreeClasses() {
     const rowEl = nodeEl.querySelector('.file-node-row');
     if (!rowEl) return;
     
-    rowEl.classList.remove('git-modified', 'git-added', 'git-untracked');
+    rowEl.classList.remove('git-modified', 'git-added', 'git-untracked', 'git-ignored');
     const existingBadge = rowEl.querySelector('.git-status-badge');
     if (existingBadge) existingBadge.remove();
     const existingDiffBtn = rowEl.querySelector('.git-diff-inline-btn');
@@ -142,7 +146,9 @@ export function applyGitTreeClasses() {
       let badgeText = '';
       let badgeClass = '';
       
-      if (status.includes('M')) {
+      if (status === '!!') {
+        rowEl.classList.add('git-ignored');
+      } else if (status.includes('M')) {
         rowEl.classList.add('git-modified');
         badgeText = 'M';
         badgeClass = 'modified';
@@ -153,7 +159,7 @@ export function applyGitTreeClasses() {
       } else if (status.includes('?')) {
         rowEl.classList.add('git-untracked');
         badgeText = 'U';
-        badgeClass = 'added';
+        badgeClass = 'untracked';
       }
       
       if (badgeText) {
@@ -193,7 +199,9 @@ export function applyGitTreeClasses() {
       } else if (dirStatuses.has('U')) {
         rowEl.classList.add('git-untracked');
         badgeText = 'U';
-        badgeClass = 'added';
+        badgeClass = 'untracked';
+      } else if (dirStatuses.has('I')) {
+        rowEl.classList.add('git-ignored');
       }
       
       if (badgeText) {

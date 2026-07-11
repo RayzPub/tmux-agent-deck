@@ -2170,13 +2170,28 @@ div#editorTextarea {
 .file-node-row.git-modified {
   border-color: rgba(255, 95, 31, 0.2);
 }
-.file-node-row.git-untracked .file-node-name,
 .file-node-row.git-added .file-node-name {
   color: var(--neon-green) !important;
 }
-.file-node-row.git-untracked,
 .file-node-row.git-added {
   border-color: rgba(57, 255, 20, 0.2);
+}
+.file-node-row.git-untracked .file-node-name {
+  color: var(--text-muted) !important;
+  opacity: 0.65;
+}
+.file-node-row.git-untracked {
+  border-color: transparent;
+  opacity: 0.8;
+}
+.file-node-row.git-ignored .file-node-name,
+.file-node-row.git-ignored .file-node-icon {
+  color: var(--text-muted) !important;
+  opacity: 0.45;
+}
+.file-node-row.git-ignored {
+  border-color: transparent;
+  opacity: 0.55;
 }
 
 .git-status-badge {
@@ -2198,6 +2213,11 @@ div#editorTextarea {
   background: rgba(57, 255, 20, 0.15);
   color: var(--neon-green);
   border: 1px solid rgba(57, 255, 20, 0.3);
+}
+.git-status-badge.untracked {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .git-diff-inline-btn {
@@ -2792,14 +2812,43 @@ body.light-minimalist .file-node-row.git-modified {
 body.light-minimalist .file-node-row.git-modified .file-node-name {
   color: #b45309;
 }
-body.light-minimalist .file-node-row.git-untracked, 
 body.light-minimalist .file-node-row.git-added {
   color: #047857; /* deep emerald green */
   background: #f0fdf4;
 }
-body.light-minimalist .file-node-row.git-untracked .file-node-name,
 body.light-minimalist .file-node-row.git-added .file-node-name {
   color: #047857;
+}
+body.light-minimalist .file-node-row.git-untracked {
+  color: #64748b; /* slate-500 */
+  background: #f8fafc;
+  opacity: 0.75;
+}
+body.light-minimalist .file-node-row.git-untracked .file-node-name {
+  color: #64748b;
+}
+body.light-minimalist .file-node-row.git-ignored {
+  color: #94a3b8; /* slate-400 */
+  opacity: 0.55;
+  background: transparent;
+}
+body.light-minimalist .file-node-row.git-ignored .file-node-name {
+  color: #94a3b8;
+}
+body.light-minimalist .git-status-badge.modified {
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fcd34d;
+}
+body.light-minimalist .git-status-badge.added {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+body.light-minimalist .git-status-badge.untracked {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
 }
 
 /* Git Diff panel elements */

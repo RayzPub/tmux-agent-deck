@@ -607,7 +607,7 @@ router.get('/git/status', requireAuth, (req, res) => {
       return res.status(404).json({ error: 'Workspace directory not found' });
     }
     
-    execCommand('git', ['status', '--porcelain', '-u'], rootDir, (err, stdout, stderr) => {
+    execCommand('git', ['status', '--porcelain', '-u', '--ignored'], rootDir, (err, stdout, stderr) => {
       if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
         return res.json({ isGit: false, files: [] });
       }
