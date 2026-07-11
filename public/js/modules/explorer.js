@@ -287,9 +287,13 @@ export async function loadDirectory(dirPath, containerEl) {
     if (state.showOnlyGitChanges) {
       filteredFiles = files.filter(file => {
         if (file.isDir) {
-          return state.gitDirStatusMap.has(file.path);
+          const statuses = state.gitDirStatusMap.get(file.path);
+          if (!statuses) return false;
+          return Array.from(statuses).some(s => s !== 'I');
         } else {
-          return state.gitStatusMap.has(file.path);
+          const fileStatus = state.gitStatusMap.get(file.path);
+          if (!fileStatus) return false;
+          return fileStatus.status !== '!!';
         }
       });
     }
