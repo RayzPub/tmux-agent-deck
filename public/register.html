@@ -116,7 +116,7 @@
         </button>
 
         <div class="login-link-container" style="margin-top: 15px; text-align: center;">
-          <a href="/login.html" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// Back to Login</a>
+          <a href="/login.html?redirect=/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// Back to Login</a>
         </div>
       </form>
 
@@ -152,7 +152,7 @@
       .then(data => {
         if (!data.multiUserEnabled) {
           // If multi user is not enabled, redirect to login
-          window.location.href = '/login.html';
+          window.location.href = '/login.html?redirect=/welcome';
         }
       });
 
@@ -201,7 +201,7 @@
           successAlert.classList.remove('hidden');
           registerBtn.querySelector('.btn-text').innerText = 'PROVISIONED';
           setTimeout(() => {
-            window.location.href = '/login.html';
+            window.location.href = '/login.html?redirect=/welcome';
           }, 1500);
         } else {
           // Failed

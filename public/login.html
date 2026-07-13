@@ -122,6 +122,17 @@
   </div>
 
   <script>
+    // Helper: Determine redirect URL.
+    // If coming from register page, default to '/welcome'.
+    function getRedirectUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      let redirectUrl = urlParams.get('redirect');
+      if (!redirectUrl && document.referrer && document.referrer.includes('register.html')) {
+        redirectUrl = '/welcome';
+      }
+      return redirectUrl || '/';
+    }
+
     // Initialize Lucide Icons
     lucide.createIcons();
 
@@ -131,7 +142,7 @@
       .then(data => {
         console.log('[Login] auth-status:', data);
         if (data.authenticated) {
-          window.location.href = '/';
+          window.location.href = getRedirectUrl();
           return;
         }
         if (data.multiUserEnabled) {
@@ -194,7 +205,7 @@
           // Success
           loginBtn.querySelector('.btn-text').innerText = 'AUTHORIZED';
           setTimeout(() => {
-            window.location.href = '/';
+            window.location.href = getRedirectUrl();
           }, 800);
         } else {
           // Failed
