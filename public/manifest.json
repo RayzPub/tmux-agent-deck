@@ -1,7 +1,7 @@
 {
-  "name": "TMUX AGENT DECK",
-  "short_name": "Agent Deck",
-  "description": "Cyberpunk TMUX Agent Deck Console",
+  "name": "CCNOW",
+  "short_name": "CCNOW",
+  "description": "Cyberpunk CCNOW Console",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0c16",

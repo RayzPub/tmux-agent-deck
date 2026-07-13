@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}🌟 Cyberpunk Tmux Agent Deck - One-Click Installer 🌟${NC}"
+echo -e "${BLUE}🌟 Cyberpunk CCNOW - One-Click Installer 🌟${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 # Check sudo
@@ -139,8 +139,8 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
 # Clone/Setup Project Directory
-if [ -f "package.json" ] && grep -q '"name": "tmux-agent-deck"' package.json; then
-    echo -e "${GREEN}[*] Detected tmux-agent-deck in the current directory. Proceeding here...${NC}"
+if [ -f "package.json" ] && (grep -q '"name": "ccnow"' package.json || grep -q '"name": "tmux-agent-deck"' package.json); then
+    echo -e "${GREEN}[*] Detected CCNOW/tmux-agent-deck in the current directory. Proceeding here...${NC}"
 else
     echo -e "${BLUE}[*] Cloning tmux-agent-deck repository...${NC}"
     git clone https://github.com/RayzPub/tmux-agent-deck.git
@@ -176,7 +176,7 @@ echo -e "${BLUE}[*] Installing npm dependencies using $NPM_BIN...${NC}"
 chmod +x start.sh stop.sh restart.sh bin/deck-notify 2>/dev/null
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${GREEN}🌟 Tmux Agent Deck Installation Complete! 🌟${NC}"
+echo -e "${GREEN}🌟 CCNOW Installation Complete! 🌟${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo -e "To configure the server, edit the ${YELLOW}.env${NC} file."
 echo -e "To run the server in the background, execute:"

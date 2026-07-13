@@ -486,6 +486,7 @@ explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
 });
 
 explorerNewWorkspaceBtn.addEventListener('click', () => {
+  closeSidebarOnMobile();
   newWorkspaceNameInput.value = '';
   newWorkspacePathInput.value = '';
   // Adjust UI based on multi-user mode

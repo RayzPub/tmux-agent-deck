@@ -1019,7 +1019,7 @@ module.exports = {
           pBinding.username = `微信用户-${text}`;
           saveBindings();
 
-          return sendWechatTextReply(res, fromUser, toUser, '🎉 微信绑定成功！\n\n您已成功将微信账号绑定至 Cyberpunk TMUX Agent Deck。\n\n输入 "list会话" 查看活跃会话，或回复 "帮助" 查看可用指令列表。');
+          return sendWechatTextReply(res, fromUser, toUser, '🎉 微信绑定成功！\n\n您已成功将微信账号绑定至 Cyberpunk CCNOW。\n\n输入 "list会话" 查看活跃会话，或回复 "帮助" 查看可用指令列表。');
         } else {
           return sendWechatTextReply(res, fromUser, toUser, '🔒 未授权访问。\n\n请前往网页控制面板中的 IM BOT 面板生成 6 位 PIN 码，并将该 PIN 码直接发送给我以完成微信绑定。');
         }
@@ -1339,14 +1339,14 @@ module.exports = {
             
             saveBindings();
             
-            await sendTelegramMessage(chatId, `🎉 <b>赛博朋克 TMUX Agent Deck 绑定成功！</b>\n\n你现在可以实时接收通知，并在此直接管理你的 TMUX 会话了。\n\n发送 /list 列出所有会话。`);
+            await sendTelegramMessage(chatId, `🎉 <b>赛博朋克 CCNOW 绑定成功！</b>\n\n你现在可以实时接收通知，并在此直接管理你的 TMUX 会话了。\n\n发送 /list 列出所有会话。`);
             return;
           } else {
             await sendTelegramMessage(chatId, `❌ <b>无效或已过期的绑定 PIN 码。</b>\n\n请在网页端仪表盘重新生成并扫描绑定二维码。`);
             return;
           }
         } else {
-          await sendTelegramMessage(chatId, `🤖 <b>赛博朋克 TMUX Agent Deck 机器人</b>\n\n请前往你的网页控制面板，点击 <b>IM BOT</b> 按钮并扫描二维码进行绑定。`);
+          await sendTelegramMessage(chatId, `🤖 <b>赛博朋克 CCNOW 机器人</b>\n\n请前往你的网页控制面板，点击 <b>IM BOT</b> 按钮并扫描二维码进行绑定。`);
           return;
         }
       }

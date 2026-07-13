@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}🌟 Tmux Agent Deck - Background Control Script 🌟${NC}"
+echo -e "${BLUE}🌟 CCNOW - Background Control Script 🌟${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 # 1. Environment & Dependency Checks
@@ -177,7 +177,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # 6. Start server in the background
-echo -e "${GREEN}[*] Starting Tmux Agent Deck in the background...${NC}"
+echo -e "${GREEN}[*] Starting CCNOW in the background...${NC}"
 nohup "$NODE_BIN" server.js > "$LOG_FILE" 2>&1 &
 NEW_PID=$!
 

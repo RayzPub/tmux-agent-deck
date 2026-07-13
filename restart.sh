@@ -10,7 +10,7 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}🔄 Tmux Agent Deck - Restarting Server 🌟${NC}"
+echo -e "${BLUE}🔄 CCNOW - Restarting Server 🌟${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 # Check if run as root or with sudo

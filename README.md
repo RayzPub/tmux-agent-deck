@@ -1,4 +1,4 @@
-# Cyberpunk TMUX Agent Deck
+# Cyberpunk CCNOW
 
 一个极具科技感的网页端 Tmux 托管控制面板项目。通过此项目，你可以登录网页并利用 Web 终端完全控制服务器上的 Tmux 命令行会话，随时进行连接与断开。本项目专注于利用 Tmux 进行会话持久化管理，并无缝集成 **Claude Code**、**Antigravity (agy)**、**Codex Agent** 等 AI 编程智能体（Programming Agents）。
 
@@ -108,10 +108,10 @@ sudo ./start.sh
 服务运行后，控制台会输出运行信息：
 ```text
 ==================================================
-🌟 Tmux Agent Deck - Background Control Script 🌟
+🌟 CCNOW - Background Control Script 🌟
 ==================================================
 [*] Using Node binary: /home/ubuntu/.nvm/versions/node/v26.4.0/bin/node
-[*] Starting Tmux Agent Deck in the background...
+[*] Starting CCNOW in the background...
 [✓] Started successfully! PID: 50533
 [✓] Log file: server.log
 --------------------------------------------------

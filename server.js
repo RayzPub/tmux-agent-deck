@@ -106,7 +106,7 @@ if (useHttps) {
     const domain = process.env.DOMAIN_NAME || 'outshine.cloud';
     const displayUrl = HTTPS_PORT === 443 ? `https://${domain}` : `https://${domain}:${HTTPS_PORT}`;
     console.log(`==================================================`);
-    console.log(`🚀 Cyberpunk Tmux Agent Deck started successfully with HTTPS!`);
+    console.log(`🚀 Cyberpunk CCNOW started successfully with HTTPS!`);
     console.log(`🔗 URL: ${displayUrl}`);
     console.log(`🔒 Password: ${'•'.repeat(PASSWORD.length)} (configured via env)`);
     console.log(`==================================================`);
@@ -119,7 +119,7 @@ if (useHttps) {
 } else {
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`==================================================`);
-    console.log(`🚀 Cyberpunk Tmux Agent Deck started successfully!`);
+    console.log(`🚀 Cyberpunk CCNOW started successfully!`);
     console.log(`🔗 URL: http://localhost:${PORT}`);
     console.log(`🔒 Password: ${'•'.repeat(PASSWORD.length)} (configured via env)`);
     console.log(`==================================================`);
