@@ -62,6 +62,12 @@ app.get('/login.html', (req, res) => {
 // Serve static assets (CSS, JS) in public folder that are non-protected (like login page assets)
 app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css')));
 app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js')));
+app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs')));
+
+// Serve welcome page without authentication
+app.get('/welcome', (req, res) => {
+  res.sendFile(path.join(PROJECT_ROOT, 'public', 'welcome.html'));
+});
 
 // Protect index.html and other static routes
 app.get('/', requireAuth, (req, res) => {

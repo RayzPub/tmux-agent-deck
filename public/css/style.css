@@ -1557,7 +1557,9 @@ body.light-minimalist .slogan-title {
     top: 56px;
     height: calc(100% - 56px);
     align-items: flex-start;
-    padding-top: 20px;
+    padding: 20px 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Compact Modal card */

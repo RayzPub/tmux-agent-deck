@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CYBERNETIC CORE - Tmux Agent Deck</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="/css/welcome.css">
+  
+  <!-- Favicons / PWA Metadata -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
+  <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+</head>
+<body class="welcome-body">
+  <!-- Interactive Scanline Overlay -->
+  <div class="scanline"></div>
+
+  <!-- Cyber Animated 3D Background Grid -->
+  <div class="welcome-grid-container">
+    <div class="welcome-grid-3d" id="welcomeGrid3D"></div>
+    <div class="welcome-grid-overlay"></div>
+  </div>
+
+  <!-- Navigation Bar -->
+  <nav class="cyber-nav">
+    <a href="#" class="nav-logo">
+      <span class="pulse-dot"></span>
+      TMUX AGENT DECK
+    </a>
+    <ul class="nav-links">
+      <li class="nav-item-link"><a href="#features">// 功能特性</a></li>
+      <li class="nav-item-link"><a href="#showcase">// 界面预览</a></li>
+      <li class="nav-item-link"><a href="#installation">// 部署安装</a></li>
+      <li>
+        <a href="/login.html" class="cyber-btn-outline nav-login-btn">
+          <span class="login-btn-text">LOGIN // 登录</span>
+          <i data-lucide="log-in" class="btn-icon" style="width: 12px; height: 12px;"></i>
+        </a>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="hero-section">
+    <div class="hero-badge">// CONTROL CENTER</div>
+    <h1 class="glitch-text hero-title" data-text="TMUX AGENT DECK">TMUX AGENT DECK</h1>
+    <p class="hero-subtitle">
+      一个极具科技感、专为 AI 编程智能体设计的网页端控制面板。
+      让您的 AI 任务在后台持续稳定运行，支持随时重连与进度查看，无论是在电脑还是手机端，都能随时掌控开发进度。
+    </p>
+    <div class="hero-ctas">
+      <a href="/login.html" class="cyber-btn">
+        <span class="btn-text console-btn-text">ENTER DECK // 进入控制台</span>
+        <span class="btn-glitch"></span>
+        <i data-lucide="shield-check" class="btn-icon"></i>
+      </a>
+      <a href="#features" class="cyber-btn-outline">
+        <span class="btn-text">EXPLORE // 功能特性</span>
+        <i data-lucide="chevron-down" class="btn-icon"></i>
+      </a>
+    </div>
+
+    <!-- Hero Screenshot Mockup -->
+    <div class="device-mockup-wrapper">
+      <div class="device-mockup">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="device-header">
+          <div class="device-dots">
+            <div class="device-dot red"></div>
+            <div class="device-dot yellow"></div>
+            <div class="device-dot green"></div>
+          </div>
+          <div class="device-title">DECK_CONSOLE // 运行监控</div>
+          <div class="device-status">
+            <span class="pulse-dot" style="margin-right: 6px;"></span>
+            ONLINE
+          </div>
+        </div>
+        <div class="device-content">
+          <div class="device-reflection"></div>
+          <img src="/docs/images/dashboard_preview.png" alt="Dashboard Preview">
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stats Bar -->
+  <section class="stats-bar">
+    <div class="stat-item">
+      <div class="stat-num">PERSISTENT</div>
+      <div class="stat-label">后台持续运行</div>
+      <div class="stat-desc">关闭网页，AI 智能体仍会在后台继续编码</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">MOBILE-READY</div>
+      <div class="stat-label">完美手机适配</div>
+      <div class="stat-desc">自适应屏幕，通勤路上也能轻松查看</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">IM-CONTROL</div>
+      <div class="stat-label">微信/TG 互通</div>
+      <div class="stat-desc">直接在聊天框查看截图、发送命令与审批任务</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">ISOLATED</div>
+      <div class="stat-label">多用户安全沙盒</div>
+      <div class="stat-desc">独立工作区与配置，成员协作互不干扰</div>
+    </div>
+  </section>
+
+  <!-- Features Showcase -->
+  <section class="section-wrapper" id="features">
+    <div class="section-header">
+      <span class="section-tag">// FUNCTION OVERVIEW</span>
+      <h2 class="section-title">核心功能特性</h2>
+      <p class="section-subtitle">打破传统终端限制，赋予 AI 智能体开发任务持久化、可视化与跨设备掌控力。</p>
+    </div>
+
+    <div class="features-grid">
+      <!-- Card 1 -->
+      <div class="feature-card">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="feature-icon-wrapper">
+          <i data-lucide="infinity"></i>
+        </div>
+        <h3>AI 智能体后台持续运行</h3>
+        <p>支持一键启动 Agy、Claude Code 等 AI 编程助手。任务在服务器的 Tmux 会话中独立执行。即使电脑休眠、断网或关闭网页，AI 也不会中断任务，再次连接即可瞬间恢复现场。</p>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="feature-card">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="feature-icon-wrapper pink">
+          <i data-lucide="users"></i>
+        </div>
+        <h3>多用户沙盒与安全隔离</h3>
+        <p>提供完整的多用户管理模式。非管理员用户拥有独立的文件存放目录与虚拟运行环境。各用户的 Shell 历史记录及个人配置完全隔离，保障开发数据的机密性与安全性。</p>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="feature-card">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="feature-icon-wrapper">
+          <i data-lucide="bell-ring"></i>
+        </div>
+        <h3>设备原生消息推送</h3>
+        <p>集成消息通知机制。当 AI 运行长耗时任务完毕，或在关键操作需要您授权同意时，系统会向您的手机或电脑发送原生通知消息，即使您此时没有打开网页也能及时获取状态。</p>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="feature-card">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="feature-icon-wrapper pink">
+          <i data-lucide="message-square-text"></i>
+        </div>
+        <h3>微信与 Telegram 远程控制</h3>
+        <p>无需繁琐配置，扫码即可绑定微信或 Telegram。您可以直接在聊天框接收 AI 的关键动作通知，查看终端实时截图，或直接发送文本命令和一键审批操作，省去打开电脑的麻烦。</p>
+      </div>
+
+      <!-- Card 5 -->
+      <div class="feature-card">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="feature-icon-wrapper">
+          <i data-lucide="zap"></i>
+        </div>
+        <h3>超低延迟交互终端</h3>
+        <p>在网页中提供响应敏捷的虚拟控制台，键盘打字反馈迅速。终端大小会自动根据您的浏览器窗口尺寸进行对齐，保障各种设备上的顺畅使用体验。</p>
+      </div>
+
+      <!-- Card 6 -->
+      <div class="feature-card">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+        <div class="feature-icon-wrapper pink">
+          <i data-lucide="shield-check"></i>
+        </div>
+        <h3>严密的安全认证</h3>
+        <p>基于成熟的安全加密和 Token 校验。网页端支持管理员专属的邀请码注册机制，全方位保护您的服务器命令行不会被未经授权的外部用户所接触。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Tabs Showcase -->
+  <section class="section-wrapper" id="showcase">
+    <div class="section-header">
+      <span class="section-tag">// INTERFACE SHOWCASE</span>
+      <h2 class="section-title">图形化工作台预览</h2>
+      <p class="section-subtitle">多维度图形化看板，轻松掌控多智能体并行任务与代码编辑流程。</p>
+    </div>
+
+    <div class="tabs-container">
+      <div class="tabs-header">
+        <button class="tab-btn active" data-tab="tab-workspace">[ 01 // 工作区初始化 ]</button>
+        <button class="tab-btn" data-tab="tab-agent">[ 02 // AI 运行控制台 ]</button>
+        <button class="tab-btn" data-tab="tab-editor">[ 03 // 修改 Diff 对比 ]</button>
+        <button class="tab-btn" data-tab="tab-mobile">[ 04 // 手机移动视口 ]</button>
+      </div>
+
+      <!-- Tab Panels -->
+      <!-- Panel 1 -->
+      <div class="tab-panel active" id="tab-workspace">
+        <div class="panel-content">
+          <div class="panel-visual">
+            <div class="tech-corner top-left"></div>
+            <div class="tech-corner top-right"></div>
+            <div class="tech-corner bottom-left"></div>
+            <div class="tech-corner bottom-right"></div>
+            <div class="device-reflection"></div>
+            <img src="/docs/images/workspace_preview.png" alt="Workspace Preview">
+          </div>
+          <div class="panel-details">
+            <h3>01 / 快速配置与初始化工作区</h3>
+            <p>为不同的项目分支快速创建独立的工作空间。您可以随时导入现有的代码库或进行空项目初始化，所有的配置都通过可视化列表完成。</p>
+            <ul class="panel-bullets">
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon"></i>
+                <span><strong>Git 仓库对接</strong>：支持输入 Git 地址一键克隆并映射为专属工作区。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon"></i>
+                <span><strong>安全沙盒路径</strong>：普通用户的工作区无法越权访问服务器上的其他敏感目录。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon"></i>
+                <span><strong>可视化工作区树</strong>：一目了然列出所有活跃目录，一键即可启动对应的挂载会话。</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2 -->
+      <div class="tab-panel" id="tab-agent">
+        <div class="panel-content">
+          <div class="panel-visual pink">
+            <div class="tech-corner top-left"></div>
+            <div class="tech-corner top-right"></div>
+            <div class="tech-corner bottom-left"></div>
+            <div class="tech-corner bottom-right"></div>
+            <div class="device-reflection"></div>
+            <img src="/docs/images/agent_preview.png" alt="AI Agent Session">
+          </div>
+          <div class="panel-details">
+            <h3>02 / AI 智能体并行监控</h3>
+            <p>支持创建多个运行中的 AI 智能体终端，并在侧边栏列表中清晰列出挂载状态。您可以观察 AI 运作时的每一步分析与具体编码动作。</p>
+            <ul class="panel-bullets">
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
+                <span><strong>常用智能体预置</strong>：内置 Agy、Claude Code 等环境，无需复杂的安装配置即可一键启动。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
+                <span><strong>多任务并发运行</strong>：支持开启多个独立的 AI 会话，各自处理不同的修复与开发需求。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
+                <span><strong>操作步骤拦截</strong>：AI 执行关键动作时会自动进入暂停等待状态，并在微信/TG中推送用户审批。</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 3 -->
+      <div class="tab-panel" id="tab-editor">
+        <div class="panel-content">
+          <div class="panel-visual">
+            <div class="tech-corner top-left"></div>
+            <div class="tech-corner top-right"></div>
+            <div class="tech-corner bottom-left"></div>
+            <div class="tech-corner bottom-right"></div>
+            <div class="device-reflection"></div>
+            <img src="/docs/images/editor_diff_preview.png" alt="Diff & File Editor">
+          </div>
+          <div class="panel-details">
+            <h3>03 / 文件修改直观对比 (Diff)</h3>
+            <p>在控制面板中直接审阅 AI 智能体对文件做出的所有代码修改。清晰的 Diff 差分让您无需运行 Git 命令就能完成代码合规性检视。</p>
+            <ul class="panel-bullets">
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon"></i>
+                <span><strong>直观差异高亮</strong>：用红、绿底色清晰展示文件的修改、增加及删除行。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon"></i>
+                <span><strong>轻量级只读浏览器</strong>：方便快速审查庞大的文件修改，确保 AI 编码安全可靠。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon"></i>
+                <span><strong>侧边栏文件树</strong>：随时双击检索工作区文件，实现多终端与文件的快捷联动。</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 4 -->
+      <div class="tab-panel" id="tab-mobile">
+        <div class="panel-content">
+          <div class="panel-visual pink">
+            <div class="tech-corner top-left"></div>
+            <div class="tech-corner top-right"></div>
+            <div class="tech-corner bottom-left"></div>
+            <div class="tech-corner bottom-right"></div>
+            <div class="device-reflection"></div>
+            <img src="/docs/images/mobile_preview.jpg" alt="Mobile View">
+          </div>
+          <div class="panel-details">
+            <h3>04 / 完美适配手机移动设备</h3>
+            <p>无论您使用的是手机还是平板浏览器，界面均可完美适应。支持作为独立桌面图标运行，提供优化的移动端触控，让您出门在外也无需担心开发进度。</p>
+            <ul class="panel-bullets">
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
+                <span><strong>触控虚拟键盘适配</strong>：经过专门优化，防止输入框在移动设备上发生变形或溢出遮挡。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
+                <span><strong>添加至手机主屏幕</strong>：支持 PWA 规范，可以像原生 App 一样全屏沉浸运行。</span>
+              </li>
+              <li>
+                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
+                <span><strong>息屏接收关键通知</strong>：即使手机屏幕关闭，AI 产生的阻断性审批也会即时推送至手机系统层面。</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start / Installation -->
+  <section class="section-wrapper" id="installation">
+    <div class="section-header">
+      <span class="section-tag">// AUTOMATED DEPLOYMENT</span>
+      <h2 class="section-title">极简部署一键安装</h2>
+      <p class="section-subtitle">只需一行命令即可在您的 Linux 服务器上自动化完成所有依赖安装与配置部署。</p>
+    </div>
+
+    <!-- Terminal Box -->
+    <div class="terminal-installer">
+      <div class="terminal-header">
+        <div class="terminal-header-title">
+          <i data-lucide="terminal" style="width: 14px; height: 14px; color: var(--neon-cyan)"></i>
+          <span>deploy@tmux-deck-installer: ~</span>
+        </div>
+        <div class="device-dots">
+          <div class="device-dot red"></div>
+          <div class="device-dot yellow"></div>
+          <div class="device-dot green"></div>
+        </div>
+      </div>
+      <div class="terminal-body">
+        <span class="terminal-comment"># 脚本会自动检查环境依赖，克隆代码库并完成安全密码与服务的启动配置</span>
+        <button class="copy-button" id="copyInstallBtn">
+          <span class="copy-tooltip" id="copyTooltip">COPIED!</span>
+          <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+          <span>COPY</span>
+        </button>
+        <div class="terminal-line">
+          <span class="terminal-prompt">$</span>
+          <span class="terminal-code" id="installCode">curl -fsSL https://raw.githubusercontent.com/RayzPub/tmux-agent-deck/main/install.sh | bash</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Badges container -->
+    <div class="badges-container">
+      <div class="tech-badge">
+        <i data-lucide="shield"></i>
+        <span>安全认证访问</span>
+      </div>
+      <div class="tech-badge">
+        <i data-lucide="box"></i>
+        <span>多用户独立沙盒</span>
+      </div>
+      <div class="tech-badge">
+        <i data-lucide="webhook"></i>
+        <span>双向机器人控制</span>
+      </div>
+      <div class="tech-badge">
+        <i data-lucide="bell"></i>
+        <span>消息订阅推送</span>
+      </div>
+      <div class="tech-badge">
+        <i data-lucide="cpu"></i>
+        <span>后台持续挂载</span>
+      </div>
+      <div class="tech-badge">
+        <i data-lucide="layers"></i>
+        <span>终端自适应缩放</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Footer Section -->
+  <section class="cta-footer-section">
+    <h2 class="glitch-text cta-title" data-text="LAUNCH DECK CONTROL CORE">ACCESS DECK PANEL</h2>
+    <p class="cta-desc">
+      立即登录您的专属控制中心，让 AI 智能体在后台为您高效编码。
+    </p>
+    <a href="/login.html" class="cyber-btn" style="display: inline-flex; width: auto; min-width: 250px; margin: 0 auto;">
+      <span class="btn-text console-btn-text">ENTER DECK // 进入控制台</span>
+      <span class="btn-glitch"></span>
+      <i data-lucide="shield-check" class="btn-icon"></i>
+    </a>
+  </section>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <h4>TMUX AGENT DECK</h4>
+        <p>一个以会话为中心的 AI 代理控制中心。赋予终端后台持久化、可视化与多设备双向遥控能力，为您提供稳定的 AI 编程托管环境。</p>
+      </div>
+      <div class="footer-links">
+        <h5>// 快捷导航</h5>
+        <ul>
+          <li><a href="#features">功能特性</a></li>
+          <li><a href="#showcase">界面预览</a></li>
+          <li><a href="#installation">部署安装</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h5>// 访问中心</h5>
+        <ul>
+          <li><a href="/login.html">登录控制台</a></li>
+          <li><a href="/register.html">受邀用户注册</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div>&copy; 2026 RayzPub. Under MIT License.</div>
+      <div class="footer-status">
+        <span class="pulse-dot" style="margin-right: 6px;"></span>
+        SYSTEM STATUS: NOMINAL // v2.0
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="/js/welcome.js"></script>
+</body>
+</html>

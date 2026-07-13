@@ -23,7 +23,7 @@ const requireAuth = (req, res, next) => {
     if (req.xhr || req.path.startsWith('/api/')) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    return res.redirect('/login.html');
+    return res.redirect('/welcome');
   }
 
   // Multi-user mode: strict token validation
@@ -35,7 +35,7 @@ const requireAuth = (req, res, next) => {
       if (req.xhr || req.path.startsWith('/api/')) {
         return res.status(401).json({ error: 'Token expired: please re-login' });
       }
-      return res.redirect('/login.html');
+      return res.redirect('/welcome');
     }
     req.user = {
       username: decoded.username,
