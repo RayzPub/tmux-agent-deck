@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const socketIo = require('socket.io');
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
 
 const { PROJECT_ROOT, PORT, HTTPS_PORT, PASSWORD, JWT_SECRET, useHttps, sslOptions, MULTI_USER_ENABLED } = require('./config');
 const { requireAuth, verifyToken } = require('./middlewares/auth');
@@ -19,6 +20,9 @@ const imBot = require('./im-bot');
 runMigration();
 
 const app = express();
+
+// Enable Gzip compression
+app.use(compression());
 
 // Redirect HTTP to HTTPS if enabled
 app.use((req, res, next) => {
@@ -60,9 +64,20 @@ app.get('/login.html', (req, res) => {
 });
 
 // Serve static assets (CSS, JS) in public folder that are non-protected (like login page assets)
-app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css')));
-app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js')));
-app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs')));
+const staticOptions = {
+  maxAge: '1d', // Cache for 1 day
+  etag: true,
+  lastModified: true
+};
+const docsStaticOptions = {
+  maxAge: '7d', // Cache documentation/images for 7 days
+  etag: true,
+  lastModified: true
+};
+
+app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), staticOptions));
+app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), staticOptions));
+app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs'), docsStaticOptions));
 
 // Serve welcome page without authentication
 app.get('/welcome', (req, res) => {
