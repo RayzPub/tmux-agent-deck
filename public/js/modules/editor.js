@@ -36,7 +36,7 @@ export async function loadEditorFile(path) {
     editorTextarea.textContent = '';
   }
   state.editorDisabled = true;
-  editorStatusMsg.textContent = 'LOADING...';
+  editorStatusMsg.textContent = '加载中...';
   
   try {
     const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
@@ -62,8 +62,8 @@ export async function loadEditorFile(path) {
       editorStatusMsg.textContent = '';
       updatePreviewUI(path);
     } else {
-      editorStatusMsg.textContent = 'LOAD ERROR';
-      const msg = `Error loading file: ${data.error || 'Unknown error'}`;
+      editorStatusMsg.textContent = '加载失败';
+      const msg = `读取文件失败: ${data.error || '未知错误'}`;
       if (state.editorInstance) {
         state.editorInstance.setValue(msg);
       } else {
@@ -73,8 +73,8 @@ export async function loadEditorFile(path) {
     }
   } catch (err) {
     console.error(err);
-    editorStatusMsg.textContent = 'NET ERROR';
-    const msg = 'Network error while retrieving file content.';
+    editorStatusMsg.textContent = '网络错误';
+    const msg = '获取文件内容时发生网络错误。';
     if (state.editorInstance) {
       state.editorInstance.setValue(msg);
     } else {
@@ -150,7 +150,7 @@ export function updateMarkdownPreview() {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'copy-code-btn';
       copyBtn.innerHTML = '<i data-lucide="copy"></i>';
-      copyBtn.title = 'Copy code';
+      copyBtn.title = '复制代码';
       wrapper.appendChild(copyBtn);
 
       copyBtn.addEventListener('click', () => {
@@ -199,7 +199,7 @@ export function updatePreviewUI(path) {
       iconEl.parentNode.replaceChild(newIcon, iconEl);
     }
     if (textEl) {
-      textEl.textContent = state.markdownPreviewActive ? 'EDITOR' : 'PREVIEW';
+      textEl.textContent = state.markdownPreviewActive ? '编辑器' : '预览';
     }
     if (window.lucide) {
       window.lucide.createIcons();
@@ -253,7 +253,7 @@ export async function saveEditorFile() {
   const editorTextarea = document.getElementById('editorTextarea');
   const content = state.editorInstance ? state.editorInstance.getValue() : editorTextarea.textContent;
   const editorStatusMsg = document.getElementById('editorStatusMsg');
-  editorStatusMsg.textContent = 'SAVING...';
+  editorStatusMsg.textContent = '保存中...';
   
   try {
     const response = await fetch('/api/files/save', {
@@ -271,22 +271,22 @@ export async function saveEditorFile() {
 
     const data = await response.json();
     if (response.ok && data.success) {
-      editorStatusMsg.textContent = 'SAVED';
+      editorStatusMsg.textContent = '已保存';
       updateGitStatus().then(() => {
         applyGitTreeClasses();
       });
       setTimeout(() => {
-        if (editorStatusMsg.textContent === 'SAVED') {
+        if (editorStatusMsg.textContent === '已保存') {
           editorStatusMsg.textContent = '';
         }
       }, 2000);
     } else {
-      editorStatusMsg.textContent = 'SAVE ERROR';
-      alert('Failed to save file: ' + (data.error || 'Unknown error'));
+      editorStatusMsg.textContent = '保存失败';
+      alert('保存文件失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
-    editorStatusMsg.textContent = 'NET ERROR';
-    alert('Network error when attempting to save file.');
+    editorStatusMsg.textContent = '网络错误';
+    alert('保存文件时发生网络错误。');
   }
 }

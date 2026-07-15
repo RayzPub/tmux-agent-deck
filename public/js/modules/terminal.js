@@ -99,7 +99,7 @@ export async function pasteFromClipboard() {
     }
   }
 
-  const text = prompt("📋 PASTE ZONE // 请在下方粘贴您的文本 (Ctrl+V):");
+  const text = prompt("📋 粘贴区域 // 请在下方粘贴您的文本 (Ctrl+V):");
   if (text && state.currentSession) {
     const cached = state.sessionCache.get(state.currentSession);
     if (cached && cached.socket) {
@@ -261,7 +261,7 @@ export function attachSession(sessionName) {
       
       reconnectingToast.addEventListener('click', () => {
         if (reconnectingToast.classList.contains('error')) {
-          showConnectionToast('Reconnecting...', 'warning');
+          showConnectionToast('正在重新连接...', 'warning');
           sessionSocket.connect();
         }
       });
@@ -308,18 +308,18 @@ export function attachSession(sessionName) {
         return;
       }
       if (reason === 'io server disconnect') {
-        showConnectionToast('Server disconnected. Tap to reconnect.', 'error');
+        showConnectionToast('服务器连接断开。点击以重新连接。', 'error');
       } else {
-        showConnectionToast('Reconnecting...', 'warning');
+        showConnectionToast('正在重新连接...', 'warning');
       }
     });
 
     sessionSocket.on('reconnect_attempt', (attemptNumber) => {
-      showConnectionToast(`Reconnecting... (${attemptNumber}/10)`, 'warning');
+      showConnectionToast(`正在重新连接... (${attemptNumber}/10)`, 'warning');
     });
 
     sessionSocket.on('reconnect_failed', () => {
-      showConnectionToast('Connection failed. Tap to retry.', 'error');
+      showConnectionToast('连接失败。点击重试。', 'error');
     });
 
     const isLight = document.body.classList.contains('light-minimalist');
@@ -548,7 +548,7 @@ export function attachSession(sessionName) {
 
     sessionSocket.on('connect_error', (err) => {
       console.error('Socket Auth Error:', err.message);
-      alert('Session connection unauthorized. Redirecting to login.');
+      alert('会话连接未授权。正在跳转至登录页面。');
       window.location.href = '/login.html';
     });
 

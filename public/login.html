@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>CYBERNETIC CORE - Access Control</title>
+  <title>CCNOW - 登录控制台</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
@@ -51,23 +51,23 @@
 
       <!-- Header -->
       <div class="auth-header">
-        <div class="cyber-badge">SYSTEM SECURE</div>
-        <h1 class="glitch-text" data-text="CCNOW ACCESS">CCNOW ACCESS</h1>
-        <p class="auth-subtitle">ENTER DECRYPT KEY FOR CONSOLE CONTROL</p>
+        <div class="cyber-badge">系统安全保护中</div>
+        <h1 class="glitch-text" data-text="CCNOW 登录">CCNOW 登录</h1>
+        <p class="auth-subtitle">请输入身份验证密钥以控制系统</p>
       </div>
 
       <!-- Form -->
       <form id="loginForm" class="auth-form">
         <div class="input-group" id="usernameGroup" style="display: none;">
           <label for="username">
-            <span class="label-tech-text">// USERNAME</span>
+            <span class="label-tech-text">// 用户名</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="user" class="input-icon"></i>
             <input
               type="text"
               id="username"
-              placeholder="Enter username"
+              placeholder="请输入用户名"
               autocomplete="username"
             >
             <div class="input-indicator"></div>
@@ -76,7 +76,7 @@
 
         <div class="input-group">
           <label for="password">
-            <span class="label-tech-text" id="passwordLabel">// SECURITY_TOKEN</span>
+            <span class="label-tech-text" id="passwordLabel">// 安全令牌</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="key-round" class="input-icon"></i>
@@ -93,17 +93,17 @@
         </div>
 
         <button type="submit" class="cyber-btn" id="loginBtn">
-          <span class="btn-text">AUTHENTICATE</span>
+          <span class="btn-text">进行身份验证</span>
           <span class="btn-glitch"></span>
           <i data-lucide="shield-check" class="btn-icon"></i>
         </button>
 
         <div class="register-link-container" id="registerLinkContainer" style="margin-top: 15px; text-align: center; display: none;">
-          <a href="/register.html" class="tech-link" style="color: #00f0ff; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// Register Account</a>
+          <a href="/register.html" class="tech-link" style="color: #00f0ff; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 注册新账号</a>
         </div>
 
         <div class="welcome-link-container" style="margin-top: 15px; text-align: center;">
-          <a href="/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase; text-shadow: 0 0 5px rgba(255, 0, 127, 0.3);">// Explore Features / 探索特性</a>
+          <a href="/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase; text-shadow: 0 0 5px rgba(255, 0, 127, 0.3);">// 探索功能特性</a>
         </div>
       </form>
 
@@ -112,8 +112,8 @@
         <div class="alert-border"></div>
         <i data-lucide="alert-triangle" class="alert-icon"></i>
         <div class="alert-content">
-          <span class="alert-title">ACCESS DENIED</span>
-          <span class="alert-message">INCORRECT DECRYPTION KEY</span>
+          <span class="alert-title">验证拒绝</span>
+          <span class="alert-message">无效的安全密钥</span>
         </div>
       </div>
       
@@ -157,7 +157,7 @@
           }
           const passwordLabel = document.getElementById('passwordLabel');
           if (passwordLabel) {
-            passwordLabel.textContent = '// PASSWORD';
+            passwordLabel.textContent = '// 密码';
           }
           const registerLink = document.getElementById('registerLinkContainer');
           if (registerLink) {
@@ -203,7 +203,7 @@
 
         if (response.ok && data.success) {
           // Success
-          loginBtn.querySelector('.btn-text').innerText = 'AUTHORIZED';
+          loginBtn.querySelector('.btn-text').innerText = '验证成功';
           setTimeout(() => {
             window.location.href = getRedirectUrl();
           }, 800);
@@ -268,11 +268,11 @@
       const titleEl = errorAlert.querySelector('.alert-title');
       const messageEl = errorAlert.querySelector('.alert-message');
       if (errorParam === 'scan_expired') {
-        if (titleEl) titleEl.textContent = 'SCAN EXPIRED';
-        if (messageEl) messageEl.textContent = 'THE 60S SCAN CODE HAS EXPIRED. RE-SCAN THE NEW CODE.';
+        if (titleEl) titleEl.textContent = '二维码已失效';
+        if (messageEl) messageEl.textContent = '二维码在60秒内有效，已失效。请重新扫码。';
       } else if (errorParam === 'scan_invalid') {
-        if (titleEl) titleEl.textContent = 'SCAN INVALID';
-        if (messageEl) messageEl.textContent = 'THE SCAN CODE IS INVALID OR HAS BEEN USED.';
+        if (titleEl) titleEl.textContent = '二维码无效';
+        if (messageEl) messageEl.textContent = '扫码链接无效或已被使用。';
       }
     }
   </script>

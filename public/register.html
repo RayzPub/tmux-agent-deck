@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>CCNOW - Registry Portal</title>
+  <title>CCNOW - 注册新账号</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
@@ -51,16 +51,16 @@
 
       <!-- Header -->
       <div class="auth-header">
-        <div class="cyber-badge">REGISTRY CORE</div>
-        <h1 class="glitch-text" data-text="NEW ACCESS">NEW ACCESS</h1>
-        <p class="auth-subtitle">ENTER INVITATION CODE TO INITIALIZE ACCOUNT</p>
+        <div class="cyber-badge">账号注册中心</div>
+        <h1 class="glitch-text" data-text="新用户注册">新用户注册</h1>
+        <p class="auth-subtitle">请输入邀请码以初始化您的账号</p>
       </div>
 
       <!-- Form -->
       <form id="registerForm" class="auth-form">
         <div class="input-group">
           <label for="code">
-            <span class="label-tech-text">// INVITATION_CODE</span>
+            <span class="label-tech-text">// 注册邀请码</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="ticket" class="input-icon"></i>
@@ -77,14 +77,14 @@
 
         <div class="input-group">
           <label for="username">
-            <span class="label-tech-text">// USERNAME</span>
+            <span class="label-tech-text">// 用户名</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="user" class="input-icon"></i>
             <input 
               type="text" 
               id="username" 
-              placeholder="Select username" 
+              placeholder="请设置用户名" 
               required 
               autocomplete="username"
             >
@@ -94,7 +94,7 @@
 
         <div class="input-group">
           <label for="password">
-            <span class="label-tech-text">// PASSWORD</span>
+            <span class="label-tech-text">// 密码</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="key-round" class="input-icon"></i>
@@ -110,13 +110,13 @@
         </div>
 
         <button type="submit" class="cyber-btn" id="registerBtn">
-          <span class="btn-text">INITIALIZE IDENTITY</span>
+          <span class="btn-text">初始化注册账号</span>
           <span class="btn-glitch"></span>
           <i data-lucide="user-plus" class="btn-icon"></i>
         </button>
 
         <div class="login-link-container" style="margin-top: 15px; text-align: center;">
-          <a href="/login.html?redirect=/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// Back to Login</a>
+          <a href="/login.html?redirect=/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 返回登录页面</a>
         </div>
       </form>
 
@@ -125,8 +125,8 @@
         <div class="alert-border"></div>
         <i data-lucide="alert-triangle" class="alert-icon"></i>
         <div class="alert-content">
-          <span class="alert-title">REGISTRY FAILED</span>
-          <span class="alert-message">INVALID OR EXPIRED INVITE CODE</span>
+          <span class="alert-title">注册失败</span>
+          <span class="alert-message">邀请码无效或已过期</span>
         </div>
       </div>
 
@@ -134,8 +134,8 @@
         <div class="alert-border" style="background: #00ff66;"></div>
         <i data-lucide="check-circle" class="alert-icon" style="color: #00ff66;"></i>
         <div class="alert-content">
-          <span class="alert-title" style="color: #00ff66;">SUCCESS</span>
-          <span class="alert-message" style="color: #ffffff;">IDENTITY PROVISIONED. REDIRECTING...</span>
+          <span class="alert-title" style="color: #00ff66;">注册成功</span>
+          <span class="alert-message" style="color: #ffffff;">身份创建成功，正在重定向...</span>
         </div>
       </div>
 
@@ -199,7 +199,7 @@
         if (response.ok && data.success) {
           // Success
           successAlert.classList.remove('hidden');
-          registerBtn.querySelector('.btn-text').innerText = 'PROVISIONED';
+          registerBtn.querySelector('.btn-text').innerText = '已创建';
           setTimeout(() => {
             window.location.href = '/login.html?redirect=/welcome';
           }, 1500);

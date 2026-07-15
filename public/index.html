@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" id="pwaThemeColor" content="#00f0ff">
-  <title>CCNOW // AI Control Deck</title>
+  <title>CCNOW // AI 智能体后台控制中心</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
@@ -45,7 +45,7 @@
         <i data-lucide="menu"></i>
       </button>
       <div class="cyber-logo-icon"></div>
-      <h1 class="logo-text">CCNOW <span class="accent-text">// CONTROL DECK</span></h1>
+      <h1 class="logo-text">CCNOW <span class="accent-text">// 控制面板</span></h1>
     </div>
     <div class="sys-info">
       <div class="sys-stat hidden-mobile">
@@ -53,43 +53,43 @@
         <span class="stat-val" id="hostIp">127.0.0.1</span>
       </div>
       <div class="sys-stat">
-        <span class="stat-label">STATUS:</span>
-        <span class="stat-val online"><span class="pulse-dot"></span><span class="stat-text">ONLINE</span></span>
+        <span class="stat-label">系统状态:</span>
+        <span class="stat-val online"><span class="pulse-dot"></span><span class="stat-text">正常运行</span></span>
       </div>
 
       <!-- Aggregated System Control Dropdown -->
       <div class="deck-control-dropdown" id="deckControlDropdown">
-        <button id="deckControlToggleBtn" class="header-btn" title="System Settings & Connections">
+        <button id="deckControlToggleBtn" class="header-btn" title="系统设置与连接管理">
           <i data-lucide="sliders-horizontal"></i>
-          <span>SYSTEM</span>
+          <span>系统</span>
         </button>
         <div id="deckControlDropdownMenu" class="deck-dropdown-menu hidden">
-          <div class="deck-dropdown-header">// DECK CONTROLS</div>
+          <div class="deck-dropdown-header">// 控制面板设置</div>
           <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
             <i data-lucide="bell"></i>
-            <span>PUSH: OFF</span>
+            <span>消息推送: 关闭</span>
           </button>
           <!-- IM BOT will be inserted here dynamically -->
-          <button id="adminInviteBtn" class="header-btn hidden" title="Manage Invite Codes">
+          <button id="adminInviteBtn" class="header-btn hidden" title="管理注册邀请码">
             <i data-lucide="ticket"></i>
-            <span>INVITE CODES</span>
+            <span>管理邀请码</span>
           </button>
-          <button id="themeToggleBtn" class="header-btn" title="Toggle Theme Style">
+          <button id="themeToggleBtn" class="header-btn" title="切换界面主题">
             <i data-lucide="moon"></i>
-            <span>CYBERPUNK</span>
+            <span>赛博朋克</span>
           </button>
           <button id="qrCodeBtn" class="header-btn hidden-mobile" title="手机扫码打开网页">
             <i data-lucide="qr-code"></i>
-            <span>MOBILE CONNECT</span>
+            <span>手机扫码连接</span>
           </button>
-          <button id="reloadBtn" class="header-btn" title="Reload Deck">
+          <button id="reloadBtn" class="header-btn" title="重新加载页面">
             <i data-lucide="refresh-cw"></i>
-            <span>RELOAD</span>
+            <span>重新加载</span>
           </button>
           <div class="deck-dropdown-divider"></div>
-          <button id="logoutBtn" class="header-btn danger" title="Logout Core">
+          <button id="logoutBtn" class="header-btn danger" title="退出并断开控制台">
             <i data-lucide="log-out"></i>
-            <span>DISCONNECT</span>
+            <span>断开连接</span>
           </button>
         </div>
       </div>
@@ -104,7 +104,7 @@
       <div class="workspace-selector-actions" style="display: flex; flex-direction: column; gap: 10px; border-bottom: 2px solid var(--neon-cyan); box-shadow: 0 4px 20px rgba(0, 240, 255, 0.08); background: linear-gradient(180deg, rgba(16, 20, 38, 0.8) 0%, rgba(10, 12, 22, 0.95) 100%); padding: 16px 16px; margin-bottom: 16px;">
         <!-- Tech Label Header -->
         <div class="workspace-tech-header" style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);">
-          // WORKSPACE
+          // 当前工作区
         </div>
         <!-- Select & Buttons Row -->
         <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
@@ -114,14 +114,14 @@
               <!-- populated dynamically -->
             </select>
           </div>
-          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline" title="New Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
+          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline" title="创建工作区" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
             <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
           </button>
-          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline" title="Delete Workspace" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
+          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline" title="删除工作区" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
             <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
           </button>
           <!-- Mobile close sidebar button (visible on mobile only) -->
-          <button id="closeSidebarBtn" class="close-sidebar-btn cyber-btn-outline" title="Close Sidebar" style="padding: 6px; display: none; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-color: var(--neon-pink); flex-shrink: 0;">
+          <button id="closeSidebarBtn" class="close-sidebar-btn cyber-btn-outline" title="关闭侧边栏" style="padding: 6px; display: none; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-color: var(--neon-pink); flex-shrink: 0;">
             <i data-lucide="x" style="width: 16px; height: 16px; color: var(--neon-pink);"></i>
           </button>
         </div>
@@ -131,12 +131,12 @@
       <div class="sidebar-tabs" style="border-top: none;">
         <button class="sidebar-tab active" id="tabSessionsBtn">
           <i data-lucide="terminal"></i>
-          <span>AGENTS</span>
+          <span>智能体会话</span>
           <span class="session-count" id="sessionCount" style="margin-left: 4px; font-size: 9px; background: rgba(0, 240, 255, 0.15); color: var(--neon-cyan); padding: 1px 6px; border-radius: 10px; font-family: var(--font-mono);">0</span>
         </button>
         <button class="sidebar-tab" id="tabFilesBtn">
           <i data-lucide="folder-tree"></i>
-          <span>EXPLORER</span>
+          <span>文件浏览器</span>
         </button>
       </div>
 
@@ -148,7 +148,7 @@
         <div class="action-bar" style="padding: 12px 16px 6px 16px;">
           <button id="newSessionBtn" class="cyber-btn-outline w-full" style="height: 34px; font-size: 11px;">
             <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
-            <span>INITIALIZE AGENT</span>
+            <span>启动新会话</span>
           </button>
         </div>
 
@@ -156,7 +156,7 @@
           <!-- Sessions will be loaded here dynamically -->
           <div class="loading-placeholder">
             <div class="cyber-spinner"></div>
-            <span>SCANNING AGENTS...</span>
+            <span>正在扫描会话...</span>
           </div>
         </div>
       </div>
@@ -166,13 +166,13 @@
         <!-- No redundant panel header -->
 
         <div class="file-explorer-actions">
-          <button id="refreshFilesBtn" class="cyber-btn-outline" title="Refresh Explorer">
+          <button id="refreshFilesBtn" class="cyber-btn-outline" title="刷新文件列表">
             <i data-lucide="refresh-cw"></i>
           </button>
-          <button id="collapseAllBtn" class="cyber-btn-outline" title="Collapse All Folders">
+          <button id="collapseAllBtn" class="cyber-btn-outline" title="折叠所有目录">
             <i data-lucide="fold-horizontal"></i>
           </button>
-          <button id="gitDiffWorkspaceBtn" class="cyber-btn-outline" title="Show Only Modified Files">
+          <button id="gitDiffWorkspaceBtn" class="cyber-btn-outline" title="仅显示已修改文件">
             <i data-lucide="git-compare"></i>
           </button>
         </div>
@@ -181,7 +181,7 @@
           <!-- Dynamic file tree will load here -->
           <div class="loading-placeholder">
             <div class="cyber-spinner"></div>
-            <span>SCANNING FILES...</span>
+            <span>正在扫描文件...</span>
           </div>
         </div>
       </div>
@@ -233,24 +233,24 @@
         <div class="terminal-header">
           <div class="terminal-title">
             <i data-lucide="monitor" class="terminal-icon"></i>
-            <span><span class="hidden-mobile">SESSION: </span><span class="highlight-text" id="activeSessionName">N/A</span></span>
+            <span><span class="hidden-mobile">会话名称: </span><span class="highlight-text" id="activeSessionName">无</span></span>
           </div>
           <div class="terminal-controls">
-            <button id="copyTerminalBtn" class="terminal-control-btn" title="Copy Selection (Ctrl+C)">
+            <button id="copyTerminalBtn" class="terminal-control-btn" title="复制选中文本 (Ctrl+C)">
               <i data-lucide="clipboard-copy"></i>
-              <span>COPY</span>
+              <span>复制</span>
             </button>
-            <button id="pasteTerminalBtn" class="terminal-control-btn" title="Paste from Clipboard (Ctrl+V)">
+            <button id="pasteTerminalBtn" class="terminal-control-btn" title="从剪贴板粘贴 (Ctrl+V)">
               <i data-lucide="clipboard-paste"></i>
-              <span>PASTE</span>
+              <span>粘贴</span>
             </button>
-            <button id="fitTerminalBtn" class="terminal-control-btn" title="Fit Terminal Output">
+            <button id="fitTerminalBtn" class="terminal-control-btn" title="自适应终端大小">
               <i data-lucide="maximize-2"></i>
-              <span>FIT</span>
+              <span>自适应</span>
             </button>
-            <button id="detachBtn" class="terminal-control-btn danger" title="Detach Session">
+            <button id="detachBtn" class="terminal-control-btn danger" title="断开当前会话连接">
               <i data-lucide="external-link"></i>
-              <span>DETACH</span>
+              <span>退出</span>
             </button>
           </div>
         </div>
@@ -272,21 +272,21 @@
         <div class="editor-header">
           <div class="editor-title">
             <i data-lucide="file-code" class="editor-icon"></i>
-            <span>EDITING: <span class="highlight-text" id="activeFilePath">N/A</span></span>
+            <span>正在编辑: <span class="highlight-text" id="activeFilePath">无</span></span>
           </div>
           <div class="editor-controls">
             <span class="editor-status-msg" id="editorStatusMsg"></span>
-            <button id="togglePreviewBtn" class="terminal-control-btn hidden" title="Toggle Markdown Preview">
+            <button id="togglePreviewBtn" class="terminal-control-btn hidden" title="切换 Markdown 预览">
               <i data-lucide="eye"></i>
-              <span>PREVIEW</span>
+              <span>预览</span>
             </button>
-            <button id="saveFileBtn" class="terminal-control-btn" title="Save File (Ctrl+S)">
+            <button id="saveFileBtn" class="terminal-control-btn" title="保存文件 (Ctrl+S)">
               <i data-lucide="save"></i>
-              <span>SAVE</span>
+              <span>保存</span>
             </button>
-            <button id="closeEditorBtn" class="terminal-control-btn danger" title="Close Editor">
+            <button id="closeEditorBtn" class="terminal-control-btn danger" title="关闭文件编辑器">
               <i data-lucide="x"></i>
-              <span>CLOSE</span>
+              <span>关闭</span>
             </button>
           </div>
         </div>
@@ -309,17 +309,17 @@
         <div class="editor-header">
           <div class="editor-title">
             <i data-lucide="git-compare" class="editor-icon" style="color: var(--neon-orange);"></i>
-            <span>GIT DIFF: <span class="highlight-text" id="activeDiffPath">All Changes</span></span>
+            <span>代码对比: <span class="highlight-text" id="activeDiffPath">所有更改</span></span>
           </div>
           <div class="editor-controls">
             <span class="editor-status-msg" id="diffStatusMsg"></span>
-            <button id="refreshDiffBtn" class="terminal-control-btn" title="Refresh Diff">
+            <button id="refreshDiffBtn" class="terminal-control-btn" title="刷新对比">
               <i data-lucide="refresh-cw"></i>
-              <span>REFRESH</span>
+              <span>刷新</span>
             </button>
-            <button id="closeDiffBtn" class="terminal-control-btn danger" title="Close Diff">
+            <button id="closeDiffBtn" class="terminal-control-btn danger" title="关闭对比">
               <i data-lucide="x"></i>
-              <span>CLOSE</span>
+              <span>关闭</span>
             </button>
           </div>
         </div>
@@ -344,24 +344,24 @@
       <div class="auth-glow"></div>
 
       <div class="modal-header">
-        <h3><i data-lucide="plus-circle"></i> INITIALIZE SESSION</h3>
+        <h3><i data-lucide="plus-circle"></i> 启动新智能体会话</h3>
         <button class="modal-close" id="closeModalBtn"><i data-lucide="x"></i></button>
       </div>
       
       <form id="createSessionForm" class="modal-form">
         <div class="input-group">
           <label for="newSessionName">
-            <span class="label-tech-text">// SESSION_IDENTIFIER</span>
+            <span class="label-tech-text">// 会话唯一标识</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="terminal" class="input-icon"></i>
             <input 
               type="text" 
               id="newSessionName" 
-              placeholder="e.g. dev-server, db-monitor" 
+              placeholder="例如 dev-server, my-agent" 
               required
               pattern="^[a-zA-Z0-9_-]+$"
-              title="Only letters, numbers, underscores and dashes are allowed"
+              title="仅允许使用字母、数字、下划线和连字符"
             >
             <div class="input-indicator"></div>
           </div>
@@ -369,7 +369,7 @@
 
         <div class="input-group" style="display: none;">
           <label for="sessionWorkspaceSelect">
-            <span class="label-tech-text">// WORKSPACE</span>
+            <span class="label-tech-text">// 工作区</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="folder-git-2" class="input-icon" style="color: var(--text-secondary);"></i>
@@ -381,33 +381,33 @@
 
         <div class="input-group">
           <label>
-            <span class="label-tech-text">// WORKSPACE_CONTEXT</span>
+            <span class="label-tech-text">// 工作区上下文</span>
           </label>
           <div class="active-workspace-badge-container" style="padding: 10px 14px; background: rgba(0, 240, 255, 0.03); border: 1px dashed rgba(0, 240, 255, 0.2); border-radius: 4px; font-family: var(--font-mono); font-size: 13px; color: var(--neon-cyan); display: flex; align-items: center; gap: 8px;">
             <i data-lucide="folder" style="width: 14px; height: 14px;"></i>
-            <span id="modalActiveWorkspaceName">Default Workspace</span>
+            <span id="modalActiveWorkspaceName">默认工作区</span>
           </div>
         </div>
 
         <div id="newWorkspaceFields" class="hidden" style="display: flex; flex-direction: column; gap: 15px; border: 1px dashed rgba(0, 240, 255, 0.2); padding: 15px; border-radius: 4px; background: rgba(0, 240, 255, 0.02); margin-top: -10px;">
-          <span style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);">// INITIALIZE NEW WORKSPACE</span>
+          <span style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);">// 初始化新工作区</span>
           <div class="input-group" style="margin-bottom: 0;">
             <label for="modalNewWorkspaceName">
-              <span class="label-tech-text" style="font-size: 9px;">WORKSPACE NAME</span>
+              <span class="label-tech-text" style="font-size: 9px;">工作区名称</span>
             </label>
             <div class="input-wrapper">
               <i data-lucide="tag" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
               <input 
                 type="text" 
                 id="modalNewWorkspaceName" 
-                placeholder="e.g. workspace-name" 
+                placeholder="例如 my-workspace" 
                 style="padding: 10px 10px 10px 40px; font-size: 14px;"
               >
             </div>
           </div>
           <div class="input-group" style="margin-bottom: 0;">
             <label for="modalNewWorkspacePath">
-              <span class="label-tech-text" style="font-size: 9px;">ABSOLUTE DIRECTORY PATH</span>
+              <span class="label-tech-text" style="font-size: 9px;">服务器绝对路径</span>
             </label>
             <div style="display: flex; gap: 8px; width: 100%;">
               <div class="input-wrapper" style="flex: 1;">
@@ -415,11 +415,11 @@
                 <input 
                   type="text" 
                   id="modalNewWorkspacePath" 
-                  placeholder="e.g. /home/ubuntu/project-x" 
+                  placeholder="例如 /home/ubuntu/project-x" 
                   style="padding: 10px 10px 10px 40px; font-size: 14px; width: 100%;"
                 >
               </div>
-              <button type="button" class="cyber-btn-outline" id="browseModalWorkspacePathBtn" style="padding: 8px 12px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono);" title="Browse Folders">
+              <button type="button" class="cyber-btn-outline" id="browseModalWorkspacePathBtn" style="padding: 8px 12px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono);" title="浏览服务器文件夹">
                 <i data-lucide="folder-search" style="width: 16px; height: 16px;"></i>
               </button>
             </div>
@@ -428,7 +428,7 @@
 
         <div class="input-group">
           <label>
-            <span class="label-tech-text">// INITIAL_AGENT_TUNNEL</span>
+            <span class="label-tech-text">// 初始智能体环境</span>
           </label>
           <div class="agent-cards-container">
             <label class="agent-card-option">
@@ -436,8 +436,8 @@
               <div class="agent-card-inner">
                 <i data-lucide="terminal"></i>
                 <div class="agent-card-info">
-                  <span class="agent-title">SHELL</span>
-                  <span class="agent-desc">Standard bash</span>
+                  <span class="agent-title">SHELL 终端</span>
+                  <span class="agent-desc">标准 Bash 环境</span>
                 </div>
               </div>
             </label>
@@ -446,7 +446,7 @@
               <div class="agent-card-inner">
                 <i data-lucide="bot"></i>
                 <div class="agent-card-info">
-                  <span class="agent-title">AGY</span>
+                  <span class="agent-title">ANTIGRAVITY</span>
                   <span class="agent-desc">Antigravity AI</span>
                 </div>
               </div>
@@ -457,7 +457,7 @@
                 <i data-lucide="message-square"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">CLAUDE</span>
-                  <span class="agent-desc">Claude CLI</span>
+                  <span class="agent-desc">Claude Code 命令行</span>
                 </div>
               </div>
             </label>
@@ -467,7 +467,7 @@
                 <i data-lucide="code"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">CODEX</span>
-                  <span class="agent-desc">Codex Agent</span>
+                  <span class="agent-desc">Codex 智能体</span>
                 </div>
               </div>
             </label>
@@ -475,8 +475,8 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="cyber-btn-outline" id="cancelModalBtn">ABORT</button>
-          <button type="submit" class="cyber-btn">EXECUTE</button>
+          <button type="button" class="cyber-btn-outline" id="cancelModalBtn">取消</button>
+          <button type="submit" class="cyber-btn">确认启动</button>
         </div>
       </form>
     </div>
@@ -492,21 +492,21 @@
       <div class="auth-glow"></div>
 
       <div class="modal-header">
-        <h3><i data-lucide="folder-plus"></i> INITIALIZE WORKSPACE</h3>
+        <h3><i data-lucide="folder-plus"></i> 初始化工作区</h3>
         <button class="modal-close" id="closeWorkspaceModalBtn"><i data-lucide="x"></i></button>
       </div>
       
       <form id="createWorkspaceForm" class="modal-form">
         <div class="input-group">
           <label for="newWorkspaceNameInput">
-            <span class="label-tech-text">// WORKSPACE_NAME</span>
+            <span class="label-tech-text">// 工作区名称</span>
           </label>
           <div class="input-wrapper">
             <i data-lucide="tag" class="input-icon"></i>
             <input 
               type="text" 
               id="newWorkspaceNameInput" 
-              placeholder="e.g. project-x, config-files" 
+              placeholder="例如 project-x, config-files" 
               required
             >
             <div class="input-indicator"></div>
@@ -515,7 +515,7 @@
 
         <div class="input-group">
           <label for="newWorkspacePathInput">
-            <span class="label-tech-text" id="workspacePathLabel">// WORKSPACE_ABSOLUTE_PATH</span>
+            <span class="label-tech-text" id="workspacePathLabel">// 工作区绝对路径</span>
           </label>
           <div style="display: flex; gap: 8px; width: 100%;">
             <div class="input-wrapper" style="flex: 1;">
@@ -523,21 +523,21 @@
               <input 
                 type="text" 
                 id="newWorkspacePathInput" 
-                placeholder="e.g. /home/ubuntu/project-x" 
+                placeholder="例如 /home/ubuntu/project-x" 
                 style="width: 100%;"
               >
               <div class="input-indicator"></div>
             </div>
-            <button type="button" class="cyber-btn-outline" id="browseNewWorkspacePathBtn" style="padding: 15px 15px; height: 50px; display: flex; align-items: center; justify-content: center;" title="Browse Folders">
+            <button type="button" class="cyber-btn-outline" id="browseNewWorkspacePathBtn" style="padding: 15px 15px; height: 50px; display: flex; align-items: center; justify-content: center;" title="浏览服务器目录">
               <i data-lucide="folder-search" style="width: 18px; height: 18px;"></i>
             </button>
           </div>
-          <p id="workspacePathHint" class="hidden" style="margin: 4px 0 0 0; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);">// Optional: leave blank to auto-create a directory with the workspace name</p>
+          <p id="workspacePathHint" class="hidden" style="margin: 4px 0 0 0; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);">// 可选：留空将以工作区名称自动在用户目录下创建新文件夹</p>
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="cyber-btn-outline" id="cancelWorkspaceModalBtn">ABORT</button>
-          <button type="submit" class="cyber-btn">CREATE</button>
+          <button type="button" class="cyber-btn-outline" id="cancelWorkspaceModalBtn">取消</button>
+          <button type="submit" class="cyber-btn">创建工作区</button>
         </div>
       </form>
     </div>
@@ -553,7 +553,7 @@
       <div class="auth-glow"></div>
 
       <div class="modal-header" style="justify-content: center; position: relative;">
-        <h3><i data-lucide="qr-code" style="vertical-align: middle; margin-right: 8px;"></i> MOBILE SCAN</h3>
+        <h3><i data-lucide="qr-code" style="vertical-align: middle; margin-right: 8px;"></i> 手机扫码连接</h3>
         <button class="modal-close" id="closeQrCodeModalBtn" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%);"><i data-lucide="x"></i></button>
       </div>
 
@@ -565,7 +565,7 @@
         <!-- Dropdown to select different interfaces / current URL -->
         <div class="input-group" style="width: 100%; margin-bottom: 0;">
           <label style="text-align: left; display: block; margin-bottom: 5px;">
-            <span class="label-tech-text">// SELECT_HOST_IP_OR_URL</span>
+            <span class="label-tech-text">// 选择主机 IP 或访问地址</span>
           </label>
           <div class="input-wrapper" style="position: relative; display: flex; align-items: center; width: 100%;">
             <i data-lucide="network" class="input-icon" style="position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-secondary);"></i>
@@ -581,12 +581,12 @@
 
         <div id="qrcodeTimer" style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); margin: -5px 0 5px 0; display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
           <i data-lucide="timer" style="width: 14px; height: 14px;"></i>
-          <span>VALID FOR: --s</span>
+          <span>有效期剩余: --秒</span>
         </div>
 
         <div class="input-group" style="width: 100%; margin-bottom: 0;">
           <label style="text-align: left; display: block; margin-bottom: 5px;">
-            <span class="label-tech-text">// TARGET_URL</span>
+            <span class="label-tech-text">// 临时访问链接</span>
           </label>
           <div style="display: flex; gap: 8px; width: 100%;">
             <div class="input-wrapper" style="flex: 1; display: flex; align-items: center;">
@@ -604,7 +604,7 @@
         </div>
 
         <div class="modal-actions" style="margin-top: 10px; width: 100%; justify-content: center;">
-          <button type="button" class="cyber-btn" id="closeQrCodeModalOkBtn" style="min-width: 100px;">OK</button>
+          <button type="button" class="cyber-btn" id="closeQrCodeModalOkBtn" style="min-width: 100px;">确定</button>
         </div>
       </div>
     </div>
@@ -617,9 +617,9 @@
   <div class="mobile-bottom-controls hidden-desktop">
     <!-- Mobile Command Input Bar -->
     <div class="mobile-input-bar" id="mobileInputBar">
-      <button id="mobileMicBtn" class="mobile-mic-btn" title="Voice Input"><i data-lucide="mic"></i></button>
-      <input type="text" id="mobileCommandInput" class="mobile-cmd-input" placeholder="Type or dictate command...">
-      <button id="mobileSendBtn" class="mobile-send-btn" title="Send to Terminal">
+      <button id="mobileMicBtn" class="mobile-mic-btn" title="语音输入"><i data-lucide="mic"></i></button>
+      <input type="text" id="mobileCommandInput" class="mobile-cmd-input" placeholder="请输入或口述命令...">
+      <button id="mobileSendBtn" class="mobile-send-btn" title="发送至终端">
         <i data-lucide="send"></i>
       </button>
     </div>
@@ -653,7 +653,7 @@
       <div class="auth-glow"></div>
 
       <div class="modal-header">
-        <h3><i data-lucide="folder-search"></i> SELECT DIRECTORY</h3>
+        <h3><i data-lucide="folder-search"></i> 选择服务器目录</h3>
         <button class="modal-close" id="closeDirPickerBtn"><i data-lucide="x"></i></button>
       </div>
 
@@ -670,8 +670,8 @@
         </div>
 
         <div class="modal-actions" style="margin-top: 15px;">
-          <button type="button" class="cyber-btn-outline" id="cancelDirPickerBtn">CANCEL</button>
-          <button type="button" class="cyber-btn" id="confirmDirPickerBtn">CHOOSE</button>
+          <button type="button" class="cyber-btn-outline" id="cancelDirPickerBtn">取消</button>
+          <button type="button" class="cyber-btn" id="confirmDirPickerBtn">选择当前目录</button>
         </div>
       </div>
     </div>
@@ -687,14 +687,14 @@
       <div class="auth-glow"></div>
 
       <div class="modal-header invite-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px;">
-        <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 16px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">// INVITATION CODES</h3>
+        <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 16px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">// 注册邀请码管理</h3>
         <button id="closeInviteModalBtn" class="modal-close" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px;"><i data-lucide="x"></i></button>
       </div>
 
       <div class="action-bar" style="margin-bottom: 20px; display: flex; gap: 10px;">
-        <input type="text" id="inviteNoteInput" class="cyber-input" placeholder="Enter recipient name / note" style="flex: 1; height: 34px; font-family: var(--font-mono); font-size: 12px; border-radius: 4px; outline: none; padding: 0 10px;">
+        <input type="text" id="inviteNoteInput" class="cyber-input" placeholder="输入被邀请人姓名 / 备注信息" style="flex: 1; height: 34px; font-family: var(--font-mono); font-size: 12px; border-radius: 4px; outline: none; padding: 0 10px;">
         <button id="generateCodeBtn" class="cyber-btn" style="height: 34px; padding: 0 16px; font-size: 12px; font-weight: bold; min-width: 130px; position: relative;">
-          <span class="btn-text">GENERATE</span>
+          <span class="btn-text">生成邀请码</span>
         </button>
       </div>
 
@@ -702,11 +702,11 @@
         <table class="invite-table" style="width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; text-align: left;">
           <thead>
             <tr class="invite-table-header-row">
-              <th style="padding: 8px;">CODE</th>
-              <th style="padding: 8px;">NOTE</th>
-              <th style="padding: 8px;">STATUS</th>
-              <th style="padding: 8px;">USED BY</th>
-              <th style="padding: 8px; width: 50px;">ACTION</th>
+              <th style="padding: 8px;">邀请码</th>
+              <th style="padding: 8px;">备注信息</th>
+              <th style="padding: 8px;">状态</th>
+              <th style="padding: 8px;">使用者</th>
+              <th style="padding: 8px; width: 50px;">操作</th>
             </tr>
           </thead>
           <tbody id="inviteCodesTableBody">

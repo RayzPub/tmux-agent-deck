@@ -184,7 +184,7 @@ export async function loadSessions() {
     sessionList.innerHTML = `
       <div class="loading-placeholder">
         <i data-lucide="alert-circle" style="color: var(--neon-pink)"></i>
-        <span>ERROR LOADING SESSIONS</span>
+        <span>加载会话失败</span>
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
@@ -218,7 +218,7 @@ export function renderSessions(sessions) {
   if (filteredSessions.length === 0) {
     sessionList.innerHTML = `
       <div class="loading-placeholder">
-        <span>NO SESSIONS FOUND</span>
+        <span>未找到会话</span>
       </div>
     `;
     return;
@@ -248,7 +248,7 @@ export function renderSessions(sessions) {
           <span class="session-status-dot" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background-color: ${session.attached ? 'var(--neon-green)' : 'rgba(255, 255, 255, 0.25)'}; box-shadow: ${session.attached ? 'var(--glow-green)' : 'none'};"></span>
           <div class="session-name" title="${session.name}" style="max-width: 120px;">${session.name}</div>
         </div>
-        <div class="session-workspace" title="${session.path || 'Default Workspace'}">
+        <div class="session-workspace" title="${session.path || '默认工作区'}">
           <i data-lucide="folder"></i>
           <span>${workspaceText}</span>
         </div>
@@ -256,7 +256,7 @@ export function renderSessions(sessions) {
       <div class="session-meta">
         <span class="session-time">${session.created}</span>
         <div class="card-actions">
-          <button class="card-action-btn danger-btn" data-action="kill" data-name="${session.name}" title="Kill Session">
+          <button class="card-action-btn danger-btn" data-action="kill" data-name="${session.name}" title="结束会话">
             <i data-lucide="trash-2"></i>
           </button>
         </div>
@@ -280,7 +280,7 @@ export function renderSessions(sessions) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const name = btn.getAttribute('data-name');
-      if (confirm(`Are you sure you want to terminate tmux session "${name}"?`)) {
+      if (confirm(`您确定要终止 tmux 会话 "${name}" 吗？`)) {
         await killSession(name);
       }
     });
@@ -298,11 +298,11 @@ async function killSession(name) {
       await loadSessions();
     } else {
       const data = await response.json();
-      alert('Failed to kill session: ' + (data.error || 'Unknown error'));
+      alert('关闭会话失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
-    alert('Network error when attempting to kill session');
+    alert('尝试关闭会话时发生网络错误');
   }
 }
 
@@ -459,13 +459,13 @@ sessionWorkspaceSelect.addEventListener('change', () => {
 // Delete Workspace
 explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
   if (!state.currentWorkspacePath) {
-    alert('Default workspace cannot be deleted.');
+    alert('无法删除默认工作区。');
     return;
   }
   const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
   if (!ws) return;
   
-  const confirmDelete = confirm(`Are you sure you want to remove workspace "${ws.name}"?\n\nNOTE: This action only removes the workspace configuration from the dashboard list. It will NOT delete the actual directory or any files on your disk.`);
+  const confirmDelete = confirm(`您确定要移除工作区 "${ws.name}" 吗？\n\n注意：此操作仅从控制面板列表中移除该工作区配置，并不会删除您磁盘上的实际目录或文件。`);
   if (!confirmDelete) return;
 
   try {
@@ -478,7 +478,7 @@ explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
       loadSessions();
     } else {
       const data = await response.json();
-      alert('Failed to delete workspace: ' + (data.error || 'Unknown error'));
+      alert('删除工作区失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
@@ -495,21 +495,21 @@ explorerNewWorkspaceBtn.addEventListener('click', () => {
   const browseBtn = document.getElementById('browseNewWorkspacePathBtn');
   if (state.multiUserEnabled) {
     if (state.username === 'admin') {
-      if (pathLabel) pathLabel.textContent = '// WORKSPACE_PATH (optional)';
+      if (pathLabel) pathLabel.textContent = '// 工作区绝对路径 (可选)';
       if (pathHint) pathHint.classList.add('hidden');
       if (browseBtn) browseBtn.style.display = '';
-      newWorkspacePathInput.placeholder = 'e.g. /home/ubuntu/project-x or my-project';
+      newWorkspacePathInput.placeholder = '例如 /home/ubuntu/project-x 或 my-project';
     } else {
-      if (pathLabel) pathLabel.textContent = '// SUBDIRECTORY_NAME (optional)';
+      if (pathLabel) pathLabel.textContent = '// 子目录名称 (可选)';
       if (pathHint) pathHint.classList.remove('hidden');
       if (browseBtn) browseBtn.style.display = 'none';
-      newWorkspacePathInput.placeholder = 'e.g. my-project (leave blank to use workspace name)';
+      newWorkspacePathInput.placeholder = '例如 my-project (留空将自动使用工作区名称)';
     }
   } else {
-    if (pathLabel) pathLabel.textContent = '// WORKSPACE_ABSOLUTE_PATH';
+    if (pathLabel) pathLabel.textContent = '// 工作区绝对路径';
     if (pathHint) pathHint.classList.add('hidden');
     if (browseBtn) browseBtn.style.display = '';
-    newWorkspacePathInput.placeholder = 'e.g. /home/ubuntu/project-x';
+    newWorkspacePathInput.placeholder = '例如 /home/ubuntu/project-x';
   }
   workspaceModal.classList.remove('hidden');
 });
@@ -527,7 +527,7 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
   if (!wsName) return;
   // In single-user mode, path is required
   if (!state.multiUserEnabled && !wsPath) {
-    alert('Please enter a workspace path.');
+    alert('请输入工作区路径。');
     return;
   }
 
@@ -551,7 +551,7 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
       renderSessions(state.sessionListCache);
     } else {
       const data = await response.json();
-      alert('Failed to create workspace: ' + (data.error || 'Unknown error'));
+      alert('创建工作区失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
@@ -714,7 +714,7 @@ createSessionForm.addEventListener('submit', async (e) => {
       attachSession(name);
     } else {
       const data = await response.json();
-      alert('Failed to create session: ' + (data.error || 'Unknown error'));
+      alert('创建会话失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
@@ -728,7 +728,7 @@ if (reloadBtn) {
 }
 
 logoutBtn.addEventListener('click', async () => {
-  if (confirm('Disconnect from server control session?')) {
+  if (confirm('断开与服务器控制面板的连接？')) {
     try {
       clearSessionCache();
       await fetch('/api/logout', { method: 'POST' });
@@ -873,7 +873,7 @@ function convertSelectToCustom(selectEl) {
   function syncSelectedText() {
     const selectedIndex = selectEl.selectedIndex;
     if (selectedIndex < 0) {
-      selectedText.innerHTML = '<span style="color: var(--text-secondary);">Select Option</span>';
+      selectedText.innerHTML = '<span style="color: var(--text-secondary);">选择选项</span>';
       return;
     }
     const opt = selectEl.options[selectedIndex];
@@ -1040,7 +1040,7 @@ async function loadWorkspaces() {
     
     const createNewOpt = document.createElement('option');
     createNewOpt.value = '__new__';
-    createNewOpt.textContent = state.workspacesList.length === 0 ? 'Initialize Workspace' : 'Create Workspace';
+    createNewOpt.textContent = state.workspacesList.length === 0 ? '初始化工作区' : '创建新工作区';
     sessionWorkspaceSelect.appendChild(createNewOpt);
 
     if (state.workspacesList.length === 0) {
@@ -1136,7 +1136,7 @@ loadWorkspaces().then(async () => {
   function renderInviteCodes(codes) {
     inviteCodesTableBody.innerHTML = '';
     if (codes.length === 0) {
-      inviteCodesTableBody.innerHTML = `<tr><td colspan="5" style="padding: 12px; text-align: center; color: var(--text-muted);">// NO ACTIVE CODES</td></tr>`;
+      inviteCodesTableBody.innerHTML = `<tr><td colspan="5" style="padding: 12px; text-align: center; color: var(--text-muted);">// 暂无可用邀请码</td></tr>`;
       return;
     }
     codes.forEach(c => {
@@ -1145,10 +1145,10 @@ loadWorkspaces().then(async () => {
       
       const inviteLink = `${window.location.origin}/register.html?code=${c.code}`;
       const statusColor = c.status === 'used' ? 'var(--text-muted)' : 'var(--neon-cyan)';
-      const statusText = c.status === 'used' ? 'USED' : 'PENDING';
+      const statusText = c.status === 'used' ? '已使用' : '未使用';
       
       tr.innerHTML = `
-        <td style="padding: 8px; font-weight: bold; color: var(--neon-pink); cursor: pointer;" title="Click to copy registration link" class="invite-code-cell" data-link="${inviteLink}">
+        <td style="padding: 8px; font-weight: bold; color: var(--neon-pink); cursor: pointer;" title="点击复制注册邀请链接" class="invite-code-cell" data-link="${inviteLink}">
           ${c.code} <i data-lucide="copy" style="width: 10px; height: 10px; display: inline-block; margin-left: 4px; vertical-align: middle;"></i>
         </td>
         <td style="padding: 8px; color: var(--text-secondary); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.note || '-'}</td>
@@ -1204,7 +1204,7 @@ loadWorkspaces().then(async () => {
           loadInviteCodes();
         } else {
           const data = await res.json();
-          alert(data.error || 'Failed to generate invite code');
+          alert(data.error || '生成邀请码失败');
         }
       } catch (err) {
         console.error(err);
@@ -1219,7 +1219,7 @@ loadWorkspaces().then(async () => {
         const link = cell.getAttribute('data-link');
         try {
           await navigator.clipboard.writeText(link);
-          alert('Invitation link copied to clipboard!');
+          alert('注册邀请链接已复制到剪贴板！');
         } catch (err) {
           const input = document.createElement('input');
           input.value = link;
@@ -1227,14 +1227,14 @@ loadWorkspaces().then(async () => {
           input.select();
           document.execCommand('copy');
           document.body.removeChild(input);
-          alert('Invitation link copied to clipboard!');
+          alert('注册邀请链接已复制到剪贴板！');
         }
       }
       
       const deleteBtn = e.target.closest('.delete-invite-btn');
       if (deleteBtn) {
         const code = deleteBtn.getAttribute('data-code');
-        if (confirm(`Are you sure you want to revoke invite code ${code}?`)) {
+        if (confirm(`您确定要撤销邀请码 ${code} 吗？`)) {
           try {
             const res = await fetch('/api/admin/invite-codes', {
               method: 'DELETE',

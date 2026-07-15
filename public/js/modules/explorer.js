@@ -8,7 +8,7 @@ export async function loadDirPickerPath(dirPath) {
   dirPickerList.innerHTML = `
     <div class="loading-placeholder" style="padding: 4px 8px;">
       <div class="cyber-spinner" style="width: 14px; height: 14px; border-width: 1px;"></div>
-      <span style="font-size: 11px;">SCANNING DIRECTORIES...</span>
+      <span style="font-size: 11px;">正在扫描目录...</span>
     </div>
   `;
 
@@ -23,7 +23,7 @@ export async function loadDirPickerPath(dirPath) {
     dirPickerList.innerHTML = '';
 
     if (!response.ok) {
-      dirPickerList.innerHTML = '<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">ERROR: ' + (data.error || 'Load failed') + '</div>';
+      dirPickerList.innerHTML = '<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">错误: ' + (data.error || '加载失败') + '</div>';
       return;
     }
 
@@ -40,7 +40,7 @@ export async function loadDirPickerPath(dirPath) {
       upRow.style.padding = '6px 8px';
       upRow.innerHTML = `
         <div class="file-node-icon dir-icon"><i data-lucide="corner-left-up"></i></div>
-        <span class="file-node-name" style="font-size: 13px; font-family: var(--font-mono);">.. (Go Up)</span>
+        <span class="file-node-name" style="font-size: 13px; font-family: var(--font-mono);">.. (返回上级)</span>
       `;
       upRow.addEventListener('click', () => {
         loadDirPickerPath(data.parentPath);
@@ -49,7 +49,7 @@ export async function loadDirPickerPath(dirPath) {
     }
 
     if (data.directories.length === 0 && !data.parentPath) {
-      dirPickerList.innerHTML = '<div class="empty-text" style="color: var(--text-muted); padding: 4px 8px; font-style: italic; font-size:11px;">(no subdirectories)</div>';
+      dirPickerList.innerHTML = '<div class="empty-text" style="color: var(--text-muted); padding: 4px 8px; font-style: italic; font-size:11px;">(无子目录)</div>';
       return;
     }
 
@@ -76,7 +76,7 @@ export async function loadDirPickerPath(dirPath) {
     }
   } catch (err) {
     console.error(err);
-    dirPickerList.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">NET ERROR</div>`;
+    dirPickerList.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">网络错误</div>`;
   }
 }
 
@@ -265,7 +265,7 @@ export async function loadDirectory(dirPath, containerEl) {
   containerEl.innerHTML = `
     <div class="loading-placeholder" style="padding: 4px 8px;">
       <div class="cyber-spinner" style="width: 14px; height: 14px; border-width: 1px;"></div>
-      <span style="font-size: 11px;">SCANNING...</span>
+      <span style="font-size: 11px;">正在扫描...</span>
     </div>
   `;
 
@@ -279,7 +279,7 @@ export async function loadDirectory(dirPath, containerEl) {
     containerEl.innerHTML = '';
 
     if (!response.ok) {
-      containerEl.innerHTML = '<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">ERROR: ' + (files.error || 'Load failed') + '</div>';
+      containerEl.innerHTML = '<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">错误: ' + (files.error || '加载失败') + '</div>';
       return;
     }
 
@@ -299,7 +299,7 @@ export async function loadDirectory(dirPath, containerEl) {
     }
 
     if (filteredFiles.length === 0) {
-      containerEl.innerHTML = '<div class="empty-text" style="color: var(--text-muted); padding: 4px 8px; font-style: italic; font-size:11px;">(empty)</div>';
+      containerEl.innerHTML = '<div class="empty-text" style="color: var(--text-muted); padding: 4px 8px; font-style: italic; font-size:11px;">(空)</div>';
       return;
     }
 
@@ -383,7 +383,7 @@ export async function loadDirectory(dirPath, containerEl) {
     }
   } catch (err) {
     console.error(err);
-    containerEl.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">NET ERROR</div>`;
+    containerEl.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 4px; font-size:11px;">网络错误</div>`;
   }
 }
 

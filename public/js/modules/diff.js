@@ -9,10 +9,10 @@ export async function loadGitDiff(path = '') {
   container.innerHTML = `
     <div class="loading-placeholder">
       <div class="cyber-spinner"></div>
-      <span>GENERATING DIFF...</span>
+      <span>正在生成差异对比 (Diff)...</span>
     </div>
   `;
-  diffStatusMsg.textContent = 'LOADING...';
+  diffStatusMsg.textContent = '加载中...';
   
   try {
     const url = `/api/git/diff?workspacePath=${encodeURIComponent(state.currentWorkspacePath)}&path=${encodeURIComponent(path)}`;
@@ -30,20 +30,20 @@ export async function loadGitDiff(path = '') {
       diffStatusMsg.textContent = '';
       parseAndRenderDiff(data.diff);
     } else {
-      diffStatusMsg.textContent = 'ERROR';
-      container.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 20px; text-align: center;">ERROR: ${data.error || 'Failed to load diff'}</div>`;
+      diffStatusMsg.textContent = '错误';
+      container.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 20px; text-align: center;">错误: ${data.error || '获取差异对比失败'}</div>`;
     }
   } catch (err) {
     console.error(err);
-    diffStatusMsg.textContent = 'NET ERROR';
-    container.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 20px; text-align: center;">NET ERROR</div>`;
+    diffStatusMsg.textContent = '网络错误';
+    container.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 20px; text-align: center;">网络错误</div>`;
   }
 }
 
 export function parseAndRenderDiff(diffText) {
   const container = document.getElementById('diffContentContainer');
   if (!diffText || !diffText.trim()) {
-    container.innerHTML = '<div class="diff-empty">No uncommitted changes in this file / workspace.</div>';
+    container.innerHTML = '<div class="diff-empty">当前文件/工作区没有未提交的更改。</div>';
     return;
   }
 

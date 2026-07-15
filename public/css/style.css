@@ -1810,6 +1810,13 @@ body.light-minimalist .slogan-title {
   #terminal-container, .terminal-instance-container, .xterm, .xterm-screen, .xterm-viewport {
     touch-action: none !important;
   }
+
+  .sidebar-tab {
+    padding: 12px 6px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    gap: 4px;
+  }
 }
 
 /* Sidebar Tabs */
@@ -1835,6 +1842,7 @@ body.light-minimalist .slogan-title {
   justify-content: center;
   gap: 8px;
   transition: var(--transition-fast);
+  white-space: nowrap;
 }
 
 .sidebar-tab:hover {

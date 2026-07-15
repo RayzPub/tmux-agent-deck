@@ -12,7 +12,7 @@ export function generateQrCode(url) {
   if (!container) return;
 
   if (typeof QRCode === 'undefined') {
-    container.innerHTML = `<span style="color: var(--neon-pink); font-family: var(--font-mono); font-size: 11px; text-align: center;">QR Code generator library not loaded.<br>Please check network connection.</span>`;
+    container.innerHTML = `<span style="color: var(--neon-pink); font-family: var(--font-mono); font-size: 11px; text-align: center;">二维码生成库未加载。<br>请检查网络连接。</span>`;
     return;
   }
 
@@ -30,7 +30,7 @@ export function generateQrCode(url) {
     });
   } catch (error) {
     console.error('Failed to generate QR Code:', error);
-    container.innerHTML = `<span style="color: var(--neon-pink); font-family: var(--font-mono); font-size: 11px;">Failed to generate QR Code.</span>`;
+    container.innerHTML = `<span style="color: var(--neon-pink); font-family: var(--font-mono); font-size: 11px;">生成二维码失败。</span>`;
   }
 }
 
@@ -48,7 +48,7 @@ async function refreshLoginToken() {
     const tokenData = await tokenRes.json();
     
     if (!tokenData.success || !tokenData.token) {
-      throw new Error(tokenData.error || 'Failed to get temporary login token');
+      throw new Error(tokenData.error || '获取临时登录令牌失败');
     }
 
     activeToken = tokenData.token;
@@ -63,7 +63,7 @@ async function refreshLoginToken() {
     // Reset countdown display
     if (qrcodeTimer) {
       const timerSpan = qrcodeTimer.querySelector('span');
-      if (timerSpan) timerSpan.textContent = `VALID FOR: ${countdownSeconds}s`;
+      if (timerSpan) timerSpan.textContent = `有效期剩余: ${countdownSeconds}秒`;
     }
 
     // Start timer interval if not already running
@@ -73,7 +73,7 @@ async function refreshLoginToken() {
     console.error('Error refreshing login token:', err);
     const container = document.getElementById('qrcodeContainer');
     if (container) {
-      container.innerHTML = `<span style="color: var(--neon-pink); font-family: var(--font-mono); font-size: 11px;">Failed to obtain login token.<br>${err.message}</span>`;
+      container.innerHTML = `<span style="color: var(--neon-pink); font-family: var(--font-mono); font-size: 11px;">获取登录令牌失败。<br>${err.message}</span>`;
     }
   }
 }
@@ -89,7 +89,7 @@ function startCountdown() {
   timerInterval = setInterval(() => {
     countdownSeconds--;
     if (timerSpan) {
-      timerSpan.textContent = `VALID FOR: ${countdownSeconds}s`;
+      timerSpan.textContent = `有效期剩余: ${countdownSeconds}秒`;
     }
 
     if (countdownSeconds <= 0) {
@@ -124,7 +124,7 @@ export function initQrCode() {
     e.stopPropagation();
     
     // Reset/loading state
-    qrCodeUrlInput.value = 'Initializing secure tunnel...';
+    qrCodeUrlInput.value = '正在初始化安全通道...';
     const container = document.getElementById('qrcodeContainer');
     if (container) {
       container.innerHTML = '<div class="cyber-spinner" style="border-color: var(--neon-cyan); border-right-color: transparent;"></div>';
@@ -149,7 +149,7 @@ export function initQrCode() {
       const currentBaseUrl = `${window.location.protocol}//${window.location.host}/api/login-by-token`;
       const currentOpt = document.createElement('option');
       currentOpt.value = currentBaseUrl;
-      currentOpt.textContent = `Current URL (${window.location.hostname})`;
+      currentOpt.textContent = `当前网址 (${window.location.hostname})`;
       qrCodeUrlSelect.appendChild(currentOpt);
 
       // 2. Local network IP options
@@ -182,7 +182,7 @@ export function initQrCode() {
       const currentBaseUrl = `${window.location.protocol}//${window.location.host}/api/login-by-token`;
       const currentOpt = document.createElement('option');
       currentOpt.value = currentBaseUrl;
-      currentOpt.textContent = `Current URL (${window.location.hostname})`;
+      currentOpt.textContent = `当前网址 (${window.location.hostname})`;
       qrCodeUrlSelect.appendChild(currentOpt);
 
       qrCodeUrlSelect.value = currentBaseUrl;

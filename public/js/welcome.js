@@ -97,14 +97,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update main CTAs to Enter Dashboard
         const consoleBtnText = document.querySelectorAll('.console-btn-text');
         consoleBtnText.forEach(el => {
-          el.textContent = 'ENTER DASHBOARD // 进入控制台';
+          el.textContent = '进入控制台';
         });
 
         // Update nav login button to dashboard
         const navLoginBtnText = document.querySelector('.login-btn-text');
         const navLoginBtn = document.querySelector('.nav-login-btn');
         if (navLoginBtnText && navLoginBtn) {
-          navLoginBtnText.textContent = 'DASHBOARD // 控制面板';
+          navLoginBtnText.textContent = '控制面板';
           navLoginBtn.setAttribute('href', '/');
           // Update icon if lucide is active
           const iconEl = navLoginBtn.querySelector('i');

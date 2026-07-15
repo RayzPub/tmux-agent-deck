@@ -19,13 +19,13 @@ export function updatePushBtnUI() {
   const textSpan = pushToggleBtn.querySelector('span');
   const icon = pushToggleBtn.querySelector('i, svg');
   if (state.isSubscribed) {
-    if (textSpan) textSpan.textContent = 'PUSH: ON';
+    if (textSpan) textSpan.textContent = '消息推送: 开启';
     if (icon) {
       icon.setAttribute('data-lucide', 'bell');
     }
     pushToggleBtn.classList.add('active');
   } else {
-    if (textSpan) textSpan.textContent = 'PUSH: OFF';
+    if (textSpan) textSpan.textContent = '消息推送: 关闭';
     if (icon) {
       icon.setAttribute('data-lucide', 'bell');
     }
@@ -99,7 +99,7 @@ export async function togglePushSubscription() {
   }
 
   if (!state.swRegistration) {
-    alert('Push notifications are not ready or not supported. Please make sure you are using a secure connection (HTTPS) with a valid SSL certificate.');
+    alert('消息推送尚未就绪或在此浏览器中不受支持。请确保您使用的是安全的网络连接（HTTPS）以及有效的 SSL 证书。');
     return;
   }
   
@@ -114,13 +114,13 @@ export async function togglePushSubscription() {
       updatePushBtnUI();
     } catch (err) {
       console.error('Error unsubscribing:', err);
-      alert('Failed to unsubscribe: ' + err.message);
+      alert('取消推送订阅失败: ' + err.message);
     }
   } else {
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        alert('Notification permission denied.');
+        alert('通知权限已被拒绝。');
         return;
       }
 
@@ -141,7 +141,7 @@ export async function togglePushSubscription() {
       updatePushBtnUI();
     } catch (err) {
       console.error('Failed to subscribe the user:', err);
-      alert('Failed to subscribe: ' + err.message);
+      alert('订阅推送失败: ' + err.message);
     }
   }
 }
