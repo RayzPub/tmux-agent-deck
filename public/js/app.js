@@ -1107,19 +1107,31 @@ loadWorkspaces().then(async () => {
 
     deckControlDropdownMenu.addEventListener('click', (e) => {
       const target = e.target.closest('button, .header-btn');
-      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'adminInviteBtn')) {
+      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'adminPanelBtn')) {
         deckControlDropdownMenu.classList.add('hidden');
       }
     });
   }
 
-  // Invite Codes Modal Handlers
-  const adminInviteBtn = document.getElementById('adminInviteBtn');
-  const inviteModal = document.getElementById('inviteModal');
-  const closeInviteModalBtn = document.getElementById('closeInviteModalBtn');
+  // Admin Panel Handlers
+  const adminPanelBtn = document.getElementById('adminPanelBtn');
+  const adminPanelModal = document.getElementById('adminPanelModal');
+  const closeAdminPanelModalBtn = document.getElementById('closeAdminPanelModalBtn');
   const generateCodeBtn = document.getElementById('generateCodeBtn');
   const inviteNoteInput = document.getElementById('inviteNoteInput');
   const inviteCodesTableBody = document.getElementById('inviteCodesTableBody');
+
+  // Tabs
+  const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
+  const tabAgentsBtn = document.getElementById('tabAgentsBtn');
+  const tabContentInviteCodes = document.getElementById('tabContentInviteCodes');
+  const tabContentAgents = document.getElementById('tabContentAgents');
+
+  // Agent Config Inputs & Actions
+  const agentCfgAgy = document.getElementById('agentCfgAgy');
+  const agentCfgClaude = document.getElementById('agentCfgClaude');
+  const agentCfgCodex = document.getElementById('agentCfgCodex');
+  const saveAgentSettingsBtn = document.getElementById('saveAgentSettingsBtn');
 
   async function loadInviteCodes() {
     try {
@@ -1165,27 +1177,126 @@ loadWorkspaces().then(async () => {
     }
   }
 
-  if (adminInviteBtn && inviteModal) {
-    adminInviteBtn.addEventListener('click', (e) => {
+  if (adminPanelBtn && adminPanelModal) {
+    adminPanelBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      inviteModal.classList.remove('hidden');
+      adminPanelModal.classList.remove('hidden');
       if (deckControlDropdownMenu) {
         deckControlDropdownMenu.classList.add('hidden');
       }
+      // Default to invite codes tab on open
+      if (tabInviteCodesBtn) tabInviteCodesBtn.click();
+    });
+  }
+
+  if (closeAdminPanelModalBtn && adminPanelModal) {
+    closeAdminPanelModalBtn.addEventListener('click', () => {
+      adminPanelModal.classList.add('hidden');
+    });
+  }
+
+  if (adminPanelModal) {
+    adminPanelModal.addEventListener('click', (e) => {
+      if (e.target === adminPanelModal) {
+        adminPanelModal.classList.add('hidden');
+      }
+    });
+  }
+
+  // Tab switching logic
+  if (tabInviteCodesBtn && tabAgentsBtn && tabContentInviteCodes && tabContentAgents) {
+    tabInviteCodesBtn.addEventListener('click', () => {
+      tabInviteCodesBtn.classList.add('active');
+      tabAgentsBtn.classList.remove('active');
+      tabContentInviteCodes.classList.remove('hidden');
+      tabContentAgents.classList.add('hidden');
       loadInviteCodes();
     });
-  }
 
-  if (closeInviteModalBtn && inviteModal) {
-    closeInviteModalBtn.addEventListener('click', () => {
-      inviteModal.classList.add('hidden');
+    tabAgentsBtn.addEventListener('click', () => {
+      tabAgentsBtn.classList.add('active');
+      tabInviteCodesBtn.classList.remove('active');
+      tabContentAgents.classList.remove('hidden');
+      tabContentInviteCodes.classList.add('hidden');
+      loadAgentSettings();
     });
   }
 
-  if (inviteModal) {
-    inviteModal.addEventListener('click', (e) => {
-      if (e.target === inviteModal) {
-        inviteModal.classList.add('hidden');
+  // Load and apply agent settings (Admin only)
+  async function loadAgentSettings() {
+    try {
+      const res = await fetch('/api/admin/settings');
+      if (res.ok) {
+        const data = await res.json();
+        const enabled = data.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+        if (agentCfgAgy) agentCfgAgy.checked = enabled.includes('agy');
+        if (agentCfgClaude) agentCfgClaude.checked = enabled.includes('claude');
+        if (agentCfgCodex) agentCfgCodex.checked = enabled.includes('codex');
+      }
+    } catch (err) {
+      console.error('Failed to load admin agent settings:', err);
+    }
+  }
+
+  // Save agent settings
+  if (saveAgentSettingsBtn) {
+    saveAgentSettingsBtn.addEventListener('click', async () => {
+      const enabledAgents = ['default'];
+      if (agentCfgAgy && agentCfgAgy.checked) enabledAgents.push('agy');
+      if (agentCfgClaude && agentCfgClaude.checked) enabledAgents.push('claude');
+      if (agentCfgCodex && agentCfgCodex.checked) enabledAgents.push('codex');
+
+      try {
+        const res = await fetch('/api/admin/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabledAgents })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          state.enabledAgents = data.settings.enabledAgents;
+          applyAgentVisibility();
+          alert('智能体配置保存成功！');
+        } else {
+          const data = await res.json();
+          alert(data.error || '保存配置失败');
+        }
+      } catch (err) {
+        console.error('Failed to save settings:', err);
+        alert('保存配置时发生错误');
+      }
+    });
+  }
+
+  // Global settings function for all users
+  async function loadSettings() {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const settings = await res.json();
+        state.enabledAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+        applyAgentVisibility();
+      }
+    } catch (err) {
+      console.error('Failed to load settings:', err);
+    }
+  }
+
+  function applyAgentVisibility() {
+    const allowed = state.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+    document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
+      const card = radio.closest('.agent-card-option');
+      if (card) {
+        const val = radio.value;
+        if (allowed.includes(val)) {
+          card.classList.remove('hidden');
+        } else {
+          card.classList.add('hidden');
+          if (radio.checked) {
+            const defRadio = document.querySelector('input[name="sessionAgent"][value="default"]');
+            if (defRadio) defRadio.checked = true;
+          }
+        }
       }
     });
   }
@@ -1267,10 +1378,14 @@ loadWorkspaces().then(async () => {
       state.multiUserEnabled = !!data.multiUserEnabled;
       state.username = data.username;
       state.role = data.role;
+      
+      // Load global settings for showing/hiding disabled agents
+      loadSettings();
+
       if (data.multiUserEnabled) {
         if (data.role === 'admin') {
-          if (adminInviteBtn) {
-            adminInviteBtn.classList.remove('hidden');
+          if (adminPanelBtn) {
+            adminPanelBtn.classList.remove('hidden');
           }
         }
         // Update DECK CONTROLS to show the current username directly

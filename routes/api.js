@@ -183,6 +183,28 @@ router.delete('/admin/invite-codes/:code', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// API: Get global settings (Authenticated users)
+router.get('/settings', requireAuth, (req, res) => {
+  res.json(db.getSettings());
+});
+
+// API: Get admin settings (Admin only)
+router.get('/admin/settings', requireAdmin, (req, res) => {
+  res.json(db.getSettings());
+});
+
+// API: Update admin settings (Admin only)
+router.post('/admin/settings', requireAdmin, (req, res) => {
+  const { enabledAgents } = req.body;
+  if (!Array.isArray(enabledAgents)) {
+    return res.status(400).json({ error: 'enabledAgents must be an array' });
+  }
+  const current = db.getSettings();
+  current.enabledAgents = enabledAgents;
+  db.saveSettings(current);
+  res.json({ success: true, settings: current });
+});
+
 // API: Tmux Commands (Protected)
 // List sessions
 router.get('/sessions', requireAuth, (req, res) => {
@@ -233,6 +255,15 @@ router.get('/sessions', requireAuth, (req, res) => {
 // Create session
 router.post('/sessions', requireAuth, (req, res) => {
   const { name, agent, workspacePath, workspaceName } = req.body;
+  
+  // Validate allowed agents
+  const settings = db.getSettings();
+  const allowedAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+  const reqAgent = agent || 'default';
+  if (!allowedAgents.includes(reqAgent)) {
+    return res.status(403).json({ error: `智能体环境 '${reqAgent}' 已被禁用。` });
+  }
+
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
     return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
   }

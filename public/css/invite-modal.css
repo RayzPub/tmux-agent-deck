@@ -2,6 +2,7 @@
    Invite Codes Modal Styles
    ============================================ */
 
+#adminPanelModal,
 #inviteModal {
   background: rgba(3, 3, 7, 0.85);
   backdrop-filter: blur(10px);
@@ -21,10 +22,12 @@
   color: var(--neon-cyan);
 }
 
+#adminPanelModal .modal-close,
 #inviteModal .modal-close {
   color: var(--text-secondary);
 }
 
+#adminPanelModal .modal-close:hover,
 #inviteModal .modal-close:hover {
   color: var(--text-primary);
 }
@@ -84,6 +87,7 @@
    Light Minimalist Theme - Invite Modal
    ============================================ */
 
+body.light-minimalist #adminPanelModal,
 body.light-minimalist #inviteModal {
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(4px);
@@ -104,10 +108,12 @@ body.light-minimalist .invite-modal-title {
   font-weight: 700;
 }
 
+body.light-minimalist #adminPanelModal .modal-close,
 body.light-minimalist #inviteModal .modal-close {
   color: #94a3b8;
 }
 
+body.light-minimalist #adminPanelModal .modal-close:hover,
 body.light-minimalist #inviteModal .modal-close:hover {
   color: #0f172a;
 }
@@ -160,4 +166,49 @@ body.light-minimalist .delete-invite-btn {
 
 body.light-minimalist .delete-invite-btn:hover {
   color: #b91c1c;
+}
+
+/* ============================================
+   Tabs & Settings Panel Styles
+   ============================================ */
+.cyber-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: bold;
+  padding: 8px 16px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.cyber-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cyber-tab.active {
+  color: var(--neon-cyan);
+  border-bottom: 2px solid var(--neon-cyan);
+}
+
+.admin-tab-content.hidden {
+  display: none !important;
+}
+
+/* Light theme tabs */
+body.light-minimalist .cyber-tab {
+  color: #64748b;
+}
+
+body.light-minimalist .cyber-tab:hover {
+  color: #0f172a;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+body.light-minimalist .cyber-tab.active {
+  color: #2563eb;
+  border-bottom: 2px solid #2563eb;
 }

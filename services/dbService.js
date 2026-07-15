@@ -6,6 +6,7 @@ const { PROJECT_ROOT } = require('../config');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const CODES_FILE = path.join(DATA_DIR, 'invite_codes.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -144,6 +145,14 @@ module.exports = {
   saveUsers: (users) => writeJSON(USERS_FILE, users),
   getCodes: () => readJSON(CODES_FILE, []),
   saveCodes: (codes) => writeJSON(CODES_FILE, codes),
+  getSettings: () => {
+    const current = readJSON(SETTINGS_FILE, {});
+    if (!current.enabledAgents) {
+      current.enabledAgents = ['default', 'agy', 'claude', 'codex'];
+    }
+    return current;
+  },
+  saveSettings: (settings) => writeJSON(SETTINGS_FILE, settings),
   hashPassword,
   verifyPassword,
   runMigration
