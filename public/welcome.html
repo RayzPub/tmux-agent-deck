@@ -11,10 +11,14 @@
   <link href="https://fonts.geekzu.org/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
   
   <!-- Lucide Icons -->
-  <script src="/js/lucide.min.js"></script>
+  <script src="/js/lucide.min.js" defer></script>
   
   <!-- Stylesheets -->
+  <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/welcome.css">
+  
+  <!-- Preload LCP Image -->
+  <link rel="preload" href="/docs/images/dashboard_preview.webp" as="image" type="image/webp" fetchpriority="high">
   
   <!-- Favicons / PWA Metadata -->
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
@@ -92,7 +96,10 @@
         </div>
         <div class="device-content">
           <div class="device-reflection"></div>
-          <img src="/docs/images/dashboard_preview.png" alt="Dashboard Preview">
+          <picture>
+            <source srcset="/docs/images/dashboard_preview.webp" type="image/webp">
+            <img src="/docs/images/dashboard_preview.png" alt="Dashboard Preview" fetchpriority="high">
+          </picture>
         </div>
       </div>
     </div>
@@ -237,7 +244,10 @@
             <div class="tech-corner bottom-left"></div>
             <div class="tech-corner bottom-right"></div>
             <div class="device-reflection"></div>
-            <img src="/docs/images/workspace_preview.png" alt="Workspace Preview" loading="lazy">
+            <picture>
+              <source srcset="/docs/images/workspace_preview.webp" type="image/webp">
+              <img src="/docs/images/workspace_preview.png" alt="Workspace Preview" loading="lazy">
+            </picture>
           </div>
           <div class="panel-details">
             <h3>01 / 快速配置与初始化工作区</h3>
@@ -269,7 +279,10 @@
             <div class="tech-corner bottom-left"></div>
             <div class="tech-corner bottom-right"></div>
             <div class="device-reflection"></div>
-            <img src="/docs/images/agent_preview.png" alt="AI Agent Session" loading="lazy">
+            <picture>
+              <source srcset="/docs/images/agent_preview.webp" type="image/webp">
+              <img src="/docs/images/agent_preview.png" alt="AI Agent Session" loading="lazy">
+            </picture>
           </div>
           <div class="panel-details">
             <h3>02 / AI 智能体并行监控</h3>
@@ -301,7 +314,10 @@
             <div class="tech-corner bottom-left"></div>
             <div class="tech-corner bottom-right"></div>
             <div class="device-reflection"></div>
-            <img src="/docs/images/editor_diff_preview.png" alt="Diff & File Editor" loading="lazy">
+            <picture>
+              <source srcset="/docs/images/editor_diff_preview.webp" type="image/webp">
+              <img src="/docs/images/editor_diff_preview.png" alt="Diff & File Editor" loading="lazy">
+            </picture>
           </div>
           <div class="panel-details">
             <h3>03 / 文件修改直观对比 (Diff)</h3>
@@ -333,7 +349,10 @@
             <div class="tech-corner bottom-left"></div>
             <div class="tech-corner bottom-right"></div>
             <div class="device-reflection"></div>
-            <img src="/docs/images/mobile_preview.jpg" alt="Mobile View" loading="lazy">
+            <picture>
+              <source srcset="/docs/images/mobile_preview.webp" type="image/webp">
+              <img src="/docs/images/mobile_preview.jpg" alt="Mobile View" loading="lazy">
+            </picture>
           </div>
           <div class="panel-details">
             <h3>04 / 完美适配手机移动设备</h3>
@@ -468,6 +487,6 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/welcome.js"></script>
+  <script src="/js/welcome.js" defer></script>
 </body>
 </html>

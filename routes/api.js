@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile } = require('../services/fileService');
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
@@ -188,6 +188,73 @@ router.get('/settings', requireAuth, (req, res) => {
   res.json(db.getSettings());
 });
 
+// Helper to mask sensitive keys
+const maskKey = (key) => {
+  if (!key) return '';
+  if (key.length <= 8) return '••••••••';
+  return key.substring(0, 6) + '••••••••';
+};
+
+// API: Get user API keys (Authenticated users)
+router.get('/user/keys', requireAuth, (req, res) => {
+  const users = db.getUsers();
+  const userObj = users[req.user.username.toLowerCase()];
+  if (!userObj) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  const keys = userObj.apiKeys || {};
+  res.json({
+    agy: maskKey(keys.agy),
+    claude: maskKey(keys.claude),
+    codex: maskKey(keys.codex),
+    claudeBaseUrl: keys.claudeBaseUrl || '',
+    codexBaseUrl: keys.codexBaseUrl || '',
+    claudeModel: keys.claudeModel || '',
+    codexModel: keys.codexModel || ''
+  });
+});
+
+// API: Update user API keys (Authenticated users)
+router.post('/user/keys', requireAuth, (req, res) => {
+  const { agy, claude, codex, claudeBaseUrl, codexBaseUrl, claudeModel, codexModel } = req.body;
+  const users = db.getUsers();
+  const usernameKey = req.user.username.toLowerCase();
+  const userObj = users[usernameKey];
+  if (!userObj) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  if (!userObj.apiKeys) {
+    userObj.apiKeys = {};
+  }
+  
+  const updateKey = (existing, incoming) => {
+    if (incoming === undefined) return existing;
+    if (incoming === '') return ''; // Delete/clear key
+    if (incoming.includes('•')) return existing; // Masked value, do not overwrite
+    return incoming.trim();
+  };
+
+  const updateUrl = (existing, incoming) => {
+    if (incoming === undefined) return existing;
+    return incoming.trim();
+  };
+
+  userObj.apiKeys.agy = updateKey(userObj.apiKeys.agy, agy);
+  userObj.apiKeys.claude = updateKey(userObj.apiKeys.claude, claude);
+  userObj.apiKeys.codex = updateKey(userObj.apiKeys.codex, codex);
+  userObj.apiKeys.claudeBaseUrl = updateUrl(userObj.apiKeys.claudeBaseUrl, claudeBaseUrl);
+  userObj.apiKeys.codexBaseUrl = updateUrl(userObj.apiKeys.codexBaseUrl, codexBaseUrl);
+  userObj.apiKeys.claudeModel = updateUrl(userObj.apiKeys.claudeModel, claudeModel);
+  userObj.apiKeys.codexModel = updateUrl(userObj.apiKeys.codexModel, codexModel);
+
+  db.saveUsers(users);
+
+  // Write keys to the user's private .api_keys configuration file in their home directory
+  updateUserKeysFile(req.user.username, userObj.apiKeys);
+
+  res.json({ success: true });
+});
+
 // API: Get admin settings (Admin only)
 router.get('/admin/settings', requireAdmin, (req, res) => {
   res.json(db.getSettings());
@@ -249,7 +316,7 @@ router.get('/sessions', requireAuth, (req, res) => {
       }
     }
     res.json(sessions);
-  });
+  }, req.user.username);
 });
 
 // Create session
@@ -318,7 +385,12 @@ router.post('/sessions', requireAuth, (req, res) => {
   // In single-user mode HOME is already correct; in multi-user mode we point HOME at user sandbox.
   // Use shellescape to prevent command injection via workspace path.
   const workDir = resolvedPath || userHome;
-  const envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:$PATH`;
+  let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:$PATH`;
+
+  // Source user's private .api_keys configuration file in their home directory if in multi-user mode
+  if (MULTI_USER_ENABLED && req.user && req.user.username) {
+    envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
+  }
 
   if (agent === 'agy') {
     const agyBin = `${sysHome}/.local/bin/agy`;
@@ -388,14 +460,14 @@ router.post('/sessions', requireAuth, (req, res) => {
             console.error(`Failed to set tmux option ${optArgs.join(' ')}:`, optErr);
           }
           resolve();
-        });
+        }, req.user.username);
       }));
     });
 
     chain.then(() => {
       res.json({ success: true, name });
     });
-  });
+  }, req.user.username);
 });
 
 // Kill session
@@ -413,7 +485,7 @@ router.delete('/sessions/:name', requireAuth, (req, res) => {
       return res.status(500).json({ error: 'Failed to kill session', details: stderr });
     }
     res.json({ success: true });
-  });
+  }, req.user.username);
 });
 
 // Workspaces Endpoints

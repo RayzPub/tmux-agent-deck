@@ -96,7 +96,83 @@ const getUserHomeDir = (username) => {
   // Config dirs/files to symlink from sysHome into userHome.
   // These are read-only for the agent (symlink source is owned by root/ubuntu).
   // Users cannot see them via the workspace file browser.
-  const configTargets = ['.agy', '.claude', '.claude.json', '.config/anthropic', '.local/share/agy', '.gemini'];
+  // Note: We DO NOT symlink the whole .claude folder anymore to prevent history/session sharing
+  // and to allow users to customize their own proxy baseurl, token, and settings.
+  
+  // 1. Initialize user's private .claude directory
+  const userClaudeDir = path.join(userHome, '.claude');
+  let isSymlink = false;
+  try {
+    const stats = fs.lstatSync(userClaudeDir);
+    if (stats.isSymbolicLink()) {
+      isSymlink = true;
+    }
+  } catch (e) {
+    // Doesn't exist
+  }
+
+  if (isSymlink) {
+    try {
+      fs.unlinkSync(userClaudeDir);
+    } catch (e) {
+      console.warn(`[userHome] Could not remove existing .claude symlink: ${e.message}`);
+    }
+  }
+
+  if (!fs.existsSync(userClaudeDir)) {
+    try {
+      fs.mkdirSync(userClaudeDir, { recursive: true });
+      chownToSudoUser(userClaudeDir);
+      
+      const sysSettingsPath = path.join(sysHome, '.claude', 'settings.json');
+      const userSettingsPath = path.join(userClaudeDir, 'settings.json');
+      if (fs.existsSync(sysSettingsPath)) {
+        fs.copyFileSync(sysSettingsPath, userSettingsPath);
+        chownToSudoUser(userSettingsPath);
+      }
+    } catch (e) {
+      console.warn(`[userHome] Could not initialize private .claude directory: ${e.message}`);
+    }
+  }
+
+  // 1.2 Initialize user's private .codex directory
+  const userCodexDir = path.join(userHome, '.codex');
+  let isCodexSymlink = false;
+  try {
+    const stats = fs.lstatSync(userCodexDir);
+    if (stats.isSymbolicLink()) {
+      isCodexSymlink = true;
+    }
+  } catch (e) {
+    // Doesn't exist
+  }
+
+  if (isCodexSymlink) {
+    try {
+      fs.unlinkSync(userCodexDir);
+    } catch (e) {
+      console.warn(`[userHome] Could not remove existing .codex symlink: ${e.message}`);
+    }
+  }
+
+  if (!fs.existsSync(userCodexDir)) {
+    try {
+      fs.mkdirSync(userCodexDir, { recursive: true });
+      chownToSudoUser(userCodexDir);
+      
+      const sysSettingsPath = path.join(sysHome, '.codex', 'config.toml');
+      const userSettingsPath = path.join(userCodexDir, 'config.toml');
+      if (fs.existsSync(sysSettingsPath)) {
+        fs.copyFileSync(sysSettingsPath, userSettingsPath);
+        chownToSudoUser(userSettingsPath);
+      }
+    } catch (e) {
+      console.warn(`[userHome] Could not initialize private .codex directory: ${e.message}`);
+    }
+  }
+
+  // 2. Symlink other config files
+  const configTargets = ['.agy', '.claude.json', '.config/anthropic', '.local/share/agy', '.gemini'];
   for (const rel of configTargets) {
     const src = path.join(sysHome, rel);
     const dest = path.join(userHome, rel);
@@ -167,7 +243,7 @@ const readWorkspaces = (username) => {
       const userWorkspacesFile = path.join(DATA_DIR, `workspaces_${username}.json`);
       if (fs.existsSync(userWorkspacesFile)) {
         const list = JSON.parse(fs.readFileSync(userWorkspacesFile, 'utf8'));
-        if (Array.isArray(list) && list.length > 0) {
+        if (Array.isArray(list)) {
           return list;
         }
       }
@@ -232,6 +308,163 @@ const safeResolve = (workspacePath, reqPath, username) => {
   return resolved;
 };
 
+const ensureBashrcSourcesApiKeys = (userHome) => {
+  const bashrcPath = path.join(userHome, '.bashrc');
+  const sourceLine = '[ -f ~/.api_keys ] && . ~/.api_keys';
+  
+  let content = '';
+  if (fs.existsSync(bashrcPath)) {
+    try {
+      content = fs.readFileSync(bashrcPath, 'utf8');
+    } catch (e) {}
+  }
+  
+  if (!content.includes('.api_keys')) {
+    try {
+      fs.writeFileSync(bashrcPath, content.trim() + '\n' + sourceLine + '\n', 'utf8');
+      chownToSudoUser(bashrcPath);
+    } catch (err) {
+      console.warn(`[fileService] Failed to append source line to .bashrc: ${err.message}`);
+    }
+  }
+};
+
+const updateUserKeysFile = (username, keys) => {
+  if (!MULTI_USER_ENABLED || !username) return;
+
+  const userHome = getUserHomeDir(username);
+  const keysFilePath = path.join(userHome, '.api_keys');
+
+  let lines = [];
+  const shellescapeVal = (val) => {
+    return "'" + val.replace(/'/g, "'\\''") + "'";
+  };
+
+  if (keys.claude) {
+    lines.push(`export ANTHROPIC_API_KEY=${shellescapeVal(keys.claude)}`);
+  }
+  if (keys.claudeBaseUrl) {
+    lines.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(keys.claudeBaseUrl)}`);
+  }
+  if (keys.claudeModel) {
+    lines.push(`export ANTHROPIC_MODEL=${shellescapeVal(keys.claudeModel)}`);
+  }
+  if (keys.codex) {
+    lines.push(`export OPENAI_API_KEY=${shellescapeVal(keys.codex)}`);
+  }
+  if (keys.codexBaseUrl) {
+    lines.push(`export OPENAI_BASE_URL=${shellescapeVal(keys.codexBaseUrl)}`);
+    lines.push(`export OPENAI_API_BASE=${shellescapeVal(keys.codexBaseUrl)}`);
+  }
+  if (keys.codexModel) {
+    lines.push(`export OPENAI_MODEL=${shellescapeVal(keys.codexModel)}`);
+    lines.push(`export CODEX_MODEL=${shellescapeVal(keys.codexModel)}`);
+  }
+
+  try {
+    fs.writeFileSync(keysFilePath, lines.join('\n') + '\n', 'utf8');
+    chownToSudoUser(keysFilePath);
+    ensureBashrcSourcesApiKeys(userHome);
+  } catch (err) {
+    console.error(`[fileService] Failed to write .api_keys for user ${username}:`, err);
+  }
+
+  // Update user's private .claude/settings.json
+  const userClaudeDir = path.join(userHome, '.claude');
+  if (fs.existsSync(userClaudeDir)) {
+    const settingsPath = path.join(userClaudeDir, 'settings.json');
+    let settings = {};
+    if (fs.existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      } catch (e) {}
+    }
+    if (!settings.env) {
+      settings.env = {};
+    }
+    if (keys.claude) {
+      settings.env.ANTHROPIC_AUTH_TOKEN = keys.claude;
+    }
+    if (keys.claudeBaseUrl) {
+      settings.env.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
+    } else if (keys.claudeBaseUrl === '') {
+      delete settings.env.ANTHROPIC_BASE_URL;
+    }
+    if (keys.claudeModel) {
+      settings.model = keys.claudeModel;
+      settings.env.ANTHROPIC_MODEL = keys.claudeModel;
+    } else if (keys.claudeModel === '') {
+      delete settings.model;
+      delete settings.env.ANTHROPIC_MODEL;
+    }
+    try {
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      chownToSudoUser(settingsPath);
+    } catch (err) {
+      console.error(`[fileService] Failed to write settings.json for user ${username}:`, err);
+    }
+  }
+
+  // Update user's private .codex/config.toml
+  const userCodexDir = path.join(userHome, '.codex');
+  if (fs.existsSync(userCodexDir)) {
+    const configPath = path.join(userCodexDir, 'config.toml');
+    let content = '';
+    if (fs.existsSync(configPath)) {
+      try {
+        content = fs.readFileSync(configPath, 'utf8');
+      } catch (e) {}
+    }
+    
+    let lines = content.split('\n');
+    let hasApiKey = false;
+    let hasBaseUrl = false;
+    let hasModel = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().startsWith('api_key =') || lines[i].trim().startsWith('api_key=')) {
+        if (keys.codex) {
+          lines[i] = `api_key = "${keys.codex.replace(/"/g, '\\"')}"`;
+        }
+        hasApiKey = true;
+      }
+      if (lines[i].trim().startsWith('base_url =') || lines[i].trim().startsWith('base_url=')) {
+        if (keys.codexBaseUrl) {
+          lines[i] = `base_url = "${keys.codexBaseUrl.replace(/"/g, '\\"')}"`;
+        } else if (keys.codexBaseUrl === '') {
+          lines[i] = '';
+        }
+        hasBaseUrl = true;
+      }
+      if (lines[i].trim().startsWith('model =') || lines[i].trim().startsWith('model=')) {
+        if (keys.codexModel) {
+          lines[i] = `model = "${keys.codexModel.replace(/"/g, '\\"')}"`;
+        } else if (keys.codexModel === '') {
+          lines[i] = '';
+        }
+        hasModel = true;
+      }
+    }
+    
+    if (!hasApiKey && keys.codex) {
+      lines.push(`api_key = "${keys.codex.replace(/"/g, '\\"')}"`);
+    }
+    if (!hasBaseUrl && keys.codexBaseUrl) {
+      lines.push(`base_url = "${keys.codexBaseUrl.replace(/"/g, '\\"')}"`);
+    }
+    if (!hasModel && keys.codexModel) {
+      lines.push(`model = "${keys.codexModel.replace(/"/g, '\\"')}"`);
+    }
+    
+    try {
+      fs.writeFileSync(configPath, lines.filter(l => l !== '').join('\n') + '\n', 'utf8');
+      chownToSudoUser(configPath);
+    } catch (err) {
+      console.error(`[fileService] Failed to write config.toml for user ${username}:`, err);
+    }
+  }
+};
+
 module.exports = {
   PROJECT_ROOT,
   WORKSPACES_FILE,
@@ -242,5 +475,6 @@ module.exports = {
   safeResolve,
   getUserWorkspaceRoot,
   getUserHomeDir,
-  getDefaultWorkspacePath
+  getDefaultWorkspacePath,
+  updateUserKeysFile
 };

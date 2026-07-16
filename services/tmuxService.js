@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { PROJECT_ROOT } = require('../config');
+const { PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 
 // Helper: get run-as-user configuration (drops privileges to SUDO_USER if run as root)
 const getRunUser = () => {
@@ -15,11 +15,35 @@ const getRunUser = () => {
   return null;
 };
 
+// Construct the secure, isolated tmux command for a given user
+const getTmuxCommandForUser = (username, args) => {
+  if (MULTI_USER_ENABLED && username) {
+    const runUser = getRunUser() || 'ubuntu';
+    const socketPath = `/tmp/tmux_${username}.sock`;
+    const userDir = path.join(PROJECT_ROOT, 'user_data', username);
+    
+    const shellescape = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+    
+    // We run unshare -m as root, create a unique temp dir, bind-mount the real userDir to it,
+    // mount tmpfs over the shared user_data parent directory (hiding other users' folders),
+    // recreate userDir, bind-mount the userDir contents back from the temp dir, clean up, and execute tmux.
+    const unshareCmd = `TEMP_DIR=$(mktemp -d /tmp/tmux_bind_${username}_XXXXXX) && mount --bind ${shellescape(userDir)} "$TEMP_DIR" && mount -t tmpfs tmpfs ${shellescape(userDir)}/.. && mkdir -p ${shellescape(userDir)} && mount --bind "$TEMP_DIR" ${shellescape(userDir)} && umount "$TEMP_DIR" && rmdir "$TEMP_DIR" && sudo -u ${runUser} tmux -S ${socketPath} ${args.map(shellescape).join(' ')}`;
+    
+    return {
+      cmd: 'unshare',
+      args: ['-m', 'bash', '-c', unshareCmd]
+    };
+  } else {
+    const user = getRunUser();
+    const cmd = user ? 'sudo' : 'tmux';
+    const finalArgs = user ? ['-u', user, 'tmux', ...args] : args;
+    return { cmd, args: finalArgs };
+  }
+};
+
 // Wrap commands for spawn (safe execution)
-const execTmux = (args, callback) => {
-  const user = getRunUser();
-  const finalArgs = user ? ['-u', user, 'tmux', ...args] : args;
-  const cmd = user ? 'sudo' : 'tmux';
+const execTmux = (args, callback, username = null) => {
+  const { cmd, args: finalArgs } = getTmuxCommandForUser(username, args);
 
   try {
     const proc = spawn(cmd, finalArgs);
@@ -51,7 +75,7 @@ const execTmux = (args, callback) => {
   }
 };
 
-const execPromise = (args) => {
+const execPromise = (args, username = null) => {
   return new Promise((resolve, reject) => {
     execTmux(args, (err, stdout, stderr) => {
       if (err) {
@@ -59,7 +83,7 @@ const execPromise = (args) => {
       } else {
         resolve(stdout);
       }
-    });
+    }, username);
   });
 };
 
@@ -254,5 +278,6 @@ module.exports = {
   getRunUser,
   execTmux,
   execPromise,
-  injectAgentHooks
+  injectAgentHooks,
+  getTmuxCommandForUser
 };

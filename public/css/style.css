@@ -1330,6 +1330,7 @@ body.light-minimalist .slogan-title {
   letter-spacing: 0.5px;
   color: #fff;
   transition: var(--transition-fast);
+  white-space: nowrap;
 }
 
 .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-title {

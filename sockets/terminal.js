@@ -1,6 +1,6 @@
 const pty = require('node-pty');
 const jwt = require('jsonwebtoken');
-const { getRunUser } = require('../services/tmuxService');
+const { getRunUser, getTmuxCommandForUser } = require('../services/tmuxService');
 const { getHomeDir, getUserWorkspaceRoot, getDefaultWorkspacePath, getUserHomeDir } = require('../services/fileService');
 const { JWT_SECRET, MULTI_USER_ENABLED } = require('../config');
 
@@ -72,12 +72,29 @@ const initSocket = (io) => {
       console.log(`Spawning pty for tmux session: ${physicalSession} (${cols}x${rows})`);
 
       const runUser = getRunUser();
-      const shell = runUser ? '/usr/bin/sudo' : 'tmux';
-      const args = runUser
-        ? ['-u', runUser, 'tmux', 'new-session', '-A', '-s', physicalSession]
-        : ['new-session', '-A', '-s', physicalSession];
+      const tmuxArgs = ['new-session', '-A', '-s', physicalSession];
+      const { cmd: shell, args } = getTmuxCommandForUser(socket.user ? socket.user.username : null, tmuxArgs);
       const workspacePath = getDefaultWorkspacePath(socket.user ? socket.user.username : null);
       const userHome = getUserHomeDir(socket.user ? socket.user.username : null);
+
+      const ptyEnv = {
+        ...process.env,
+        TERM: 'xterm-256color',
+        HOME: userHome,
+        USER: runUser || process.env.USER || require('os').userInfo().username,
+        SKIP_SUDO_HINT: '1'
+      };
+
+      if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
+        const db = require('../services/dbService');
+        const users = db.getUsers();
+        const userObj = users[socket.user.username.toLowerCase()];
+        if (userObj && userObj.apiKeys) {
+          if (userObj.apiKeys.agy) ptyEnv.GEMINI_API_KEY = userObj.apiKeys.agy;
+          if (userObj.apiKeys.claude) ptyEnv.ANTHROPIC_API_KEY = userObj.apiKeys.claude;
+          if (userObj.apiKeys.codex) ptyEnv.OPENAI_API_KEY = userObj.apiKeys.codex;
+        }
+      }
 
       try {
         ptyProcess = pty.spawn(shell, args, {
@@ -85,13 +102,7 @@ const initSocket = (io) => {
           cols: cols || 80,
           rows: rows || 24,
           cwd: workspacePath,
-          env: {
-            ...process.env,
-            TERM: 'xterm-256color',
-            HOME: userHome,
-            USER: runUser || process.env.USER || require('os').userInfo().username,
-            SKIP_SUDO_HINT: '1'
-          }
+          env: ptyEnv
         });
 
         ptyProcess.onData((data) => {

@@ -3,7 +3,7 @@ import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
 import { saveEditorFile, updateMarkdownPreview, updatePreviewUI } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
-import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js?v=1.0.5';
+import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js?v=1.0.6';
 import { initPushNotifications, togglePushSubscription } from './modules/push.js?v=1.0.6';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
@@ -1107,11 +1107,21 @@ loadWorkspaces().then(async () => {
 
     deckControlDropdownMenu.addEventListener('click', (e) => {
       const target = e.target.closest('button, .header-btn');
-      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'adminPanelBtn')) {
+      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'adminPanelBtn' || target.id === 'userKeysBtn')) {
         deckControlDropdownMenu.classList.add('hidden');
       }
     });
   }
+
+  // User API Keys settings
+  const userKeysBtn = document.getElementById('userKeysBtn');
+  const saveUserKeysBtn = document.getElementById('saveUserKeysBtn');
+  const userKeyClaude = document.getElementById('userKeyClaude');
+  const userBaseUrlClaude = document.getElementById('userBaseUrlClaude');
+  const userModelClaude = document.getElementById('userModelClaude');
+  const userKeyCodex = document.getElementById('userKeyCodex');
+  const userBaseUrlCodex = document.getElementById('userBaseUrlCodex');
+  const userModelCodex = document.getElementById('userModelCodex');
 
   // Admin Panel Handlers
   const adminPanelBtn = document.getElementById('adminPanelBtn');
@@ -1184,6 +1194,15 @@ loadWorkspaces().then(async () => {
       if (deckControlDropdownMenu) {
         deckControlDropdownMenu.classList.add('hidden');
       }
+      
+      const adminTabsHeader = document.getElementById('adminTabsHeader');
+      const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
+      const adminAgentCfgSection = document.getElementById('adminAgentCfgSection');
+      
+      if (adminTabsHeader) adminTabsHeader.classList.remove('hidden');
+      if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
+      if (adminAgentCfgSection) adminAgentCfgSection.classList.remove('hidden');
+
       // Default to invite codes tab on open
       if (tabInviteCodesBtn) tabInviteCodesBtn.click();
     });
@@ -1203,6 +1222,93 @@ loadWorkspaces().then(async () => {
     });
   }
 
+  // API Keys Modal Logic
+  async function loadUserKeys() {
+    try {
+      const res = await fetch('/api/user/keys');
+      if (res.ok) {
+        const keys = await res.json();
+        if (userKeyClaude) userKeyClaude.value = keys.claude || '';
+        if (userBaseUrlClaude) userBaseUrlClaude.value = keys.claudeBaseUrl || '';
+        if (userModelClaude) userModelClaude.value = keys.claudeModel || '';
+        if (userKeyCodex) userKeyCodex.value = keys.codex || '';
+        if (userBaseUrlCodex) userBaseUrlCodex.value = keys.codexBaseUrl || '';
+        if (userModelCodex) userModelCodex.value = keys.codexModel || '';
+      }
+    } catch (err) {
+      console.error('Failed to load user API keys:', err);
+    }
+  }
+
+  if (userKeysBtn && adminPanelModal) {
+    userKeysBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      adminPanelModal.classList.remove('hidden');
+      if (deckControlDropdownMenu) {
+        deckControlDropdownMenu.classList.add('hidden');
+      }
+      
+      const adminTabsHeader = document.getElementById('adminTabsHeader');
+      const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
+      const tabAgentsBtn = document.getElementById('tabAgentsBtn');
+      const adminAgentCfgSection = document.getElementById('adminAgentCfgSection');
+      const tabContentInviteCodes = document.getElementById('tabContentInviteCodes');
+      const tabContentAgents = document.getElementById('tabContentAgents');
+
+      // Load user keys
+      loadUserKeys();
+
+      if (state.role === 'admin') {
+        // Admins see everything, just switch tab to agents
+        if (adminTabsHeader) adminTabsHeader.classList.remove('hidden');
+        if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
+        if (adminAgentCfgSection) adminAgentCfgSection.classList.remove('hidden');
+        if (tabAgentsBtn) tabAgentsBtn.click();
+      } else {
+        // Regular users only see the personal API keys settings inside tabContentAgents
+        if (adminTabsHeader) adminTabsHeader.classList.add('hidden');
+        if (adminAgentCfgSection) adminAgentCfgSection.classList.add('hidden');
+        if (tabContentInviteCodes) tabContentInviteCodes.classList.add('hidden');
+        if (tabContentAgents) tabContentAgents.classList.remove('hidden');
+      }
+
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    });
+  }
+
+  if (saveUserKeysBtn) {
+    saveUserKeysBtn.addEventListener('click', async () => {
+      const keys = {
+        claude: userKeyClaude ? userKeyClaude.value.trim() : '',
+        claudeBaseUrl: userBaseUrlClaude ? userBaseUrlClaude.value.trim() : '',
+        claudeModel: userModelClaude ? userModelClaude.value.trim() : '',
+        codex: userKeyCodex ? userKeyCodex.value.trim() : '',
+        codexBaseUrl: userBaseUrlCodex ? userBaseUrlCodex.value.trim() : '',
+        codexModel: userModelCodex ? userModelCodex.value.trim() : ''
+      };
+
+      try {
+        const res = await fetch('/api/user/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(keys)
+        });
+        if (res.ok) {
+          alert('API Key 配置保存成功！');
+          if (adminPanelModal) adminPanelModal.classList.add('hidden');
+        } else {
+          const data = await res.json();
+          alert(data.error || '保存配置失败');
+        }
+      } catch (err) {
+        console.error('Failed to save user keys:', err);
+        alert('保存配置时发生错误');
+      }
+    });
+  }
+
   // Tab switching logic
   if (tabInviteCodesBtn && tabAgentsBtn && tabContentInviteCodes && tabContentAgents) {
     tabInviteCodesBtn.addEventListener('click', () => {
@@ -1218,7 +1324,10 @@ loadWorkspaces().then(async () => {
       tabInviteCodesBtn.classList.remove('active');
       tabContentAgents.classList.remove('hidden');
       tabContentInviteCodes.classList.add('hidden');
-      loadAgentSettings();
+      if (state.role === 'admin') {
+        loadAgentSettings();
+      }
+      loadUserKeys();
     });
   }
 
@@ -1383,6 +1492,9 @@ loadWorkspaces().then(async () => {
       loadSettings();
 
       if (data.multiUserEnabled) {
+        if (userKeysBtn) {
+          userKeysBtn.classList.remove('hidden');
+        }
         if (data.role === 'admin') {
           if (adminPanelBtn) {
             adminPanelBtn.classList.remove('hidden');

@@ -436,7 +436,7 @@
               <div class="agent-card-inner">
                 <i data-lucide="terminal"></i>
                 <div class="agent-card-info">
-                  <span class="agent-title">SHELL 终端</span>
+                  <span class="agent-title">Shell</span>
                   <span class="agent-desc">标准 Bash 环境</span>
                 </div>
               </div>
@@ -446,7 +446,7 @@
               <div class="agent-card-inner">
                 <i data-lucide="bot"></i>
                 <div class="agent-card-info">
-                  <span class="agent-title">ANTIGRAVITY</span>
+                  <span class="agent-title">Antigravity</span>
                   <span class="agent-desc">Antigravity AI</span>
                 </div>
               </div>
@@ -456,7 +456,7 @@
               <div class="agent-card-inner">
                 <i data-lucide="message-square"></i>
                 <div class="agent-card-info">
-                  <span class="agent-title">CLAUDE</span>
+                  <span class="agent-title">Claude</span>
                   <span class="agent-desc">Claude Code 命令行</span>
                 </div>
               </div>
@@ -466,7 +466,7 @@
               <div class="agent-card-inner">
                 <i data-lucide="code"></i>
                 <div class="agent-card-info">
-                  <span class="agent-title">CODEX</span>
+                  <span class="agent-title">Codex</span>
                   <span class="agent-desc">Codex 智能体</span>
                 </div>
               </div>
@@ -677,7 +677,7 @@
     </div>
   </div>
 
-  <!-- Admin Panel Modal -->
+  <!-- Admin Panel Modal (System Settings & Admin Panel) -->
   <div id="adminPanelModal" class="modal-overlay hidden" style="z-index: 10000;">
     <div class="modal-card invite-modal-card" style="width: 90%; max-width: 600px; padding: 24px; position: relative;">
       <div class="tech-corner top-left"></div>
@@ -687,12 +687,12 @@
       <div class="auth-glow"></div>
 
       <div class="modal-header invite-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px;">
-        <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 16px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">// 系统管理面板</h3>
+        <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 16px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">// 系统管理与设置</h3>
         <button id="closeAdminPanelModalBtn" class="modal-close" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px;"><i data-lucide="x"></i></button>
       </div>
 
       <!-- Tabs Navigation -->
-      <div class="admin-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 10px;">
+      <div class="admin-tabs" id="adminTabsHeader" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 10px;">
         <button id="tabInviteCodesBtn" class="cyber-tab active">[ 邀请码管理 ]</button>
         <button id="tabAgentsBtn" class="cyber-tab">[ 智能体配置 ]</button>
       </div>
@@ -726,43 +726,107 @@
 
       <!-- Tab Content: Agent Configuration -->
       <div id="tabContentAgents" class="admin-tab-content hidden">
-        <div style="font-family: var(--font-mono); font-size: 11px; margin-bottom: 15px; color: var(--text-secondary);">
-          // 选择允许普通用户使用的智能体环境：
+        <!-- Global Agent Admission Section (Admin Only) -->
+        <div id="adminAgentCfgSection">
+          <div style="font-family: var(--font-mono); font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">
+            // 系统全局配置：选择允许普通用户使用的智能体环境：
+          </div>
+          <div class="agent-config-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
+              <input type="checkbox" id="agentCfgDefault" value="default" checked disabled style="accent-color: var(--neon-cyan);">
+              <div>
+                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-cyan);">Shell</div>
+                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">标准 Bash 环境 (必须启用)</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
+              <input type="checkbox" id="agentCfgAgy" value="agy" style="accent-color: var(--neon-cyan);">
+              <div>
+                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-pink);">Antigravity</div>
+                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">Antigravity AI 智能体</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
+              <input type="checkbox" id="agentCfgClaude" value="claude" style="accent-color: var(--neon-cyan);">
+              <div>
+                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-yellow);">Claude</div>
+                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">Claude Code 命令行智能体</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
+              <input type="checkbox" id="agentCfgCodex" value="codex" style="accent-color: var(--neon-cyan);">
+              <div>
+                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-purple);">Codex</div>
+                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">Codex 智能体</div>
+              </div>
+            </label>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
+            <button id="saveAgentSettingsBtn" class="cyber-btn" style="height: 30px; padding: 0 16px; font-size: 11px; font-weight: bold;">
+              <span class="btn-text">保存全局准入配置</span>
+            </button>
+          </div>
         </div>
-        <div class="agent-config-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
-            <input type="checkbox" id="agentCfgDefault" value="default" checked disabled style="accent-color: var(--neon-cyan);">
-            <div>
-              <div style="font-family: var(--font-title); font-size: 12px; font-weight: bold; color: var(--neon-cyan);">SHELL 终端</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">标准 Bash 环境 (必须启用)</div>
+
+        <!-- Personal API Key Settings Section (For Everyone) -->
+        <div id="personalApiKeysSection">
+          <div style="font-family: var(--font-mono); font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">
+            // 个人配置：设置您的个人 API Key 和代理端点 (留空则默认使用系统全局配置)：
+          </div>
+          <div class="modal-form" style="display: flex; flex-direction: column; gap: 12px; max-height: 250px; overflow-y: auto; padding-right: 5px; margin-bottom: 15px;">
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-yellow); margin-bottom: 4px;">CLAUDE (Anthropic API Key / Token)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="key" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-yellow);"></i>
+                <input type="password" id="userKeyClaude" class="cyber-input" placeholder="输入 Anthropic API Key" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
             </div>
-          </label>
-          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
-            <input type="checkbox" id="agentCfgAgy" value="agy" style="accent-color: var(--neon-cyan);">
-            <div>
-              <div style="font-family: var(--font-title); font-size: 12px; font-weight: bold; color: var(--neon-pink);">ANTIGRAVITY</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">Antigravity AI 智能体</div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-yellow); margin-bottom: 4px; opacity: 0.85;">CLAUDE (API Proxy Base URL)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="link-2" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-yellow);"></i>
+                <input type="text" id="userBaseUrlClaude" class="cyber-input" placeholder="例如 https://api.lkeap.cloud.tencent.com/coding/anthropic" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
             </div>
-          </label>
-          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
-            <input type="checkbox" id="agentCfgClaude" value="claude" style="accent-color: var(--neon-cyan);">
-            <div>
-              <div style="font-family: var(--font-title); font-size: 12px; font-weight: bold; color: var(--neon-yellow);">CLAUDE</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">Claude Code 命令行智能体</div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-yellow); margin-bottom: 4px; opacity: 0.85;">CLAUDE (Model Name)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="cpu" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-yellow);"></i>
+                <input type="text" id="userModelClaude" class="cyber-input" placeholder="例如 claude-3-5-sonnet-20241022 或 glm-5" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
             </div>
-          </label>
-          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
-            <input type="checkbox" id="agentCfgCodex" value="codex" style="accent-color: var(--neon-cyan);">
-            <div>
-              <div style="font-family: var(--font-title); font-size: 12px; font-weight: bold; color: var(--neon-purple);">CODEX</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">Codex 智能体</div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-purple); margin-bottom: 4px;">CODEX (OpenAI API Key)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="key" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-purple);"></i>
+                <input type="password" id="userKeyCodex" class="cyber-input" placeholder="输入 OpenAI API Key" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
             </div>
-          </label>
-        </div>
-        <div style="display: flex; justify-content: flex-end;">
-          <button id="saveAgentSettingsBtn" class="cyber-btn" style="height: 34px; padding: 0 20px; font-size: 12px; font-weight: bold;">
-            <span class="btn-text">保存配置</span>
-          </button>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-weight: bold; font-size: 11px; color: var(--neon-purple); margin-bottom: 4px; opacity: 0.85;">CODEX (API Proxy Base URL)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="link-2" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-purple);"></i>
+                <input type="text" id="userBaseUrlCodex" class="cyber-input" placeholder="例如 https://api.openai.com/v1" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-weight: bold; font-size: 11px; color: var(--neon-purple); margin-bottom: 4px; opacity: 0.85;">CODEX (Model Name)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="cpu" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-purple);"></i>
+                <input type="text" id="userModelCodex" class="cyber-input" placeholder="例如 gpt-4o 或 deepseek-chat" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end;">
+            <button id="saveUserKeysBtn" class="cyber-btn" style="height: 30px; padding: 0 16px; font-size: 11px; font-weight: bold;">
+              <span class="btn-text">保存个人 Key 配置</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

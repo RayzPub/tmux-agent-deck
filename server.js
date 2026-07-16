@@ -77,6 +77,7 @@ const docsStaticOptions = {
 
 app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), staticOptions));
 app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), staticOptions));
+app.use('/images', express.static(path.join(PROJECT_ROOT, 'public', 'images'), docsStaticOptions));
 app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs'), docsStaticOptions));
 
 // Serve welcome page without authentication

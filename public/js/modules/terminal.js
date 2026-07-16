@@ -463,11 +463,23 @@ export function attachSession(sessionName) {
       }
     });
 
+    let resizeTimeout;
+    const resizeObserver = new ResizeObserver(() => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (state.currentSession === sessionName) {
+          fitTerminalFor(sessionName);
+        }
+      }, 50);
+    });
+    resizeObserver.observe(container);
+
     cached = {
       socket: sessionSocket,
       term: sessionTerm,
       fitAddon: sessionFitAddon,
-      container: container
+      container: container,
+      resizeObserver: resizeObserver
     };
     state.sessionCache.set(sessionName, cached);
 
@@ -479,6 +491,11 @@ export function attachSession(sessionName) {
         rows: sessionTerm.rows
       });
       setTimeout(loadSessions, 200);
+
+      // Secondary fit to handle browser reflow and layout settling
+      setTimeout(() => {
+        fitTerminalFor(sessionName);
+      }, 300);
     }, 100);
 
     sessionTerm.onData(data => {
@@ -582,6 +599,9 @@ export function removeSessionFromCache(name) {
     }
     if (cached.term) {
       cached.term.dispose();
+    }
+    if (cached.resizeObserver) {
+      cached.resizeObserver.disconnect();
     }
     if (cached.container) {
       cached.container.remove();
