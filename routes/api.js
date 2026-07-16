@@ -393,8 +393,28 @@ router.post('/sessions', requireAuth, (req, res) => {
   }
 
   if (agent === 'agy') {
-    const agyBin = `${sysHome}/.local/bin/agy`;
-    args.push(`${envPrefix}; ${agyBin} --dangerously-skip-permissions; exec bash`);
+    let agyPath = null;
+    const nvmNodeDir = `${sysHome}/.nvm/versions/node`;
+    if (fs.existsSync(nvmNodeDir)) {
+      try {
+        const nodeVersions = fs.readdirSync(nvmNodeDir).filter(d => d.startsWith('v'));
+        if (nodeVersions.length > 0) {
+          const latestVersion = nodeVersions.sort((a, b) => {
+            const aNum = parseInt(a.replace('v', '').split('.')[0]);
+            const bNum = parseInt(b.replace('v', '').split('.')[0]);
+            return bNum - aNum;
+          })[0];
+          agyPath = `${nvmNodeDir}/${latestVersion}/bin/agy`;
+        }
+      } catch (e) {}
+    }
+    if (!agyPath || !fs.existsSync(agyPath)) {
+      for (const p of [`${sysHome}/.local/bin/agy`, '/usr/local/bin/agy', '/usr/bin/agy']) {
+        if (fs.existsSync(p)) { agyPath = p; break; }
+      }
+    }
+    const finalAgy = agyPath || 'agy';
+    args.push(`${envPrefix}; ${finalAgy} --dangerously-skip-permissions; exec bash`);
   } else if (agent === 'claude') {
     let claudePath = null;
     const nvmNodeDir = `${sysHome}/.nvm/versions/node`;
