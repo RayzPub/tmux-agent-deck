@@ -471,6 +471,16 @@
                 </div>
               </div>
             </label>
+            <label class="agent-card-option">
+              <input type="radio" name="sessionAgent" value="kimi">
+              <div class="agent-card-inner">
+                <i data-lucide="sparkles"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">Kimi</span>
+                  <span class="agent-desc">Kimi Code CLI 智能体</span>
+                </div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -760,6 +770,13 @@
                 <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">Codex 智能体</div>
               </div>
             </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
+              <input type="checkbox" id="agentCfgKimi" value="kimi" style="accent-color: var(--neon-cyan);">
+              <div>
+                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-cyan);">Kimi</div>
+                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">Kimi Code CLI 智能体</div>
+              </div>
+            </label>
           </div>
           <div style="display: flex; justify-content: flex-end; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
             <button id="saveAgentSettingsBtn" class="cyber-btn" style="height: 30px; padding: 0 16px; font-size: 11px; font-weight: bold;">
@@ -819,6 +836,30 @@
               <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
                 <i data-lucide="cpu" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-purple);"></i>
                 <input type="text" id="userModelCodex" class="cyber-input" placeholder="例如 gpt-4o 或 deepseek-chat" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-cyan); margin-bottom: 4px;">KIMI (Kimi Code / Moonshot API Key)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="key" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-cyan);"></i>
+                <input type="password" id="userKeyKimi" class="cyber-input" placeholder="输入 Kimi Code / Moonshot API Key" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-weight: bold; font-size: 11px; color: var(--neon-cyan); margin-bottom: 4px; opacity: 0.85;">KIMI (API Proxy Base URL)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="link-2" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-cyan);"></i>
+                <input type="text" id="userBaseUrlKimi" class="cyber-input" placeholder="例如 https://api.kimi.com/coding/v1 或 https://api.moonshot.cn/v1" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label style="display: block; font-family: var(--font-title); font-weight: bold; font-size: 11px; color: var(--neon-cyan); margin-bottom: 4px; opacity: 0.85;">KIMI (Model Name)</label>
+              <div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+                <i data-lucide="cpu" class="input-icon" style="position: absolute; left: 12px; width: 14px; height: 14px; color: var(--neon-cyan);"></i>
+                <input type="text" id="userModelKimi" class="cyber-input" placeholder="例如 kimi-for-coding (kimi.com) 或 kimi-k2 系列 (moonshot.cn)" style="font-size: 11px; padding: 8px 10px 8px 40px; font-family: var(--font-mono); width: 100%;">
               </div>
             </div>
           </div>

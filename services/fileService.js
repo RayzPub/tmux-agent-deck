@@ -360,6 +360,17 @@ const updateUserKeysFile = (username, keys) => {
     lines.push(`export OPENAI_MODEL=${shellescapeVal(keys.codexModel)}`);
     lines.push(`export CODEX_MODEL=${shellescapeVal(keys.codexModel)}`);
   }
+  if (keys.kimi) {
+    lines.push(`export KIMI_API_KEY=${shellescapeVal(keys.kimi)}`);
+    lines.push(`export MOONSHOT_API_KEY=${shellescapeVal(keys.kimi)}`);
+  }
+  if (keys.kimiBaseUrl) {
+    lines.push(`export KIMI_BASE_URL=${shellescapeVal(keys.kimiBaseUrl)}`);
+    lines.push(`export MOONSHOT_BASE_URL=${shellescapeVal(keys.kimiBaseUrl)}`);
+  }
+  if (keys.kimiModel) {
+    lines.push(`export KIMI_MODEL=${shellescapeVal(keys.kimiModel)}`);
+  }
 
   try {
     fs.writeFileSync(keysFilePath, lines.join('\n') + '\n', 'utf8');
@@ -461,6 +472,44 @@ const updateUserKeysFile = (username, keys) => {
       chownToSudoUser(configPath);
     } catch (err) {
       console.error(`[fileService] Failed to write config.toml for user ${username}:`, err);
+    }
+  }
+
+  // Update user's private .kimi-code/config.toml and .kimi/config.toml
+  if (keys.kimi) {
+    const KimiDirs = [
+      path.join(userHome, '.kimi-code'),
+      path.join(userHome, '.kimi')
+    ];
+
+    for (const userKimiDir of KimiDirs) {
+      if (!fs.existsSync(userKimiDir)) {
+        try {
+          fs.mkdirSync(userKimiDir, { recursive: true });
+          chownToSudoUser(userKimiDir);
+        } catch (e) {}
+      }
+      const configPath = path.join(userKimiDir, 'config.toml');
+      const kimiBaseUrl = keys.kimiBaseUrl || 'https://api.kimi.com/coding/v1';
+      const kimiModel = keys.kimiModel || 'kimi-for-coding';
+      const tomlContent = `default_model = "kimi-code/kimi-for-coding"
+
+[providers."managed:kimi-code"]
+type = "kimi"
+base_url = "${kimiBaseUrl.replace(/"/g, '\\"')}"
+api_key = "${keys.kimi.replace(/"/g, '\\"')}"
+
+[models."kimi-code/kimi-for-coding"]
+provider = "managed:kimi-code"
+model = "${kimiModel.replace(/"/g, '\\"')}"
+max_context_size = 262144
+`;
+      try {
+        fs.writeFileSync(configPath, tomlContent, 'utf8');
+        chownToSudoUser(configPath);
+      } catch (err) {
+        console.error(`[fileService] Failed to write config.toml at ${configPath} for user ${username}:`, err);
+      }
     }
   }
 };

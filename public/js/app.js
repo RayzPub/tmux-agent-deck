@@ -1122,6 +1122,9 @@ loadWorkspaces().then(async () => {
   const userKeyCodex = document.getElementById('userKeyCodex');
   const userBaseUrlCodex = document.getElementById('userBaseUrlCodex');
   const userModelCodex = document.getElementById('userModelCodex');
+  const userKeyKimi = document.getElementById('userKeyKimi');
+  const userBaseUrlKimi = document.getElementById('userBaseUrlKimi');
+  const userModelKimi = document.getElementById('userModelKimi');
 
   // Admin Panel Handlers
   const adminPanelBtn = document.getElementById('adminPanelBtn');
@@ -1141,6 +1144,7 @@ loadWorkspaces().then(async () => {
   const agentCfgAgy = document.getElementById('agentCfgAgy');
   const agentCfgClaude = document.getElementById('agentCfgClaude');
   const agentCfgCodex = document.getElementById('agentCfgCodex');
+  const agentCfgKimi = document.getElementById('agentCfgKimi');
   const saveAgentSettingsBtn = document.getElementById('saveAgentSettingsBtn');
 
   async function loadInviteCodes() {
@@ -1234,6 +1238,9 @@ loadWorkspaces().then(async () => {
         if (userKeyCodex) userKeyCodex.value = keys.codex || '';
         if (userBaseUrlCodex) userBaseUrlCodex.value = keys.codexBaseUrl || '';
         if (userModelCodex) userModelCodex.value = keys.codexModel || '';
+        if (userKeyKimi) userKeyKimi.value = keys.kimi || '';
+        if (userBaseUrlKimi) userBaseUrlKimi.value = keys.kimiBaseUrl || '';
+        if (userModelKimi) userModelKimi.value = keys.kimiModel || '';
       }
     } catch (err) {
       console.error('Failed to load user API keys:', err);
@@ -1286,7 +1293,10 @@ loadWorkspaces().then(async () => {
         claudeModel: userModelClaude ? userModelClaude.value.trim() : '',
         codex: userKeyCodex ? userKeyCodex.value.trim() : '',
         codexBaseUrl: userBaseUrlCodex ? userBaseUrlCodex.value.trim() : '',
-        codexModel: userModelCodex ? userModelCodex.value.trim() : ''
+        codexModel: userModelCodex ? userModelCodex.value.trim() : '',
+        kimi: userKeyKimi ? userKeyKimi.value.trim() : '',
+        kimiBaseUrl: userBaseUrlKimi ? userBaseUrlKimi.value.trim() : '',
+        kimiModel: userModelKimi ? userModelKimi.value.trim() : ''
       };
 
       try {
@@ -1337,10 +1347,11 @@ loadWorkspaces().then(async () => {
       const res = await fetch('/api/admin/settings');
       if (res.ok) {
         const data = await res.json();
-        const enabled = data.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+        const enabled = data.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
         if (agentCfgAgy) agentCfgAgy.checked = enabled.includes('agy');
         if (agentCfgClaude) agentCfgClaude.checked = enabled.includes('claude');
         if (agentCfgCodex) agentCfgCodex.checked = enabled.includes('codex');
+        if (agentCfgKimi) agentCfgKimi.checked = enabled.includes('kimi');
       }
     } catch (err) {
       console.error('Failed to load admin agent settings:', err);
@@ -1354,6 +1365,7 @@ loadWorkspaces().then(async () => {
       if (agentCfgAgy && agentCfgAgy.checked) enabledAgents.push('agy');
       if (agentCfgClaude && agentCfgClaude.checked) enabledAgents.push('claude');
       if (agentCfgCodex && agentCfgCodex.checked) enabledAgents.push('codex');
+      if (agentCfgKimi && agentCfgKimi.checked) enabledAgents.push('kimi');
 
       try {
         const res = await fetch('/api/admin/settings', {
@@ -1383,7 +1395,7 @@ loadWorkspaces().then(async () => {
       const res = await fetch('/api/settings');
       if (res.ok) {
         const settings = await res.json();
-        state.enabledAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+        state.enabledAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
         applyAgentVisibility();
       }
     } catch (err) {
@@ -1392,7 +1404,7 @@ loadWorkspaces().then(async () => {
   }
 
   function applyAgentVisibility() {
-    const allowed = state.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+    const allowed = state.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
     document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
       const card = radio.closest('.agent-card-option');
       if (card) {

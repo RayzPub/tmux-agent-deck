@@ -93,6 +93,17 @@ const initSocket = (io) => {
           if (userObj.apiKeys.agy) ptyEnv.GEMINI_API_KEY = userObj.apiKeys.agy;
           if (userObj.apiKeys.claude) ptyEnv.ANTHROPIC_API_KEY = userObj.apiKeys.claude;
           if (userObj.apiKeys.codex) ptyEnv.OPENAI_API_KEY = userObj.apiKeys.codex;
+          if (userObj.apiKeys.kimi) {
+            ptyEnv.KIMI_API_KEY = userObj.apiKeys.kimi;
+            ptyEnv.MOONSHOT_API_KEY = userObj.apiKeys.kimi;
+          }
+          if (userObj.apiKeys.kimiBaseUrl) {
+            ptyEnv.KIMI_BASE_URL = userObj.apiKeys.kimiBaseUrl;
+            ptyEnv.MOONSHOT_BASE_URL = userObj.apiKeys.kimiBaseUrl;
+          }
+          if (userObj.apiKeys.kimiModel) {
+            ptyEnv.KIMI_MODEL = userObj.apiKeys.kimiModel;
+          }
         }
       }
 

@@ -207,16 +207,19 @@ router.get('/user/keys', requireAuth, (req, res) => {
     agy: maskKey(keys.agy),
     claude: maskKey(keys.claude),
     codex: maskKey(keys.codex),
+    kimi: maskKey(keys.kimi),
     claudeBaseUrl: keys.claudeBaseUrl || '',
     codexBaseUrl: keys.codexBaseUrl || '',
+    kimiBaseUrl: keys.kimiBaseUrl || '',
     claudeModel: keys.claudeModel || '',
-    codexModel: keys.codexModel || ''
+    codexModel: keys.codexModel || '',
+    kimiModel: keys.kimiModel || ''
   });
 });
 
 // API: Update user API keys (Authenticated users)
 router.post('/user/keys', requireAuth, (req, res) => {
-  const { agy, claude, codex, claudeBaseUrl, codexBaseUrl, claudeModel, codexModel } = req.body;
+  const { agy, claude, codex, kimi, claudeBaseUrl, codexBaseUrl, kimiBaseUrl, claudeModel, codexModel, kimiModel } = req.body;
   const users = db.getUsers();
   const usernameKey = req.user.username.toLowerCase();
   const userObj = users[usernameKey];
@@ -242,10 +245,13 @@ router.post('/user/keys', requireAuth, (req, res) => {
   userObj.apiKeys.agy = updateKey(userObj.apiKeys.agy, agy);
   userObj.apiKeys.claude = updateKey(userObj.apiKeys.claude, claude);
   userObj.apiKeys.codex = updateKey(userObj.apiKeys.codex, codex);
+  userObj.apiKeys.kimi = updateKey(userObj.apiKeys.kimi, kimi);
   userObj.apiKeys.claudeBaseUrl = updateUrl(userObj.apiKeys.claudeBaseUrl, claudeBaseUrl);
   userObj.apiKeys.codexBaseUrl = updateUrl(userObj.apiKeys.codexBaseUrl, codexBaseUrl);
+  userObj.apiKeys.kimiBaseUrl = updateUrl(userObj.apiKeys.kimiBaseUrl, kimiBaseUrl);
   userObj.apiKeys.claudeModel = updateUrl(userObj.apiKeys.claudeModel, claudeModel);
   userObj.apiKeys.codexModel = updateUrl(userObj.apiKeys.codexModel, codexModel);
+  userObj.apiKeys.kimiModel = updateUrl(userObj.apiKeys.kimiModel, kimiModel);
 
   db.saveUsers(users);
 
@@ -325,7 +331,7 @@ router.post('/sessions', requireAuth, (req, res) => {
   
   // Validate allowed agents
   const settings = db.getSettings();
-  const allowedAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex'];
+  const allowedAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
   const reqAgent = agent || 'default';
   if (!allowedAgents.includes(reqAgent)) {
     return res.status(403).json({ error: `智能体环境 '${reqAgent}' 已被禁用。` });
@@ -448,6 +454,16 @@ router.post('/sessions', requireAuth, (req, res) => {
     }
     if (codexPath) {
       args.push(`${envPrefix}; ${codexPath} --dangerously-bypass-hook-trust; exec bash`);
+    } else {
+      args.push(`${envPrefix}; exec bash`);
+    }
+  } else if (agent === 'kimi') {
+    let kimiPath = null;
+    for (const p of [`${userHome}/.kimi-code/bin/kimi`, `${sysHome}/.kimi-code/bin/kimi`, '/usr/local/bin/kimi', '/usr/bin/kimi']) {
+      if (fs.existsSync(p)) { kimiPath = p; break; }
+    }
+    if (kimiPath) {
+      args.push(`${envPrefix}; ${kimiPath}; exec bash`);
     } else {
       args.push(`${envPrefix}; exec bash`);
     }
