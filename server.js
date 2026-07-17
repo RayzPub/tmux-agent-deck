@@ -72,8 +72,23 @@ const codeStaticOptions = {
   maxAge: 0,
   etag: true,
   lastModified: true,
-  setHeaders: (res) => {
-    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  setHeaders: (res, filePath) => {
+    const fileName = path.basename(filePath);
+    if (
+      fileName.endsWith('.min.js') ||
+      fileName.includes('.umd.js') ||
+      fileName === 'xterm.js' ||
+      fileName === 'xterm-addon-fit.js' ||
+      fileName === 'xterm.css'
+    ) {
+      // Long-term caching for third-party libraries (30 days)
+      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+    } else {
+      // Revalidate our own code on every request (allows fast 304 if unchanged)
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
   }
 };
 const docsStaticOptions = {
@@ -81,6 +96,17 @@ const docsStaticOptions = {
   etag: true,
   lastModified: true
 };
+
+// Middleware to disable caching for HTML and dynamic resources (like / and /welcome)
+app.use((req, res, next) => {
+  const ext = path.extname(req.path).toLowerCase();
+  if (ext === '.html' || req.path === '/' || req.path === '/welcome') {
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
 
 app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), codeStaticOptions));
 app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), codeStaticOptions));
@@ -102,7 +128,28 @@ app.get('/index.html', requireAuth, (req, res) => {
 
 // Fallback to protect any other static files
 app.use(express.static(path.join(PROJECT_ROOT, 'public'), {
-  index: false // Prevent serving index.html automatically without requireAuth
+  index: false, // Prevent serving index.html automatically without requireAuth
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.html' || ext === '.js' || ext === '.css') {
+      const fileName = path.basename(filePath);
+      if (
+        fileName.endsWith('.min.js') ||
+        fileName.includes('.umd.js') ||
+        fileName === 'xterm.js' ||
+        fileName === 'xterm-addon-fit.js' ||
+        fileName === 'xterm.css'
+      ) {
+        res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    }
+  }
 }));
 
 // Mount API routes
