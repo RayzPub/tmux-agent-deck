@@ -8,6 +8,7 @@ export const state = {
   activeTabId: null,
   editorInstance: null,
   editorDisabled: false,
+  previewActive: false,
   showOnlyGitChanges: false,
   gitStatusMap: new Map(),
   gitDirStatusMap: new Map(),

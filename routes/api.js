@@ -736,6 +736,39 @@ router.post('/files/save', requireAuth, (req, res) => {
   }
 });
 
+// Serve workspace files for the HTML preview iframe.
+// The URL path mirrors the on-disk relative path, so relative references
+// (images, CSS, JS) inside a previewed HTML file resolve naturally.
+// :token is base64url(workspacePath), or '~' for the default workspace.
+// Regex route for Express 5 compatibility (string wildcards changed semantics).
+router.get(/^\/preview\/([^/]+)(?:\/(.*))?$/, requireAuth, (req, res) => {
+  try {
+    const token = req.params[0];
+    let relPath = req.params[1] || '';
+    // Decode defensively: Express versions differ on whether regex captures
+    // arrive decoded. decodeURIComponent is a no-op for plain names and throws
+    // on a bare '%', in which case the value was already decoded.
+    try { relPath = decodeURIComponent(relPath); } catch (e) { /* already decoded */ }
+
+    let workspacePath = '';
+    if (token !== '~') {
+      const b64 = token.replace(/-/g, '+').replace(/_/g, '/');
+      workspacePath = Buffer.from(b64, 'base64').toString('utf8');
+    }
+
+    let targetPath = safeResolve(workspacePath, relPath, req.user.username);
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
+      targetPath = path.join(targetPath, 'index.html');
+    }
+    if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    res.sendFile(targetPath);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Git status endpoint
 router.get('/git/status', requireAuth, (req, res) => {
   try {

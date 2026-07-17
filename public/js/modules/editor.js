@@ -179,37 +179,77 @@ export function updateMarkdownPreview() {
   }
 }
 
+// Build the iframe URL for previewing an HTML file. The URL path mirrors the
+// on-disk relative path so relative references (images, CSS, JS) resolve.
+export function buildHtmlPreviewUrl(relPath, cacheBust) {
+  const ws = state.currentWorkspacePath || '';
+  const token = ws
+    ? btoa(unescape(encodeURIComponent(ws))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    : '~';
+  const encodedPath = relPath.split('/').map(encodeURIComponent).join('/');
+  return `/api/preview/${token}/${encodedPath}${cacheBust ? `?t=${Date.now()}` : ''}`;
+}
+
+export function updateHtmlPreview(path, cacheBust) {
+  const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+  if (!htmlPreviewFrame || htmlPreviewFrame.classList.contains('hidden')) return;
+  if (!path) return;
+  htmlPreviewFrame.src = buildHtmlPreviewUrl(path, cacheBust);
+}
+
 export function updatePreviewUI(path) {
   const togglePreviewBtn = document.getElementById('togglePreviewBtn');
   const markdownPreview = document.getElementById('markdownPreview');
+  const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
   const editorTextarea = document.getElementById('editorTextarea');
   const saveFileBtn = document.getElementById('saveFileBtn');
   if (!togglePreviewBtn) return;
 
-  const isMd = path ? getLanguageFromExtension(path) === 'markdown' : false;
-  if (isMd) {
+  const lang = path ? getLanguageFromExtension(path) : null;
+  const isMd = lang === 'markdown';
+  const isHtml = lang === 'html';
+
+  if (!isMd && !isHtml) {
+    togglePreviewBtn.classList.add('hidden');
+    if (markdownPreview) markdownPreview.classList.add('hidden');
+    if (htmlPreviewFrame) htmlPreviewFrame.classList.add('hidden');
+    if (editorTextarea) {
+      editorTextarea.classList.remove('hidden');
+    }
+    if (saveFileBtn) {
+      saveFileBtn.classList.remove('hidden');
+    }
+  } else {
     togglePreviewBtn.classList.remove('hidden');
-    
+
     // Toggle icon and text dynamically
     const iconEl = togglePreviewBtn.querySelector('i, svg');
     const textEl = togglePreviewBtn.querySelector('span');
     if (iconEl) {
       const newIcon = document.createElement('i');
-      newIcon.setAttribute('data-lucide', state.markdownPreviewActive ? 'code' : 'eye');
+      newIcon.setAttribute('data-lucide', state.previewActive ? 'code' : 'eye');
       iconEl.parentNode.replaceChild(newIcon, iconEl);
     }
     if (textEl) {
-      textEl.textContent = state.markdownPreviewActive ? '编辑器' : '预览';
+      textEl.textContent = state.previewActive ? '编辑器' : '预览';
     }
     if (window.lucide) {
       window.lucide.createIcons();
     }
 
-    if (state.markdownPreviewActive) {
+    if (state.previewActive) {
       togglePreviewBtn.classList.add('active');
       if (markdownPreview) {
-        markdownPreview.classList.remove('hidden');
+        markdownPreview.classList.toggle('hidden', !isMd);
+      }
+      if (isMd) {
         updateMarkdownPreview();
+      }
+      if (htmlPreviewFrame) {
+        htmlPreviewFrame.classList.toggle('hidden', !isHtml);
+      }
+      if (isHtml) {
+        updateHtmlPreview(path);
       }
       if (editorTextarea) {
         editorTextarea.classList.add('hidden');
@@ -220,21 +260,13 @@ export function updatePreviewUI(path) {
     } else {
       togglePreviewBtn.classList.remove('active');
       if (markdownPreview) markdownPreview.classList.add('hidden');
+      if (htmlPreviewFrame) htmlPreviewFrame.classList.add('hidden');
       if (editorTextarea) {
         editorTextarea.classList.remove('hidden');
       }
       if (saveFileBtn) {
         saveFileBtn.classList.remove('hidden');
       }
-    }
-  } else {
-    togglePreviewBtn.classList.add('hidden');
-    if (markdownPreview) markdownPreview.classList.add('hidden');
-    if (editorTextarea) {
-      editorTextarea.classList.remove('hidden');
-    }
-    if (saveFileBtn) {
-      saveFileBtn.classList.remove('hidden');
     }
   }
 
@@ -272,6 +304,10 @@ export async function saveEditorFile() {
     const data = await response.json();
     if (response.ok && data.success) {
       editorStatusMsg.textContent = '已保存';
+      // Refresh the HTML preview iframe so it reflects the saved content
+      if (state.previewActive && getLanguageFromExtension(path) === 'html') {
+        updateHtmlPreview(path, true);
+      }
       updateGitStatus().then(() => {
         applyGitTreeClasses();
       });

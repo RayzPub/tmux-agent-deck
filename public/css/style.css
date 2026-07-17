@@ -3523,6 +3523,13 @@ body.light-minimalist .deck-dropdown-divider {
   line-height: 1.6;
 }
 
+.html-preview-frame {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: #ffffff;
+}
+
 body.light-minimalist .markdown-preview {
   background: #ffffff;
   border-left: 1px solid #e2e8f0;

@@ -3,8 +3,8 @@ import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
 import { saveEditorFile, updateMarkdownPreview, updatePreviewUI } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
-import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js?v=1.0.6';
-import { initPushNotifications, togglePushSubscription } from './modules/push.js?v=1.0.6';
+import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js';
+import { initPushNotifications, togglePushSubscription } from './modules/push.js';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
 
@@ -647,7 +647,7 @@ closeEditorBtn.addEventListener('click', () => {
 const togglePreviewBtn = document.getElementById('togglePreviewBtn');
 if (togglePreviewBtn) {
   togglePreviewBtn.addEventListener('click', () => {
-    state.markdownPreviewActive = !state.markdownPreviewActive;
+    state.previewActive = !state.previewActive;
     const activeTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'editor');
     const path = activeTab ? activeTab.path : null;
     updatePreviewUI(path);

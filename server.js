@@ -64,10 +64,17 @@ app.get('/login.html', (req, res) => {
 });
 
 // Serve static assets (CSS, JS) in public folder that are non-protected (like login page assets)
-const staticOptions = {
-  maxAge: '1d', // Cache for 1 day
+// JS/CSS must always be fresh: files under public/ ship without a server restart, and
+// ES module sub-imports (js/modules/*) cannot carry version query strings, so manual
+// ?v= bumps can't bust them. maxAge 0 makes the browser revalidate every load;
+// ETag/Last-Modified keep unchanged files at cheap 304s, changed files apply instantly.
+const codeStaticOptions = {
+  maxAge: 0,
   etag: true,
-  lastModified: true
+  lastModified: true,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  }
 };
 const docsStaticOptions = {
   maxAge: '7d', // Cache documentation/images for 7 days
@@ -75,8 +82,8 @@ const docsStaticOptions = {
   lastModified: true
 };
 
-app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), staticOptions));
-app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), staticOptions));
+app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), codeStaticOptions));
+app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), codeStaticOptions));
 app.use('/images', express.static(path.join(PROJECT_ROOT, 'public', 'images'), docsStaticOptions));
 app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs'), docsStaticOptions));
 
