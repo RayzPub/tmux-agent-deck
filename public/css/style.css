@@ -1034,6 +1034,52 @@ body.light-minimalist .slogan-title {
   margin: 0 auto !important;
 }
 
+/* Highlighted Text Button for New Session */
+.highlight-text-btn {
+  background: rgba(0, 240, 255, 0.08);
+  color: var(--neon-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  padding: 10px 20px;
+  font-family: var(--font-header);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 4px;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);
+  text-shadow: var(--glow-cyan);
+}
+
+.highlight-text-btn:hover {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.highlight-text-btn:active {
+  transform: translateY(1px);
+}
+
+/* Light mode overrides if needed */
+body.light-minimalist .highlight-text-btn {
+  background: rgba(0, 100, 250, 0.05);
+  color: #0064fa;
+  border: 1px solid rgba(0, 100, 250, 0.3);
+  text-shadow: none;
+  box-shadow: none;
+}
+
+body.light-minimalist .highlight-text-btn:hover {
+  background: rgba(0, 100, 250, 0.1);
+  border-color: #0064fa;
+  box-shadow: 0 2px 8px rgba(0, 100, 250, 0.15);
+}
+
 .sys-specs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
