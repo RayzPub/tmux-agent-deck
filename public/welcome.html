@@ -3,490 +3,1036 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>CCNOW - AI 智能体后台控制中心</title>
-  
+  <title>CCNOW · AI 智能体后台控制中心</title>
+  <meta name="description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
   <link href="https://fonts.geekzu.org/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-  
-  <!-- Lucide Icons -->
-  <script src="/js/lucide.min.js" defer></script>
-  
-  <!-- Stylesheets -->
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/welcome.css">
-  
+
   <!-- Preload LCP Image -->
   <link rel="preload" href="/docs/images/dashboard_preview.webp" as="image" type="image/webp" fetchpriority="high">
-  
+
   <!-- Favicons / PWA Metadata -->
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
   <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
   <link rel="manifest" href="/manifest.json">
+
+  <style>
+    /* ============ Tokens & Reset ============ */
+    :root {
+      --bg: #05060b;
+      --bg-2: #0a0d17;
+      --panel: rgba(13, 17, 30, .72);
+      --line: rgba(0, 240, 255, .14);
+      --cyan: #00f0ff;
+      --cyan-dim: rgba(0, 240, 255, .55);
+      --pink: #ff2d78;
+      --green: #39ff14;
+      --amber: #ffb020;
+      --text: #e8ecf4;
+      --muted: #8b93a7;
+      --font-ui: 'Outfit', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+      --font-display: 'Orbitron', 'Outfit', sans-serif;
+      --radius: 14px;
+      --nav-h: 64px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 12px); }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      line-height: 1.7;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    ul { list-style: none; }
+    img { max-width: 100%; display: block; }
+    ::selection { background: var(--cyan); color: #000; }
+
+    /* ============ Background FX ============ */
+    #bgCanvas {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    }
+    .grid-floor {
+      position: fixed; left: -25%; right: -25%; bottom: -12%; height: 55vh;
+      z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(0,240,255,.09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,240,255,.09) 1px, transparent 1px);
+      background-size: 44px 44px;
+      transform: perspective(520px) rotateX(62deg);
+      transform-origin: center top;
+      mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 80%, transparent);
+      -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 80%, transparent);
+      animation: gridScroll 14s linear infinite;
+    }
+    @keyframes gridScroll {
+      from { background-position: 0 0, 0 0; }
+      to   { background-position: 0 44px, 0 0; }
+    }
+    .aurora {
+      position: fixed; z-index: 0; pointer-events: none; filter: blur(90px); opacity: .35;
+      border-radius: 50%;
+    }
+    .aurora.a1 { width: 46vw; height: 46vw; top: -14vw; left: -10vw; background: radial-gradient(circle, rgba(0,240,255,.5), transparent 65%); animation: drift 22s ease-in-out infinite alternate; }
+    .aurora.a2 { width: 40vw; height: 40vw; top: 22vh; right: -14vw; background: radial-gradient(circle, rgba(255,45,120,.42), transparent 65%); animation: drift 26s ease-in-out infinite alternate-reverse; }
+    @keyframes drift {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(4vw, 5vh) scale(1.12); }
+    }
+    .scanline {
+      position: fixed; inset: 0; z-index: 60; pointer-events: none;
+      background: repeating-linear-gradient(0deg, rgba(255,255,255,.022) 0 1px, transparent 1px 3px);
+      mix-blend-mode: overlay;
+    }
+
+    main, nav, footer { position: relative; z-index: 1; }
+
+    /* ============ Scroll Progress ============ */
+    #scrollProgress {
+      position: fixed; top: 0; left: 0; height: 2px; width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--pink));
+      box-shadow: 0 0 12px var(--cyan);
+      z-index: 200;
+    }
+
+    /* ============ Nav ============ */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(16px, 4vw, 48px);
+      background: rgba(5, 6, 11, .55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid transparent;
+      transition: border-color .3s, background .3s;
+    }
+    .nav.scrolled { border-bottom-color: var(--line); background: rgba(5, 6, 11, .85); }
+    .nav-logo {
+      font-family: var(--font-display); font-weight: 900; letter-spacing: .18em;
+      font-size: 1.05rem; display: flex; align-items: center; gap: 10px;
+    }
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      box-shadow: 0 0 10px var(--green); animation: pulse 1.8s ease-in-out infinite;
+      display: inline-block; flex: none;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity: .4; transform: scale(.75);} }
+    .nav-links { display: flex; align-items: center; gap: clamp(14px, 2.5vw, 32px); }
+    .nav-links a.nav-link {
+      font-family: var(--font-mono); font-size: .82rem; color: var(--muted);
+      transition: color .2s; position: relative;
+    }
+    .nav-links a.nav-link::after {
+      content: ''; position: absolute; left: 0; bottom: -6px; height: 1px; width: 0;
+      background: var(--cyan); transition: width .25s; box-shadow: 0 0 8px var(--cyan);
+    }
+    .nav-links a.nav-link:hover { color: var(--cyan); }
+    .nav-links a.nav-link:hover::after { width: 100%; }
+    .hamburger {
+      display: none; background: none; border: 1px solid var(--line); border-radius: 8px;
+      color: var(--text); width: 40px; height: 40px; cursor: pointer;
+      align-items: center; justify-content: center;
+    }
+    .mobile-menu {
+      position: fixed; top: var(--nav-h); left: 0; right: 0; z-index: 99;
+      background: rgba(5,6,11,.96); backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--line);
+      display: none; flex-direction: column; padding: 12px 24px 20px; gap: 4px;
+    }
+    .mobile-menu.open { display: flex; }
+    .mobile-menu a {
+      padding: 12px 4px; font-family: var(--font-mono); font-size: .9rem;
+      color: var(--muted); border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+    .mobile-menu a:last-child { border-bottom: none; color: var(--cyan); }
+    @media (max-width: 860px) {
+      .nav-links { display: none; }
+      .hamburger { display: flex; }
+    }
+
+    /* ============ Buttons ============ */
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-family: var(--font-mono); font-size: .88rem; font-weight: 500;
+      padding: 13px 26px; border-radius: 10px; cursor: pointer;
+      position: relative; overflow: hidden; transition: transform .2s, box-shadow .25s;
+      border: 1px solid transparent;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary {
+      background: linear-gradient(120deg, var(--cyan), #00b8d9);
+      color: #001318; font-weight: 700;
+      box-shadow: 0 0 24px rgba(0,240,255,.35);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(0,240,255,.55); }
+    .btn-ghost {
+      border-color: var(--line); color: var(--cyan); background: rgba(0,240,255,.05);
+    }
+    .btn-ghost:hover { background: rgba(0,240,255,.12); box-shadow: 0 0 20px rgba(0,240,255,.2); }
+    .btn svg { width: 15px; height: 15px; }
+    .btn-sm { padding: 9px 18px; font-size: .8rem; }
+
+    /* ============ Hero ============ */
+    .hero {
+      min-height: 100svh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: calc(var(--nav-h) + 48px) 20px 40px;
+    }
+    .hero-badge {
+      font-family: var(--font-mono); font-size: .78rem; color: var(--cyan);
+      border: 1px solid var(--line); border-radius: 999px; padding: 7px 18px;
+      background: rgba(0,240,255,.06);
+      display: inline-flex; align-items: center; gap: 9px;
+      animation: fadeUp .7s .1s both;
+    }
+    .hero-title {
+      font-family: var(--font-display); font-weight: 900;
+      font-size: clamp(3rem, 10vw, 6.5rem); letter-spacing: .1em;
+      margin: 26px 0 8px; position: relative; line-height: 1.05;
+      background: linear-gradient(180deg, #fff 20%, var(--cyan) 70%, #0676ff);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 0 28px rgba(0,240,255,.35));
+      animation: fadeUp .7s .22s both;
+    }
+    .hero-title.glitch::before, .hero-title.glitch::after {
+      content: attr(data-text); position: absolute; inset: 0;
+      background: none; color: var(--pink); z-index: -1; opacity: 0;
+    }
+    .hero-title.glitch::before { animation: glitchA 4s infinite steps(1); }
+    .hero-title.glitch::after  { animation: glitchB 4s infinite steps(1); color: var(--cyan); }
+    @keyframes glitchA {
+      0%, 93% { opacity: 0; transform: none; clip-path: none; }
+      94% { opacity: .8; transform: translate(-4px, 2px); clip-path: inset(12% 0 60% 0); }
+      96% { opacity: .8; transform: translate(3px, -1px); clip-path: inset(55% 0 18% 0); }
+      98%, 100% { opacity: 0; }
+    }
+    @keyframes glitchB {
+      0%, 93% { opacity: 0; transform: none; clip-path: none; }
+      95% { opacity: .7; transform: translate(4px, -2px); clip-path: inset(40% 0 34% 0); }
+      97% { opacity: .7; transform: translate(-3px, 1px); clip-path: inset(5% 0 78% 0); }
+      99%, 100% { opacity: 0; }
+    }
+    .hero-sub {
+      max-width: 640px; color: var(--muted); font-size: clamp(.95rem, 2.4vw, 1.08rem);
+      font-weight: 300; animation: fadeUp .7s .34s both;
+    }
+    .hero-sub strong { color: var(--text); font-weight: 600; }
+    .hero-ctas { display: flex; gap: 16px; margin-top: 34px; flex-wrap: wrap; justify-content: center; animation: fadeUp .7s .46s both; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+
+    /* ============ Hero Device Mockup ============ */
+    .device-mockup-wrapper {
+      width: min(840px, 100%); margin-top: 56px; text-align: left;
+      animation: fadeUp .8s .6s both;
+      perspective: 1000px;
+    }
+    .device-mockup {
+      background: rgba(8, 10, 18, .88); border: 1px solid var(--line);
+      border-radius: var(--radius); overflow: hidden;
+      box-shadow: 0 24px 70px rgba(0,0,0,.55), 0 0 60px rgba(0,240,255,.07);
+      backdrop-filter: blur(8px);
+      transform-style: preserve-3d; transition: transform .15s ease-out;
+      position: relative;
+    }
+    .device-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,.06);
+      background: rgba(255,255,255,.02);
+    }
+    .device-dots { display: flex; gap: 7px; }
+    .device-dots i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+    .device-dots i.red { background: #ff5f57; }
+    .device-dots i.yellow { background: #febc2e; }
+    .device-dots i.green { background: #28c840; }
+    .device-title { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .device-status { font-family: var(--font-mono); font-size: .7rem; color: var(--green); display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .device-content {
+      position: relative; width: 100%; overflow: hidden; background: #000;
+    }
+    .device-content img {
+      width: 100%; height: auto; display: block;
+    }
+    .device-reflection {
+      position: absolute; inset: 0; pointer-events: none; z-index: 2;
+      background: linear-gradient(135deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,0) 50%);
+    }
+
+    /* Installer Terminal Styling */
+    .term-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 16px; border-bottom: 1px solid rgba(255,255,255,.06);
+      background: rgba(255,255,255,.02);
+    }
+    .term-dots { display: flex; gap: 7px; }
+    .term-dots i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+    .term-dots i:nth-child(1) { background: #ff5f57; }
+    .term-dots i:nth-child(2) { background: #febc2e; }
+    .term-dots i:nth-child(3) { background: #28c840; }
+    .term-title { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .c-prompt { color: var(--cyan); }
+
+    /* ============ Sections ============ */
+    .section { max-width: 1180px; margin: 0 auto; padding: clamp(70px, 10vw, 120px) 24px 0; }
+    .section-head { text-align: center; margin-bottom: clamp(36px, 6vw, 60px); }
+    .section-tag {
+      font-family: var(--font-mono); font-size: .76rem; color: var(--cyan);
+      letter-spacing: .12em;
+    }
+    .section-title {
+      font-family: var(--font-display); font-size: clamp(1.5rem, 4.4vw, 2.3rem);
+      font-weight: 700; margin: 12px 0 10px; letter-spacing: .04em;
+    }
+    .section-sub { color: var(--muted); max-width: 620px; margin: 0 auto; font-weight: 300; font-size: .96rem; }
+
+    /* Reveal on scroll */
+    .reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s cubic-bezier(.22,.8,.3,1); }
+    .reveal.in { opacity: 1; transform: none; }
+
+    /* ============ Stats ============ */
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+      background: var(--line); border: 1px solid var(--line); border-radius: var(--radius);
+      overflow: hidden; margin-top: 10px;
+    }
+    .stat {
+      background: var(--bg-2); padding: 30px 22px; text-align: center;
+      transition: background .3s;
+    }
+    .stat:hover { background: #0e1322; }
+    .stat-num {
+      font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 700;
+      color: var(--cyan); text-shadow: 0 0 18px rgba(0,240,255,.5);
+    }
+    .stat-num em { font-style: normal; font-size: .55em; color: var(--muted); margin-left: 2px; }
+    .stat-label { font-weight: 600; font-size: .92rem; margin-top: 6px; }
+    .stat-desc { color: var(--muted); font-size: .8rem; margin-top: 4px; font-weight: 300; }
+    @media (max-width: 860px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+    /* ============ Feature Cards ============ */
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px;
+    }
+    .card {
+      position: relative; background: var(--panel); border: 1px solid rgba(255,255,255,.07);
+      border-radius: var(--radius); padding: 30px 26px; overflow: hidden;
+      transition: transform .3s, border-color .3s, box-shadow .3s;
+    }
+    .card::before { /* spotlight that follows the mouse */
+      content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity .3s;
+      background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 50%), rgba(0,240,255,.12), transparent 65%);
+      pointer-events: none;
+    }
+    .card:hover { transform: translateY(-5px); border-color: var(--line); box-shadow: 0 18px 44px rgba(0,0,0,.45), 0 0 30px rgba(0,240,255,.08); }
+    .card:hover::before { opacity: 1; }
+    .card-icon {
+      width: 46px; height: 46px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line); background: rgba(0,240,255,.07); color: var(--cyan);
+      margin-bottom: 18px; box-shadow: 0 0 18px rgba(0,240,255,.12);
+    }
+    .card-icon.pink { color: var(--pink); border-color: rgba(255,45,120,.25); background: rgba(255,45,120,.07); box-shadow: 0 0 18px rgba(255,45,120,.12); }
+    .card-icon svg { width: 21px; height: 21px; }
+    .card h3 { font-size: 1.04rem; font-weight: 600; margin-bottom: 9px; }
+    .card p { color: var(--muted); font-size: .87rem; font-weight: 300; }
+
+    /* ============ Showcase Tabs ============ */
+    .tabs-head {
+      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 34px;
+    }
+    .tab-btn {
+      font-family: var(--font-mono); font-size: .8rem; color: var(--muted);
+      background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
+      padding: 10px 18px; border-radius: 9px; cursor: pointer;
+      transition: all .25s;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--line); }
+    .tab-btn.active {
+      color: var(--cyan); border-color: var(--cyan);
+      background: rgba(0,240,255,.08); box-shadow: 0 0 18px rgba(0,240,255,.18);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeUp .45s both; }
+    .panel-grid {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(26px, 5vw, 56px); align-items: center;
+    }
+    @media (max-width: 900px) { .panel-grid { grid-template-columns: 1fr; } }
+    .panel-shot {
+      position: relative; border: 1px solid var(--line); border-radius: var(--radius);
+      overflow: hidden; background: var(--bg-2);
+      box-shadow: 0 20px 50px rgba(0,0,0,.5);
+      min-height: 220px;
+    }
+    .panel-shot img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s; }
+    .panel-shot:hover img { transform: scale(1.025); }
+    .panel-shot::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(160deg, rgba(0,240,255,.08), transparent 40%);
+    }
+    .corner { position: absolute; width: 18px; height: 18px; border: 2px solid var(--cyan); z-index: 2; opacity: .8; }
+    .corner.tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+    .corner.tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
+    .corner.bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
+    .corner.br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+    .panel-info h3 { font-family: var(--font-display); font-size: 1.25rem; margin-bottom: 12px; letter-spacing: .03em; }
+    .panel-info h3 span { color: var(--cyan); }
+    .panel-info > p { color: var(--muted); font-weight: 300; font-size: .93rem; margin-bottom: 20px; }
+    .panel-info li { display: flex; gap: 11px; margin-bottom: 13px; font-size: .89rem; color: var(--muted); font-weight: 300; }
+    .panel-info li strong { color: var(--text); font-weight: 600; }
+    .panel-info li svg { width: 16px; height: 16px; color: var(--cyan); flex: none; margin-top: 4px; }
+    .panel-info.pink-theme li svg { color: var(--pink); }
+
+    /* ============ Install ============ */
+    .install-term {
+      max-width: 820px; margin: 0 auto; border: 1px solid var(--line);
+      border-radius: var(--radius); background: rgba(8,10,18,.9); overflow: hidden;
+      box-shadow: 0 20px 55px rgba(0,0,0,.5);
+    }
+    .install-body { padding: 22px 24px; font-family: var(--font-mono); font-size: clamp(.74rem, 2.6vw, .88rem); position: relative; }
+    .install-comment { color: var(--muted); display: block; margin-bottom: 14px; font-size: .82em; }
+    .install-line { display: flex; gap: 10px; align-items: baseline; word-break: break-all; }
+    .install-line .c-prompt { flex: none; }
+    .copy-btn {
+      position: absolute; top: 14px; right: 14px;
+      display: inline-flex; align-items: center; gap: 7px;
+      font-family: var(--font-mono); font-size: .72rem; color: var(--cyan);
+      background: rgba(0,240,255,.06); border: 1px solid var(--line); border-radius: 8px;
+      padding: 7px 13px; cursor: pointer; transition: all .2s;
+    }
+    .copy-btn:hover { background: rgba(0,240,255,.14); }
+    .copy-btn.copied { color: var(--green); border-color: rgba(57,255,20,.4); }
+    .copy-btn svg { width: 12px; height: 12px; }
+    .badges { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 34px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--font-mono); font-size: .78rem; color: var(--muted);
+      border: 1px solid rgba(255,255,255,.09); border-radius: 999px; padding: 8px 16px;
+      background: rgba(255,255,255,.02); transition: all .25s;
+    }
+    .badge:hover { color: var(--cyan); border-color: var(--line); box-shadow: 0 0 16px rgba(0,240,255,.12); }
+    .badge svg { width: 13px; height: 13px; }
+
+    /* ============ FAQ ============ */
+    .faq { max-width: 780px; margin: 0 auto; }
+    .faq-item {
+      border: 1px solid rgba(255,255,255,.08); border-radius: 12px; margin-bottom: 13px;
+      background: var(--panel); overflow: hidden; transition: border-color .3s;
+    }
+    .faq-item.open { border-color: var(--line); }
+    .faq-q {
+      width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 14px;
+      background: none; border: none; color: var(--text); cursor: pointer; text-align: left;
+      padding: 18px 22px; font-size: .95rem; font-weight: 600; font-family: var(--font-ui);
+    }
+    .faq-q svg { width: 16px; height: 16px; color: var(--cyan); flex: none; transition: transform .3s; }
+    .faq-item.open .faq-q svg { transform: rotate(180deg); }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height .35s ease; }
+    .faq-a p { padding: 0 22px 20px; color: var(--muted); font-size: .88rem; font-weight: 300; }
+
+    /* ============ CTA ============ */
+    .cta-final { text-align: center; padding: clamp(80px, 12vw, 130px) 24px; }
+    .cta-final h2 {
+      font-family: var(--font-display); font-size: clamp(1.7rem, 5.4vw, 2.8rem); font-weight: 900;
+      letter-spacing: .06em; margin-bottom: 16px;
+      background: linear-gradient(120deg, var(--cyan), #fff, var(--pink));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .cta-final p { color: var(--muted); font-weight: 300; margin-bottom: 32px; }
+
+    /* ============ Footer ============ */
+    footer { border-top: 1px solid rgba(255,255,255,.06); background: rgba(5,6,11,.7); }
+    .footer-grid {
+      max-width: 1180px; margin: 0 auto; padding: 52px 24px 30px;
+      display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 36px;
+    }
+    @media (max-width: 760px) { .footer-grid { grid-template-columns: 1fr; } }
+    .footer-grid h4 { font-family: var(--font-display); letter-spacing: .15em; margin-bottom: 12px; }
+    .footer-grid h5 { font-family: var(--font-mono); font-size: .78rem; color: var(--cyan); margin-bottom: 14px; }
+    .footer-grid p, .footer-grid a { color: var(--muted); font-size: .86rem; font-weight: 300; }
+    .footer-grid li { margin-bottom: 9px; }
+    .footer-grid a:hover { color: var(--cyan); }
+    .footer-bottom {
+      max-width: 1180px; margin: 0 auto; padding: 18px 24px 26px;
+      border-top: 1px solid rgba(255,255,255,.05);
+      display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      font-family: var(--font-mono); font-size: .74rem; color: var(--muted);
+    }
+    .footer-status { display: flex; align-items: center; }
+
+    /* ============ Back to top ============ */
+    #toTop {
+      position: fixed; right: 22px; bottom: 22px; z-index: 90;
+      width: 44px; height: 44px; border-radius: 11px; cursor: pointer;
+      background: rgba(8,10,18,.85); border: 1px solid var(--line); color: var(--cyan);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transform: translateY(12px);
+      transition: opacity .3s, transform .3s;
+    }
+    #toTop.show { opacity: 1; pointer-events: auto; transform: none; }
+    #toTop:hover { box-shadow: 0 0 20px rgba(0,240,255,.25); }
+    #toTop svg { width: 18px; height: 18px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      html { scroll-behavior: auto; }
+    }
+  </style>
 </head>
-<body class="welcome-body">
-  <!-- Interactive Scanline Overlay -->
+<body>
+  <div id="scrollProgress"></div>
+  <canvas id="bgCanvas"></canvas>
+  <div class="aurora a1"></div>
+  <div class="aurora a2"></div>
+  <div class="grid-floor"></div>
   <div class="scanline"></div>
 
-  <!-- Cyber Animated 3D Background Grid -->
-  <div class="welcome-grid-container">
-    <div class="welcome-grid-3d" id="welcomeGrid3D"></div>
-    <div class="welcome-grid-overlay"></div>
+  <!-- ================= Nav ================= -->
+  <nav class="nav" id="nav">
+    <a href="#" class="nav-logo"><span class="pulse-dot"></span>CCNOW</a>
+    <div class="nav-links">
+      <a class="nav-link" href="#features">// 功能特性</a>
+      <a class="nav-link" href="#showcase">// 界面预览</a>
+      <a class="nav-link" href="#installation">// 部署安装</a>
+      <a class="nav-link" href="#faq">// 常见问题</a>
+      <a href="/login.html" class="btn btn-ghost btn-sm nav-login-btn">
+        <span class="login-btn-text">登录控制台</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      </a>
+    </div>
+    <button class="hamburger" id="hamburger" aria-label="菜单">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/></svg>
+    </button>
+  </nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#features">// 功能特性</a>
+    <a href="#showcase">// 界面预览</a>
+    <a href="#installation">// 部署安装</a>
+    <a href="#faq">// 常见问题</a>
+    <a href="/login.html">→ 登录控制台</a>
   </div>
 
-  <!-- Navigation Bar -->
-  <nav class="cyber-nav">
-    <a href="#" class="nav-logo">
-      <span class="pulse-dot"></span>
-      CCNOW
-    </a>
-    <ul class="nav-links">
-      <li class="nav-item-link"><a href="#features">// 功能特性</a></li>
-      <li class="nav-item-link"><a href="#showcase">// 界面预览</a></li>
-      <li class="nav-item-link"><a href="#installation">// 部署安装</a></li>
-      <li>
-        <a href="/login.html" class="cyber-btn-outline nav-login-btn">
-          <span class="login-btn-text">登录控制台</span>
-          <i data-lucide="log-in" class="btn-icon" style="width: 12px; height: 12px;"></i>
+  <main>
+    <!-- ================= Hero ================= -->
+    <header class="hero">
+      <span class="hero-badge"><span class="pulse-dot"></span>v2.0 // AI AGENT CONTROL CENTER</span>
+      <h1 class="hero-title glitch" data-text="CCNOW">CCNOW</h1>
+      <p class="hero-sub">
+        专为 <strong>AI 编程智能体</strong> 打造的网页端控制面板。
+        任务在后台 <strong>7×24 持续运行</strong>，断网、休眠、关页都不中断 ——
+        无论电脑还是手机，随时随地重连现场、掌控开发进度。
+      </p>
+      <div class="hero-ctas">
+        <a href="/login.html" class="btn btn-primary">
+          <span class="console-btn-text">进入控制台</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
         </a>
-      </li>
-    </ul>
-  </nav>
+        <a href="#features" class="btn btn-ghost">
+          <span>探索功能</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </a>
+      </div>
 
-  <!-- Hero Section -->
-  <header class="hero-section">
-    <div class="hero-badge">// 控制中心</div>
-    <h1 class="glitch-text hero-title" data-text="CCNOW">CCNOW</h1>
-    <p class="hero-subtitle">
-      一个极具科技感、专为 AI 编程智能体设计的网页端控制面板。
-      让您的 AI 任务在后台持续稳定运行，支持随时重连与进度查看，无论是在电脑还是手机端，都能随时掌控开发进度。
-    </p>
-    <div class="hero-ctas">
-      <a href="/login.html" class="cyber-btn">
-        <span class="btn-text console-btn-text">进入控制台</span>
-        <span class="btn-glitch"></span>
-        <i data-lucide="shield-check" class="btn-icon"></i>
-      </a>
-      <a href="#features" class="cyber-btn-outline">
-        <span class="btn-text">功能特性</span>
-        <i data-lucide="chevron-down" class="btn-icon"></i>
-      </a>
-    </div>
-
-    <!-- Hero Screenshot Mockup -->
-    <div class="device-mockup-wrapper">
-      <div class="device-mockup">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="device-header">
-          <div class="device-dots">
-            <div class="device-dot red"></div>
-            <div class="device-dot yellow"></div>
-            <div class="device-dot green"></div>
+      <!-- Hero Screenshot Mockup -->
+      <div class="device-mockup-wrapper">
+        <div class="device-mockup" id="deviceMockup">
+          <div class="device-header">
+            <div class="device-dots">
+              <i class="red"></i>
+              <i class="yellow"></i>
+              <i class="green"></i>
+            </div>
+            <div class="device-title">控制面板 // 运行监控</div>
+            <div class="device-status">
+              <span class="pulse-dot"></span>
+              在线运行
+            </div>
           </div>
-          <div class="device-title">控制面板 // 运行监控</div>
-          <div class="device-status">
-            <span class="pulse-dot" style="margin-right: 6px;"></span>
-            在线运行
+          <div class="device-content">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div class="device-reflection"></div>
+            <picture>
+              <source srcset="/docs/images/dashboard_preview.webp" type="image/webp">
+              <img src="/docs/images/dashboard_preview.png" alt="Dashboard Preview" fetchpriority="high">
+            </picture>
           </div>
         </div>
-        <div class="device-content">
-          <div class="device-reflection"></div>
-          <picture>
-            <source srcset="/docs/images/dashboard_preview.webp" type="image/webp">
-            <img src="/docs/images/dashboard_preview.png" alt="Dashboard Preview" fetchpriority="high">
-          </picture>
+      </div>
+    </header>
+
+    <!-- ================= Stats ================= -->
+    <section class="section" style="padding-top: 20px;">
+      <div class="stats reveal">
+        <div class="stat">
+          <div class="stat-num"><span data-count="24" data-suffix="/7">0/7</span></div>
+          <div class="stat-label">后台持续运行</div>
+          <div class="stat-desc">关闭网页，AI 仍在 Tmux 中继续编码</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num"><span data-count="50" data-suffix="ms" data-prefix="&lt;">0</span></div>
+          <div class="stat-label">终端响应延迟</div>
+          <div class="stat-desc">超低延迟虚拟控制台，打字零卡顿</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num"><span data-count="4" data-suffix=" 端">0</span></div>
+          <div class="stat-label">全平台覆盖</div>
+          <div class="stat-desc">电脑 / 手机 / 微信 / Telegram 四端联动</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num"><span data-count="100" data-suffix="%">0%</span></div>
+          <div class="stat-label">沙盒安全隔离</div>
+          <div class="stat-desc">多用户独立工作区，数据互不干扰</div>
         </div>
       </div>
-    </div>
-  </header>
+    </section>
 
-  <!-- Stats Bar -->
-  <section class="stats-bar">
-    <div class="stat-item">
-      <div class="stat-num">持久运行</div>
-      <div class="stat-label">后台持续运行</div>
-      <div class="stat-desc">关闭网页，AI 智能体仍会在后台继续编码</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-num">完美适配</div>
-      <div class="stat-label">完美手机适配</div>
-      <div class="stat-desc">自适应屏幕，通勤路上也能轻松查看</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-num">双端联动</div>
-      <div class="stat-label">微信/TG 互通</div>
-      <div class="stat-desc">直接在聊天框查看截图、发送命令与审批任务</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-num">安全隔离</div>
-      <div class="stat-label">多用户安全沙盒</div>
-      <div class="stat-desc">独立工作区与配置，成员协作互不干扰</div>
-    </div>
-  </section>
-
-  <!-- Features Showcase -->
-  <section class="section-wrapper" id="features">
-    <div class="section-header">
-      <span class="section-tag">// 功能特性概述</span>
-      <h2 class="section-title">核心功能特性</h2>
-      <p class="section-subtitle">打破传统终端限制，赋予 AI 智能体开发任务持久化、可视化与跨设备掌控力。</p>
-    </div>
-
-    <div class="features-grid">
-      <!-- Card 1 -->
-      <div class="feature-card">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="feature-icon-wrapper">
-          <i data-lucide="infinity"></i>
+    <!-- ================= Features ================= -->
+    <section class="section" id="features">
+      <div class="section-head reveal">
+        <span class="section-tag">// FEATURES</span>
+        <h2 class="section-title">核心功能特性</h2>
+        <p class="section-sub">打破传统终端限制，赋予 AI 智能体开发任务持久化、可视化与跨设备掌控力。</p>
+      </div>
+      <div class="features-grid">
+        <div class="card reveal">
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/></svg></div>
+          <h3>AI 智能体后台持续运行</h3>
+          <p>一键启动 Agy、Claude Code 等 AI 编程助手。任务在服务器 Tmux 会话中独立执行，即使电脑休眠、断网或关闭网页也不中断，重连即可瞬间恢复现场。</p>
         </div>
-        <h3>AI 智能体后台持续运行</h3>
-        <p>支持一键启动 Agy、Claude Code 等 AI 编程助手。任务在服务器的 Tmux 会话中独立执行。即使电脑休眠、断网或关闭网页，AI 也不会中断任务，再次连接即可瞬间恢复现场。</p>
+        <div class="card reveal">
+          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+          <h3>多用户沙盒与安全隔离</h3>
+          <p>完整的多用户管理模式。非管理员用户拥有独立的文件目录与虚拟运行环境，Shell 历史与个人配置完全隔离，保障开发数据的机密性与安全。</p>
+        </div>
+        <div class="card reveal">
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="12" y1="2" x2="12" y2="4"/></svg></div>
+          <h3>设备原生消息推送</h3>
+          <p>当 AI 完成长耗时任务，或关键操作需要您授权时，系统会向手机或电脑发送原生推送通知 —— 即使没打开网页也能第一时间掌握状态。</p>
+        </div>
+        <div class="card reveal">
+          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg></div>
+          <h3>微信与 Telegram 远程控制</h3>
+          <p>扫码即可绑定微信或 Telegram。在聊天框中直接接收 AI 关键动作通知、查看终端实时截图、发送文本命令并一键审批，省去打开电脑的麻烦。</p>
+        </div>
+        <div class="card reveal">
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <h3>超低延迟交互终端</h3>
+          <p>网页内提供响应敏捷的虚拟控制台，键盘反馈迅速。终端尺寸自动跟随浏览器窗口对齐，保障各种设备上的顺畅体验。</p>
+        </div>
+        <div class="card reveal">
+          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
+          <h3>严密的安全认证</h3>
+          <p>基于成熟的安全加密与 Token 校验，网页端采用管理员专属邀请码注册机制，全方位保护服务器命令行不被未授权访问。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Showcase ================= -->
+    <section class="section" id="showcase">
+      <div class="section-head reveal">
+        <span class="section-tag">// SHOWCASE</span>
+        <h2 class="section-title">图形化工作台预览</h2>
+        <p class="section-sub">多维度图形化看板，轻松掌控多智能体并行任务与代码编辑流程。</p>
       </div>
 
-      <!-- Card 2 -->
-      <div class="feature-card">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="feature-icon-wrapper pink">
-          <i data-lucide="users"></i>
-        </div>
-        <h3>多用户沙盒与安全隔离</h3>
-        <p>提供完整的多用户管理模式。非管理员用户拥有独立的文件存放目录与虚拟运行环境。各用户的 Shell 历史记录及个人配置完全隔离，保障开发数据的机密性与安全性。</p>
-      </div>
-
-      <!-- Card 3 -->
-      <div class="feature-card">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="feature-icon-wrapper">
-          <i data-lucide="bell-ring"></i>
-        </div>
-        <h3>设备原生消息推送</h3>
-        <p>集成消息通知机制。当 AI 运行长耗时任务完毕，或在关键操作需要您授权同意时，系统会向您的手机或电脑发送原生通知消息，即使您此时没有打开网页也能及时获取状态。</p>
-      </div>
-
-      <!-- Card 4 -->
-      <div class="feature-card">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="feature-icon-wrapper pink">
-          <i data-lucide="message-square-text"></i>
-        </div>
-        <h3>微信与 Telegram 远程控制</h3>
-        <p>无需繁琐配置，扫码即可绑定微信或 Telegram。您可以直接在聊天框接收 AI 的关键动作通知，查看终端实时截图，或直接发送文本命令和一键审批操作，省去打开电脑的麻烦。</p>
-      </div>
-
-      <!-- Card 5 -->
-      <div class="feature-card">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="feature-icon-wrapper">
-          <i data-lucide="zap"></i>
-        </div>
-        <h3>超低延迟交互终端</h3>
-        <p>在网页中提供响应敏捷的虚拟控制台，键盘打字反馈迅速。终端大小会自动根据您的浏览器窗口尺寸进行对齐，保障各种设备上的顺畅使用体验。</p>
-      </div>
-
-      <!-- Card 6 -->
-      <div class="feature-card">
-        <div class="tech-corner top-left"></div>
-        <div class="tech-corner top-right"></div>
-        <div class="tech-corner bottom-left"></div>
-        <div class="tech-corner bottom-right"></div>
-        <div class="feature-icon-wrapper pink">
-          <i data-lucide="shield-check"></i>
-        </div>
-        <h3>严密的安全认证</h3>
-        <p>基于成熟的安全加密和 Token 校验。网页端支持管理员专属的邀请码注册机制，全方位保护您的服务器命令行不会被未经授权的外部用户所接触。</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Interactive Tabs Showcase -->
-  <section class="section-wrapper" id="showcase">
-    <div class="section-header">
-      <span class="section-tag">// 界面设计预览</span>
-      <h2 class="section-title">图形化工作台预览</h2>
-      <p class="section-subtitle">多维度图形化看板，轻松掌控多智能体并行任务与代码编辑流程。</p>
-    </div>
-
-    <div class="tabs-container">
-      <div class="tabs-header">
+      <div class="tabs-head reveal">
         <button class="tab-btn active" data-tab="tab-workspace">[ 01 // 工作区初始化 ]</button>
         <button class="tab-btn" data-tab="tab-agent">[ 02 // AI 运行控制台 ]</button>
         <button class="tab-btn" data-tab="tab-editor">[ 03 // 修改 Diff 对比 ]</button>
         <button class="tab-btn" data-tab="tab-mobile">[ 04 // 手机移动视口 ]</button>
       </div>
 
-      <!-- Tab Panels -->
-      <!-- Panel 1 -->
       <div class="tab-panel active" id="tab-workspace">
-        <div class="panel-content">
-          <div class="panel-visual">
-            <div class="tech-corner top-left"></div>
-            <div class="tech-corner top-right"></div>
-            <div class="tech-corner bottom-left"></div>
-            <div class="tech-corner bottom-right"></div>
-            <div class="device-reflection"></div>
+        <div class="panel-grid">
+          <div class="panel-shot">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/workspace_preview.webp" type="image/webp">
-              <img src="/docs/images/workspace_preview.png" alt="Workspace Preview" loading="lazy">
+              <img src="/docs/images/workspace_preview.png" alt="工作区初始化预览" loading="lazy">
             </picture>
           </div>
-          <div class="panel-details">
-            <h3>01 / 快速配置与初始化工作区</h3>
-            <p>为不同的项目分支快速创建独立的工作空间。您可以随时导入现有的代码库或进行空项目初始化，所有的配置都通过可视化列表完成。</p>
-            <ul class="panel-bullets">
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon"></i>
-                <span><strong>Git 仓库对接</strong>：支持输入 Git 地址一键克隆并映射为专属工作区。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon"></i>
-                <span><strong>安全沙盒路径</strong>：普通用户的工作区无法越权访问服务器上的其他敏感目录。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon"></i>
-                <span><strong>可视化工作区树</strong>：一目了然列出所有活跃目录，一键即可启动对应的挂载会话。</span>
-              </li>
+          <div class="panel-info">
+            <h3><span>01 /</span> 快速配置与初始化工作区</h3>
+            <p>为不同的项目分支快速创建独立工作空间，随时导入现有代码库或进行空项目初始化，所有配置通过可视化列表完成。</p>
+            <ul>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>Git 仓库对接</strong>：输入 Git 地址一键克隆并映射为专属工作区。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>安全沙盒路径</strong>：普通用户工作区无法越权访问服务器敏感目录。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>可视化工作区树</strong>：一目了然列出所有活跃目录，一键启动挂载会话。</span></li>
             </ul>
           </div>
         </div>
       </div>
 
-      <!-- Panel 2 -->
       <div class="tab-panel" id="tab-agent">
-        <div class="panel-content">
-          <div class="panel-visual pink">
-            <div class="tech-corner top-left"></div>
-            <div class="tech-corner top-right"></div>
-            <div class="tech-corner bottom-left"></div>
-            <div class="tech-corner bottom-right"></div>
-            <div class="device-reflection"></div>
+        <div class="panel-grid">
+          <div class="panel-shot">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/agent_preview.webp" type="image/webp">
-              <img src="/docs/images/agent_preview.png" alt="AI Agent Session" loading="lazy">
+              <img src="/docs/images/agent_preview.png" alt="AI 智能体会话预览" loading="lazy">
             </picture>
           </div>
-          <div class="panel-details">
-            <h3>02 / AI 智能体并行监控</h3>
-            <p>支持创建多个运行中的 AI 智能体终端，并在侧边栏列表中清晰列出挂载状态。您可以观察 AI 运作时的每一步分析与具体编码动作。</p>
-            <ul class="panel-bullets">
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
-                <span><strong>常用智能体预置</strong>：内置 Agy、Claude Code 等环境，无需复杂的安装配置即可一键启动。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
-                <span><strong>多任务并发运行</strong>：支持开启多个独立的 AI 会话，各自处理不同的修复与开发需求。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
-                <span><strong>操作步骤拦截</strong>：AI 执行关键动作时会自动进入暂停等待状态，并在微信/TG中推送用户审批。</span>
-              </li>
+          <div class="panel-info pink-theme">
+            <h3><span style="color:var(--pink)">02 /</span> AI 智能体并行监控</h3>
+            <p>支持创建多个运行中的 AI 智能体终端，侧边栏清晰列出挂载状态，可观察 AI 运作时的每一步分析与编码动作。</p>
+            <ul>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>常用智能体预置</strong>：内置 Agy、Claude Code 等环境，一键启动。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>多任务并发运行</strong>：多个独立 AI 会话各自处理不同开发需求。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>操作步骤拦截</strong>：关键动作自动暂停等待，并在微信/TG 推送审批。</span></li>
             </ul>
           </div>
         </div>
       </div>
 
-      <!-- Panel 3 -->
       <div class="tab-panel" id="tab-editor">
-        <div class="panel-content">
-          <div class="panel-visual">
-            <div class="tech-corner top-left"></div>
-            <div class="tech-corner top-right"></div>
-            <div class="tech-corner bottom-left"></div>
-            <div class="tech-corner bottom-right"></div>
-            <div class="device-reflection"></div>
+        <div class="panel-grid">
+          <div class="panel-shot">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/editor_diff_preview.webp" type="image/webp">
-              <img src="/docs/images/editor_diff_preview.png" alt="Diff & File Editor" loading="lazy">
+              <img src="/docs/images/editor_diff_preview.png" alt="Diff 对比预览" loading="lazy">
             </picture>
           </div>
-          <div class="panel-details">
-            <h3>03 / 文件修改直观对比 (Diff)</h3>
-            <p>在控制面板中直接审阅 AI 智能体对文件做出的所有代码修改。清晰的 Diff 差分让您无需运行 Git 命令就能完成代码合规性检视。</p>
-            <ul class="panel-bullets">
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon"></i>
-                <span><strong>直观差异高亮</strong>：用红、绿底色清晰展示文件的修改、增加及删除行。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon"></i>
-                <span><strong>轻量级只读浏览器</strong>：方便快速审查庞大的文件修改，确保 AI 编码安全可靠。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon"></i>
-                <span><strong>侧边栏文件树</strong>：随时双击检索工作区文件，实现多终端与文件的快捷联动。</span>
-              </li>
+          <div class="panel-info">
+            <h3><span>03 /</span> 文件修改直观对比 (Diff)</h3>
+            <p>在控制面板中直接审阅 AI 对文件做出的所有代码修改，清晰的 Diff 差分让您无需运行 Git 命令即可完成合规检视。</p>
+            <ul>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>直观差异高亮</strong>：红绿底色清晰展示修改、增加及删除行。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>轻量级只读浏览器</strong>：快速审查庞大的文件修改，安全可靠。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>侧边栏文件树</strong>：双击检索工作区文件，多终端快捷联动。</span></li>
             </ul>
           </div>
         </div>
       </div>
 
-      <!-- Panel 4 -->
       <div class="tab-panel" id="tab-mobile">
-        <div class="panel-content">
-          <div class="panel-visual pink">
-            <div class="tech-corner top-left"></div>
-            <div class="tech-corner top-right"></div>
-            <div class="tech-corner bottom-left"></div>
-            <div class="tech-corner bottom-right"></div>
-            <div class="device-reflection"></div>
+        <div class="panel-grid">
+          <div class="panel-shot">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/mobile_preview.webp" type="image/webp">
-              <img src="/docs/images/mobile_preview.jpg" alt="Mobile View" loading="lazy">
+              <img src="/docs/images/mobile_preview.jpg" alt="移动端预览" loading="lazy">
             </picture>
           </div>
-          <div class="panel-details">
-            <h3>04 / 完美适配手机移动设备</h3>
-            <p>无论您使用的是手机还是平板浏览器，界面均可完美适应。支持作为独立桌面图标运行，提供优化的移动端触控，让您出门在外也无需担心开发进度。</p>
-            <ul class="panel-bullets">
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
-                <span><strong>触控虚拟键盘适配</strong>：经过专门优化，防止输入框在移动设备上发生变形或溢出遮挡。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
-                <span><strong>添加至手机主屏幕</strong>：支持 PWA 规范，可以像原生 App 一样全屏沉浸运行。</span>
-              </li>
-              <li>
-                <i data-lucide="check-circle" class="bullet-icon" style="color: var(--neon-pink)"></i>
-                <span><strong>息屏接收关键通知</strong>：即使手机屏幕关闭，AI 产生的阻断性审批也会即时推送至手机系统层面。</span>
-              </li>
+          <div class="panel-info pink-theme">
+            <h3><span style="color:var(--pink)">04 /</span> 完美适配手机移动设备</h3>
+            <p>手机与平板浏览器界面完美自适应，支持作为独立桌面图标运行，出门在外也无需担心开发进度。</p>
+            <ul>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>触控虚拟键盘适配</strong>：防止输入框在移动设备上变形或溢出遮挡。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>添加至手机主屏幕</strong>：支持 PWA，像原生 App 一样全屏沉浸运行。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>息屏接收关键通知</strong>：阻断性审批即时推送至手机系统层面。</span></li>
             </ul>
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Quick Start / Installation -->
-  <section class="section-wrapper" id="installation">
-    <div class="section-header">
-      <span class="section-tag">// 自动化部署</span>
-      <h2 class="section-title">极简部署一键安装</h2>
-      <p class="section-subtitle">只需一行命令即可在您的 Linux 服务器上自动化完成所有依赖安装与配置部署。</p>
-    </div>
-
-    <!-- Terminal Box -->
-    <div class="terminal-installer">
-      <div class="terminal-header">
-        <div class="terminal-header-title">
-          <i data-lucide="terminal" style="width: 14px; height: 14px; color: var(--neon-cyan)"></i>
-          <span>deploy@ccnow-installer: ~</span>
-        </div>
-        <div class="device-dots">
-          <div class="device-dot red"></div>
-          <div class="device-dot yellow"></div>
-          <div class="device-dot green"></div>
-        </div>
+    <!-- ================= Installation ================= -->
+    <section class="section" id="installation">
+      <div class="section-head reveal">
+        <span class="section-tag">// DEPLOY</span>
+        <h2 class="section-title">极简部署 · 一键安装</h2>
+        <p class="section-sub">只需一行命令，即可在您的 Linux 服务器上自动完成所有依赖安装与配置部署。</p>
       </div>
-      <div class="terminal-body">
-        <span class="terminal-comment"># 脚本会自动检查环境依赖，克隆代码库并完成安全密码与服务的启动配置</span>
-        <button class="copy-button" id="copyInstallBtn">
-          <span class="copy-tooltip" id="copyTooltip">已复制!</span>
-          <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
-          <span>复制命令</span>
-        </button>
-        <div class="terminal-line">
-          <span class="terminal-prompt">$</span>
-          <span class="terminal-code" id="installCode">curl -fsSL https://raw.githubusercontent.com/RayzPub/tmux-agent-deck/main/install.sh | bash</span>
+
+      <div class="install-term reveal">
+        <div class="term-head">
+          <div class="term-title">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            deploy@ccnow-installer: ~
+          </div>
+          <div class="term-dots"><i></i><i></i><i></i></div>
+        </div>
+        <div class="install-body">
+          <span class="install-comment"># 脚本会自动检查环境依赖，克隆代码库并完成安全密码与服务的启动配置</span>
+          <button class="copy-btn" id="copyBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="copyLabel">复制命令</span>
+          </button>
+          <div class="install-line">
+            <span class="c-prompt">$</span>
+            <span id="installCode">curl -fsSL https://raw.githubusercontent.com/RayzPub/tmux-agent-deck/main/install.sh | bash</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Badges container -->
-    <div class="badges-container">
-      <div class="tech-badge">
-        <i data-lucide="shield"></i>
-        <span>安全认证访问</span>
+      <div class="badges reveal">
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>安全认证访问</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>多用户独立沙盒</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.7-2.08.47-3.16a4 4 0 1 1 7.8 1.6"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8h-.02"/></svg>双向机器人控制</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>消息订阅推送</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>后台持续挂载</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>终端自适应缩放</span>
       </div>
-      <div class="tech-badge">
-        <i data-lucide="box"></i>
-        <span>多用户独立沙盒</span>
-      </div>
-      <div class="tech-badge">
-        <i data-lucide="webhook"></i>
-        <span>双向机器人控制</span>
-      </div>
-      <div class="tech-badge">
-        <i data-lucide="bell"></i>
-        <span>消息订阅推送</span>
-      </div>
-      <div class="tech-badge">
-        <i data-lucide="cpu"></i>
-        <span>后台持续挂载</span>
-      </div>
-      <div class="tech-badge">
-        <i data-lucide="layers"></i>
-        <span>终端自适应缩放</span>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- CTA Footer Section -->
-  <section class="cta-footer-section">
-    <h2 class="glitch-text cta-title" data-text="启动控制面板">访问控制面板</h2>
-    <p class="cta-desc">
-      立即登录您的专属控制中心，让 AI 智能体在后台为您高效编码。
-    </p>
-    <a href="/login.html" class="cyber-btn" style="display: inline-flex; width: auto; min-width: 250px; margin: 0 auto;">
-      <span class="btn-text console-btn-text">进入控制台</span>
-      <span class="btn-glitch"></span>
-      <i data-lucide="shield-check" class="btn-icon"></i>
-    </a>
-  </section>
-
-  <!-- Site Footer -->
-  <footer class="site-footer">
-    <div class="footer-content">
-      <div class="footer-brand">
-        <h4>CCNOW</h4>
-        <p>一个以会话为中心的 AI 代理控制中心。赋予终端后台持久化、可视化与多设备双向遥控能力，为您提供稳定的 AI 编程托管环境。</p>
+    <!-- ================= FAQ ================= -->
+    <section class="section" id="faq">
+      <div class="section-head reveal">
+        <span class="section-tag">// FAQ</span>
+        <h2 class="section-title">常见问题</h2>
+        <p class="section-sub">关于部署、安全与日常使用的高频疑问解答。</p>
       </div>
-      <div class="footer-links">
+      <div class="faq reveal">
+        <div class="faq-item">
+          <button class="faq-q">关闭浏览器后，AI 任务会中断吗？
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>不会。所有 AI 会话都运行在服务器端的 Tmux 会话中，网页只是一个"遥控器"。关闭页面、断网甚至电脑休眠，AI 都会继续执行任务；重新打开网页即可瞬间恢复到离开时的现场。</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">手机上可以使用吗？体验如何？
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>可以。界面针对手机和平板做了完整自适应，支持 PWA"添加到主屏幕"，像原生 App 一样全屏运行。配合微信/Telegram 机器人，您甚至不用打开网页就能审批操作、查看终端截图。</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">多人共用一台服务器安全吗？
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>安全。系统提供多用户沙盒机制：每个普通用户拥有独立的文件目录与虚拟运行环境，Shell 历史和配置完全隔离，无法越权访问其他用户或服务器敏感目录。注册采用管理员邀请码机制，杜绝未授权访问。</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">支持哪些 AI 编程助手？
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>内置 Agy、Claude Code 等常用 AI 编程助手环境，无需复杂配置即可一键启动。由于本质是 Tmux 终端托管，任何命令行 AI 工具都可以在其中运行。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Final CTA ================= -->
+    <section class="cta-final reveal">
+      <h2>启动您的控制面板</h2>
+      <p>立即登录专属控制中心，让 AI 智能体在后台为您高效编码。</p>
+      <a href="/login.html" class="btn btn-primary">
+        <span class="console-btn-text">进入控制台</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+      </a>
+    </section>
+  </main>
+
+  <!-- ================= Footer ================= -->
+  <footer>
+    <div class="footer-grid">
+      <div>
+        <h4><span class="pulse-dot" style="margin-right:8px;"></span>CCNOW</h4>
+        <p>一个以会话为中心的 AI 智能体控制中心。赋予终端后台持久化、可视化与多设备双向遥控能力，为您提供稳定的 AI 编程托管环境。</p>
+      </div>
+      <div>
         <h5>// 快捷导航</h5>
         <ul>
           <li><a href="#features">功能特性</a></li>
           <li><a href="#showcase">界面预览</a></li>
           <li><a href="#installation">部署安装</a></li>
+          <li><a href="#faq">常见问题</a></li>
         </ul>
       </div>
-      <div class="footer-links">
+      <div>
         <h5>// 访问中心</h5>
         <ul>
           <li><a href="/login.html">登录控制台</a></li>
           <li><a href="/register.html">受邀用户注册</a></li>
+          <li><a href="https://github.com/RayzPub/tmux-agent-deck" target="_blank" rel="noopener">GitHub 仓库</a></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <div>&copy; 2026 RayzPub. Under MIT License.</div>
-      <div class="footer-status">
-        <span class="pulse-dot" style="margin-right: 6px;"></span>
-        系统状态: 正常运行 // v2.0
-      </div>
+      <div>&copy; 2026 RayzPub · Under MIT License</div>
+      <div class="footer-status"><span class="pulse-dot" style="margin-right:7px;"></span>系统状态: 正常运行 // v2.0</div>
     </div>
   </footer>
 
-  <!-- Scripts -->
-  <script src="/js/welcome.js" defer></script>
+  <button id="toTop" aria-label="回到顶部">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+  </button>
+
+  <script>
+  (() => {
+    'use strict';
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /* ---------- Nav: scrolled state / progress / back-to-top ---------- */
+    const nav = document.getElementById('nav');
+    const progress = document.getElementById('scrollProgress');
+    const toTop = document.getElementById('toTop');
+    const onScroll = () => {
+      const y = window.scrollY;
+      nav.classList.toggle('scrolled', y > 10);
+      const h = document.documentElement.scrollHeight - innerHeight;
+      progress.style.width = (h > 0 ? (y / h) * 100 : 0) + '%';
+      toTop.classList.toggle('show', y > 600);
+    };
+    addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    toTop.addEventListener('click', () => scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }));
+
+    /* ---------- Mobile menu ---------- */
+    const burger = document.getElementById('hamburger');
+    const mobileMenu = document.getElementById('mobileMenu');
+    burger.addEventListener('click', () => mobileMenu.classList.toggle('open'));
+    mobileMenu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => mobileMenu.classList.remove('open')));
+
+    /* ---------- Particle canvas background ---------- */
+    const canvas = document.getElementById('bgCanvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, particles = [];
+    const resize = () => {
+      W = canvas.width = innerWidth;
+      H = canvas.height = innerHeight;
+      const n = Math.min(90, Math.floor(W * H / 22000));
+      particles = Array.from({ length: n }, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: (Math.random() - .5) * .28, vy: (Math.random() - .5) * .28,
+        r: Math.random() * 1.6 + .4
+      }));
+    };
+    resize();
+    addEventListener('resize', resize);
+    if (!reduceMotion) {
+      (function loop() {
+        ctx.clearRect(0, 0, W, H);
+        for (const p of particles) {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0 || p.x > W) p.vx *= -1;
+          if (p.y < 0 || p.y > H) p.vy *= -1;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,240,255,.45)';
+          ctx.fill();
+        }
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const a = particles[i], b = particles[j];
+            const dx = a.x - b.x, dy = a.y - b.y, d = dx * dx + dy * dy;
+            if (d < 130 * 130) {
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+              ctx.strokeStyle = `rgba(0,240,255,${.12 * (1 - Math.sqrt(d) / 130)})`;
+              ctx.stroke();
+            }
+          }
+        }
+        requestAnimationFrame(loop);
+      })();
+    }
+
+    /* ---------- Mockup 3D tilt on mouse ---------- */
+    const shell = document.getElementById('deviceMockup');
+    if (shell && !reduceMotion && matchMedia('(pointer: fine)').matches) {
+      shell.addEventListener('mousemove', e => {
+        const r = shell.getBoundingClientRect();
+        const rx = ((e.clientY - r.top) / r.height - .5) * -4;
+        const ry = ((e.clientX - r.left) / r.width - .5) * 5;
+        shell.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+      });
+      shell.addEventListener('mouseleave', () => { shell.style.transform = ''; });
+    }
+
+    /* ---------- Reveal on scroll ---------- */
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { threshold: .12 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+    /* ---------- Count-up stats ---------- */
+    const animateCount = el => {
+      const target = +el.dataset.count;
+      const prefix = el.dataset.prefix ? '<' : '';
+      const suffix = el.dataset.suffix || '';
+      const dur = 1300, t0 = performance.now();
+      const step = now => {
+        const p = Math.min((now - t0) / dur, 1);
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = prefix + Math.round(target * eased) + suffix;
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    };
+    const cio = new IntersectionObserver(entries => {
+      entries.forEach(en => { if (en.isIntersecting) { animateCount(en.target); cio.unobserve(en.target); } });
+    }, { threshold: .5 });
+    document.querySelectorAll('[data-count]').forEach(el => cio.observe(el));
+
+    /* ---------- Card spotlight follows mouse ---------- */
+    document.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('mousemove', e => {
+        const r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      });
+    });
+
+    /* ---------- Showcase tabs ---------- */
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    tabBtns.forEach(btn => btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
+    }));
+
+    /* ---------- Copy install command ---------- */
+    const copyBtn = document.getElementById('copyBtn');
+    const copyLabel = document.getElementById('copyLabel');
+    copyBtn.addEventListener('click', async () => {
+      const text = document.getElementById('installCode').textContent.trim();
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+      }
+      copyBtn.classList.add('copied');
+      copyLabel.textContent = '已复制!';
+      setTimeout(() => { copyBtn.classList.remove('copied'); copyLabel.textContent = '复制命令'; }, 2000);
+    });
+
+    /* ---------- FAQ accordion ---------- */
+    document.querySelectorAll('.faq-item').forEach(item => {
+      const q = item.querySelector('.faq-q');
+      const a = item.querySelector('.faq-a');
+      q.addEventListener('click', () => {
+        const open = item.classList.contains('open');
+        document.querySelectorAll('.faq-item.open').forEach(o => {
+          o.classList.remove('open');
+          o.querySelector('.faq-a').style.maxHeight = null;
+        });
+        if (!open) {
+          item.classList.add('open');
+          a.style.maxHeight = a.scrollHeight + 'px';
+        }
+      });
+    });
+
+    /* ---------- Auth-aware CTAs (same-origin deployments) ---------- */
+    fetch('/api/auth-status')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.authenticated) return;
+        document.querySelectorAll('.console-btn-text').forEach(el => el.textContent = '进入控制台');
+        const navText = document.querySelector('.login-btn-text');
+        const navBtn = document.querySelector('.nav-login-btn');
+        if (navText && navBtn) {
+          navText.textContent = '控制面板';
+          navBtn.href = '/';
+          const svg = navBtn.querySelector('svg');
+          if (svg) {
+            svg.innerHTML = '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>';
+          }
+        }
+        document.querySelectorAll('a[href="/login.html"]').forEach(link => {
+          link.href = '/';
+          if (link.textContent.includes('登录控制台')) link.textContent = '控制面板';
+        });
+      })
+      .catch(() => { /* standalone preview — ignore */ });
+  })();
+  </script>
 </body>
 </html>
