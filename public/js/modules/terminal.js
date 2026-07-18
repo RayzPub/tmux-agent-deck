@@ -547,10 +547,6 @@ export function attachSession(sessionName) {
           }
         }
       }
-      if (isCtrlOrCmd && key === 'v' && !e.shiftKey) {
-        pasteFromClipboard();
-        return false;
-      }
       return true;
     });
 
