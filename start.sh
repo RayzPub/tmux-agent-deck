@@ -17,7 +17,17 @@ echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}🌟 CCNOW - Background Control Script 🌟${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
-# 1. Environment & Dependency Checks
+# 1. Ensure .env exists
+if [ ! -f "$ENV_FILE" ]; then
+    echo -e "${YELLOW}[!] .env file not found. Creating a default one...${NC}"
+    echo "PORT=$PORT" > "$ENV_FILE"
+    echo "PASSWORD=" >> "$ENV_FILE"
+    echo "JWT_SECRET=" >> "$ENV_FILE"
+    echo "DEFAULT_SHELL=/bin/bash" >> "$ENV_FILE"
+    echo "MULTI_USER_ENABLED=true" >> "$ENV_FILE"
+fi
+
+# 2. Environment & Dependency Checks
 MISSING_DEPS=false
 
 # 1.1 Check tmux
@@ -85,6 +95,20 @@ else
         echo -e "${BLUE}--------------------------------------------------${NC}"
         MISSING_DEPS=true
     fi
+    # 2.4 Check firejail if multi-user is enabled (Linux only)
+    MULTI_USER=$(grep -E "^MULTI_USER_ENABLED=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
+    if [ "$MULTI_USER" = "true" ] && [ "$(uname)" = "Linux" ]; then
+        if ! command -v firejail >/dev/null 2>&1; then
+            echo -e "${RED}[✗] 错误: 系统已启用多用户隔离，但未安装 firejail！${NC}"
+            echo -e "${YELLOW}为了防止非管理员用户通过 tmux 会话进行越权或逃逸，在 Linux 系统上必须安装 firejail 以进行沙箱隔离。${NC}"
+            echo -e "请使用以下命令进行安装："
+            echo -e "  - Ubuntu/Debian:    ${GREEN}sudo apt update && sudo apt install -y firejail${NC}"
+            echo -e "  - CentOS/Fedora:    ${GREEN}sudo dnf install -y firejail${NC}"
+            echo -e "或者，如果您确认不需要沙箱隔离，可在 ${YELLOW}.env${NC} 中设置 ${GREEN}MULTI_USER_ENABLED=false${NC}。${BLUE}"
+            echo -e "--------------------------------------------------${NC}"
+            MISSING_DEPS=true
+        fi
+    fi
 fi
 
 # Pause and exit if dependencies are missing
@@ -94,16 +118,6 @@ if [ "$MISSING_DEPS" = true ]; then
     read -n 1 -s -r -p "按任意键退出..."
     echo ""
     exit 1
-fi
-
-# 2. Ensure .env exists
-if [ ! -f "$ENV_FILE" ]; then
-    echo -e "${YELLOW}[!] .env file not found. Creating a default one...${NC}"
-    echo "PORT=$PORT" > "$ENV_FILE"
-    echo "PASSWORD=" >> "$ENV_FILE"
-    echo "JWT_SECRET=" >> "$ENV_FILE"
-    echo "DEFAULT_SHELL=/bin/bash" >> "$ENV_FILE"
-    echo "MULTI_USER_ENABLED=true" >> "$ENV_FILE"
 fi
 
 # Function to generate a random hex string

@@ -25,6 +25,12 @@ const hasFirejail = (() => {
   }
 })();
 
+if (MULTI_USER_ENABLED && !hasFirejail && process.platform === 'linux') {
+  console.warn('⚠️  SECURITY WARNING: MULTI_USER_ENABLED is true, but firejail was not found on this system.');
+  console.warn('⚠️  Non-admin users will run tmux sessions WITHOUT sandbox isolation (privilege escalation risk!).');
+  console.warn('⚠️  Please install firejail (e.g., `sudo apt install firejail`) to secure your deployment.');
+}
+
 // Construct the secure, isolated tmux command for a given user
 const getTmuxCommandForUser = (username, args) => {
   if (MULTI_USER_ENABLED && username) {

@@ -20,22 +20,22 @@ fi
 
 # Detect OS and install system packages
 install_packages() {
-    echo -e "${BLUE}[*] Installing system dependencies (git, tmux, curl, build tools)...${NC}"
+    echo -e "${BLUE}[*] Installing system dependencies (git, tmux, curl, firejail, build tools)...${NC}"
     if command -v apt-get >/dev/null 2>&1; then
         $SUDO apt-get update
-        $SUDO apt-get install -y git tmux curl build-essential python3
+        $SUDO apt-get install -y git tmux curl build-essential python3 firejail
     elif command -v dnf >/dev/null 2>&1; then
         $SUDO dnf groupinstall -y "Development Tools"
-        $SUDO dnf install -y git tmux curl python3
+        $SUDO dnf install -y git tmux curl python3 firejail
     elif command -v yum >/dev/null 2>&1; then
         $SUDO yum groupinstall -y "Development Tools"
-        $SUDO yum install -y git tmux curl python3
+        $SUDO yum install -y git tmux curl python3 firejail
     elif command -v pacman >/dev/null 2>&1; then
-        $SUDO pacman -Sy --needed --noconfirm git tmux curl base-devel python
+        $SUDO pacman -Sy --needed --noconfirm git tmux curl base-devel python firejail
     elif command -v brew >/dev/null 2>&1; then
         brew install git tmux curl
     else
-        echo -e "${YELLOW}[!] Warning: Unknown package manager. Please ensure git, tmux, curl, and build-essential are installed manually.${NC}"
+        echo -e "${YELLOW}[!] Warning: Unknown package manager. Please ensure git, tmux, curl, firejail, and build-essential are installed manually.${NC}"
     fi
 }
 
