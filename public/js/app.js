@@ -1109,6 +1109,10 @@ async function loadWorkspaces() {
       modalNewWorkspacePath.removeAttribute('required');
     }
     updateDeleteWorkspaceBtnState();
+    if (state.currentWorkspacePath) {
+      explorerWorkspaceSelect.value = state.currentWorkspacePath;
+      explorerWorkspaceSelect.dispatchEvent(new Event('change'));
+    }
   } catch (err) {
     console.error('Failed to load workspaces:', err);
   }
@@ -1133,9 +1137,18 @@ convertSelectToCustom(sessionWorkspaceSelect);
 convertSelectToCustom(document.getElementById('qrCodeUrlSelect'));
 
 // Initial Load Handler
+const isFirstLogin = !localStorage.getItem('lastWorkspacePath');
+
 loadWorkspaces().then(async () => {
   await loadSessions();
   restoreTabsState();
+  
+  if (isFirstLogin) {
+    const tabFilesBtn = document.getElementById('tabFilesBtn');
+    if (tabFilesBtn) {
+      tabFilesBtn.click();
+    }
+  }
   
   // Setup dynamic intervals and micro-systems
   setInterval(loadSessions, 5000);
