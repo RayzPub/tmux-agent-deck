@@ -219,10 +219,14 @@
             随时随地极客编程
           </p>
           <p class="slogan-desc" id="welcomeSloganDesc">请从侧边栏选择已有的 tmux 会话，或新建会话以建立终端连接通道。</p>
-          <div id="welcomeNoSessionAction" class="welcome-action-container hidden" style="margin-top: 24px;">
+          <div id="welcomeNoSessionAction" class="welcome-action-container" style="margin-top: 24px; display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap;">
             <button id="welcomeNewSessionBtn" class="highlight-text-btn">
               <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i>
               <span>新建智能体会话</span>
+            </button>
+            <button id="welcomeSelectSessionBtn" class="highlight-text-btn hidden-desktop">
+              <i data-lucide="menu" style="width: 16px; height: 16px;"></i>
+              <span>选择已有会话</span>
             </button>
           </div>
         </div>
@@ -646,7 +650,7 @@
   <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
 
   <!-- Mobile Controls Wrapper -->
-  <div class="mobile-bottom-controls hidden-desktop">
+  <div class="mobile-bottom-controls hidden-desktop hidden">
     <!-- Mobile Command Input Bar -->
     <div class="mobile-input-bar" id="mobileInputBar">
       <button id="mobileMicBtn" class="mobile-mic-btn" title="语音输入"><i data-lucide="mic"></i></button>

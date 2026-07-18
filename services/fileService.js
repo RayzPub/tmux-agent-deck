@@ -159,7 +159,7 @@ const getUserHomeDir = (username) => {
     try {
       fs.mkdirSync(userCodexDir, { recursive: true });
       chownToSudoUser(userCodexDir);
-      
+
       const sysSettingsPath = path.join(sysHome, '.codex', 'config.toml');
       const userSettingsPath = path.join(userCodexDir, 'config.toml');
       if (fs.existsSync(sysSettingsPath)) {
@@ -168,6 +168,103 @@ const getUserHomeDir = (username) => {
       }
     } catch (e) {
       console.warn(`[userHome] Could not initialize private .codex directory: ${e.message}`);
+    }
+  }
+
+  // 1.3 Initialize/sync user's private .kimi-code directory
+  // This handles both new directories and existing ones missing credentials/oauth
+  const userKimiDir = path.join(userHome, '.kimi-code');
+  let isKimiSymlink = false;
+  try {
+    const stats = fs.lstatSync(userKimiDir);
+    if (stats.isSymbolicLink()) {
+      isKimiSymlink = true;
+    }
+  } catch (e) {
+    // Doesn't exist
+  }
+
+  if (isKimiSymlink) {
+    try {
+      fs.unlinkSync(userKimiDir);
+    } catch (e) {
+      console.warn(`[userHome] Could not remove existing .kimi-code symlink: ${e.message}`);
+    }
+  }
+
+  // Ensure directory exists
+  if (!fs.existsSync(userKimiDir)) {
+    try {
+      fs.mkdirSync(userKimiDir, { recursive: true });
+      chownToSudoUser(userKimiDir);
+    } catch (e) {
+      console.warn(`[userHome] Could not create .kimi-code directory: ${e.message}`);
+    }
+  }
+
+  // Sync config.toml from system home if user doesn't have one or has an empty/default one
+  const sysKimiConfigPath = path.join(sysHome, '.kimi-code', 'config.toml');
+  const userKimiConfigPath = path.join(userKimiDir, 'config.toml');
+  const sysKimiConfigExists = fs.existsSync(sysKimiConfigPath);
+  let userKimiConfigNeedsSync = !fs.existsSync(userKimiConfigPath);
+
+  // Check if user config is empty/default (missing OAuth config)
+  if (!userKimiConfigNeedsSync && sysKimiConfigExists) {
+    try {
+      const userConfig = fs.readFileSync(userKimiConfigPath, 'utf8');
+      // If config doesn't have OAuth provider setup, it needs to be synced
+      if (!userConfig.includes('[providers."managed:kimi-code"]') || !userConfig.includes('oauth')) {
+        userKimiConfigNeedsSync = true;
+      }
+    } catch (e) {
+      userKimiConfigNeedsSync = true;
+    }
+  }
+
+  if (sysKimiConfigExists && userKimiConfigNeedsSync) {
+    try {
+      fs.copyFileSync(sysKimiConfigPath, userKimiConfigPath);
+      chownToSudoUser(userKimiConfigPath);
+    } catch (e) {
+      console.warn(`[userHome] Could not copy kimi config.toml: ${e.message}`);
+    }
+  }
+
+  // Sync credentials directory from system home if user doesn't have one (for OAuth login)
+  const sysCredentialsDir = path.join(sysHome, '.kimi-code', 'credentials');
+  const userCredentialsDir = path.join(userKimiDir, 'credentials');
+  if (fs.existsSync(sysCredentialsDir) && !fs.existsSync(userCredentialsDir)) {
+    try {
+      fs.mkdirSync(userCredentialsDir, { recursive: true });
+      chownToSudoUser(userCredentialsDir);
+      const credFiles = fs.readdirSync(sysCredentialsDir);
+      for (const credFile of credFiles) {
+        const srcPath = path.join(sysCredentialsDir, credFile);
+        const destPath = path.join(userCredentialsDir, credFile);
+        fs.copyFileSync(srcPath, destPath);
+        chownToSudoUser(destPath);
+      }
+    } catch (e) {
+      console.warn(`[userHome] Could not sync kimi credentials: ${e.message}`);
+    }
+  }
+
+  // Sync oauth directory from system home if user doesn't have one
+  const sysOauthDir = path.join(sysHome, '.kimi-code', 'oauth');
+  const userOauthDir = path.join(userKimiDir, 'oauth');
+  if (fs.existsSync(sysOauthDir) && !fs.existsSync(userOauthDir)) {
+    try {
+      fs.mkdirSync(userOauthDir, { recursive: true });
+      chownToSudoUser(userOauthDir);
+      const oauthFiles = fs.readdirSync(sysOauthDir);
+      for (const oauthFile of oauthFiles) {
+        const srcPath = path.join(sysOauthDir, oauthFile);
+        const destPath = path.join(userOauthDir, oauthFile);
+        fs.copyFileSync(srcPath, destPath);
+        chownToSudoUser(destPath);
+      }
+    } catch (e) {
+      console.warn(`[userHome] Could not sync kimi oauth: ${e.message}`);
     }
   }
 

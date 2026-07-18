@@ -1545,11 +1545,16 @@ body.light-minimalist .highlight-text-btn:hover {
   
   /* Terminal Workspace full screen height */
   .terminal-workspace {
-    padding: 10px 10px calc(115px + env(safe-area-inset-bottom)) 10px;
+    padding: 10px 10px env(safe-area-inset-bottom) 10px;
     height: 100%;
     width: 100%;
     overscroll-behavior: none;
     overscroll-behavior-y: none;
+    transition: padding-bottom 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  .terminal-workspace.has-mobile-controls {
+    padding-bottom: calc(115px + env(safe-area-inset-bottom));
   }
   
   /* Compact Welcome Panel */
@@ -4020,4 +4025,40 @@ body.light-minimalist .terminal-control-btn.danger:hover {
   background: #fef2f2;
   border-color: #ef4444;
   color: #ef4444;
+}
+
+/* Helper to hide element on desktop screens */
+@media (min-width: 769px) {
+  .hidden-desktop {
+    display: none !important;
+  }
+}
+
+/* Highlighted Text Button Secondary */
+.highlight-text-btn.secondary {
+  background: rgba(255, 0, 127, 0.08);
+  color: var(--neon-pink);
+  border: 1px solid rgba(255, 0, 127, 0.4);
+  box-shadow: 0 0 10px rgba(255, 0, 127, 0.1);
+  text-shadow: var(--glow-pink);
+}
+
+.highlight-text-btn.secondary:hover {
+  background: rgba(255, 0, 127, 0.18);
+  border-color: var(--neon-pink);
+  box-shadow: 0 0 20px rgba(255, 0, 127, 0.35);
+}
+
+body.light-minimalist .highlight-text-btn.secondary {
+  background: rgba(255, 0, 127, 0.05);
+  color: #d0006f;
+  border: 1px solid rgba(255, 0, 127, 0.3);
+  text-shadow: none;
+  box-shadow: none;
+}
+
+body.light-minimalist .highlight-text-btn.secondary:hover {
+  background: rgba(255, 0, 127, 0.1);
+  border-color: #d0006f;
+  box-shadow: 0 2px 8px rgba(255, 0, 127, 0.15);
 }

@@ -217,14 +217,10 @@ export function renderSessions(sessions) {
   sessionCount.textContent = filteredSessions.length;
   
   const welcomeSloganDesc = document.getElementById('welcomeSloganDesc');
-  const welcomeNoSessionAction = document.getElementById('welcomeNoSessionAction');
 
   if (filteredSessions.length === 0) {
     if (welcomeSloganDesc) {
       welcomeSloganDesc.textContent = '当前没有活跃的智能体会话，请新建会话以建立终端连接通道。';
-    }
-    if (welcomeNoSessionAction) {
-      welcomeNoSessionAction.classList.remove('hidden');
     }
 
     sessionList.innerHTML = `
@@ -236,9 +232,6 @@ export function renderSessions(sessions) {
   } else {
     if (welcomeSloganDesc) {
       welcomeSloganDesc.textContent = '请从侧边栏选择已有的 tmux 会话，或新建会话以建立终端连接通道。';
-    }
-    if (welcomeNoSessionAction) {
-      welcomeNoSessionAction.classList.add('hidden');
     }
   }
 
@@ -728,6 +721,14 @@ const welcomeNewSessionBtn = document.getElementById('welcomeNewSessionBtn');
 if (welcomeNewSessionBtn) {
   welcomeNewSessionBtn.addEventListener('click', () => {
     if (newSessionBtn) newSessionBtn.click();
+  });
+}
+
+const welcomeSelectSessionBtn = document.getElementById('welcomeSelectSessionBtn');
+if (welcomeSelectSessionBtn) {
+  welcomeSelectSessionBtn.addEventListener('click', () => {
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    if (sidebarToggle) sidebarToggle.click();
   });
 }
 

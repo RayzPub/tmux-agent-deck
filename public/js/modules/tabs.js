@@ -12,6 +12,22 @@ export function saveTabsState() {
   }
 }
 
+export function updateMobileControlsVisibility() {
+  const mobileControls = document.querySelector('.mobile-bottom-controls');
+  const workspaceMain = document.querySelector('.terminal-workspace');
+  if (!mobileControls) return;
+
+  const hasActiveTerminal = state.tabs.length > 0 && state.activeTabId && state.tabs.some(t => t.id === state.activeTabId && t.type === 'terminal');
+
+  if (hasActiveTerminal) {
+    mobileControls.classList.remove('hidden');
+    if (workspaceMain) workspaceMain.classList.add('has-mobile-controls');
+  } else {
+    mobileControls.classList.add('hidden');
+    if (workspaceMain) workspaceMain.classList.remove('has-mobile-controls');
+  }
+}
+
 export function renderTabs() {
   const workspaceTabs = document.getElementById('workspaceTabs');
   const welcomePanel = document.getElementById('welcomePanel');
@@ -28,6 +44,7 @@ export function renderTabs() {
     state.currentSession = null;
     state.activeTabId = null;
     saveTabsState();
+    updateMobileControlsVisibility();
     return;
   }
 
@@ -65,6 +82,7 @@ export function renderTabs() {
     window.lucide.createIcons();
   }
   saveTabsState();
+  updateMobileControlsVisibility();
 }
 
 export function activateTab(tabId) {
