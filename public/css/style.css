@@ -26,9 +26,9 @@
   --glow-green: 0 0 8px rgba(57, 255, 20, 0.25);
   --glow-orange: 0 0 15px rgba(255, 95, 31, 0.3);
   
-  --font-header: 'Orbitron', sans-serif;
-  --font-body: 'Outfit', sans-serif;
-  --font-mono: 'Fira Code', monospace;
+  --font-header: 'Orbitron', 'Outfit', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Outfit', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Consolas, monospace;
   
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2457,7 +2457,7 @@ body.light-minimalist {
   --glow-pink: none;
   --glow-green: none;
   
-  --font-header: 'Outfit', sans-serif;
+  --font-header: 'Outfit', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   
   background-color: var(--bg-core);
   color: var(--text-primary);
