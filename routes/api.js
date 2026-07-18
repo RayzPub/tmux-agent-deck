@@ -284,7 +284,15 @@ router.post('/admin/settings', requireAdmin, (req, res) => {
 router.get('/sessions', requireAuth, (req, res) => {
   execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}'], (err, stdout, stderr) => {
     if (err) {
-      if (err.code === 1) {
+      const errMsg = (stderr || '').toLowerCase();
+      const isNoSessions = err.code === 1 || 
+                           errMsg.includes('no server running') || 
+                           errMsg.includes('no sessions') || 
+                           errMsg.includes('no such file') || 
+                           errMsg.includes('connection refused') || 
+                           errMsg.includes('error connecting to') || 
+                           errMsg.includes('unknown user');
+      if (isNoSessions) {
         return res.json([]);
       }
       return res.status(500).json({ error: 'Failed to list tmux sessions', details: stderr });
