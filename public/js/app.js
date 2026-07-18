@@ -25,7 +25,7 @@ const activeSessionNameText = document.getElementById('activeSessionName');
 const fitTerminalBtn = document.getElementById('fitTerminalBtn');
 const copyTerminalBtn = document.getElementById('copyTerminalBtn');
 const pasteTerminalBtn = document.getElementById('pasteTerminalBtn');
-const detachBtn = document.getElementById('detachBtn');
+const closeTerminalBtn = document.getElementById('closeTerminalBtn');
 const terminalContainer = document.getElementById('terminal-container');
 
 const sessionModal = document.getElementById('sessionModal');
@@ -351,7 +351,9 @@ if (copyTerminalBtn) {
 if (pasteTerminalBtn) {
   pasteTerminalBtn.addEventListener('click', pasteFromClipboard);
 }
-detachBtn.addEventListener('click', detachSession);
+if (closeTerminalBtn) {
+  closeTerminalBtn.addEventListener('click', detachSession);
+}
 
 // Sidebar drawer toggle
 if (sidebar && sidebarOverlay) {

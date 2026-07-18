@@ -461,7 +461,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  z-index: 100;
+  z-index: 200;
 }
 
 .logo-area {
@@ -1227,6 +1227,13 @@ body.light-minimalist .highlight-text-btn:hover {
 }
 .xterm-viewport {
   background-color: #030307 !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.xterm-viewport::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* ==========================================================================
@@ -2128,25 +2135,34 @@ body.light-minimalist .highlight-text-btn:hover {
   border-bottom: 1px solid #020205;
 }
 
-.workspace-tab i {
+.workspace-tab i,
+.workspace-tab svg {
   width: 12px;
   height: 12px;
 }
 
-.workspace-tab .close-tab-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  display: flex;
+.workspace-tab .close-tab-btn,
+.workspace-tab svg.close-tab-btn {
+  width: 18px !important;
+  height: 18px !important;
+  padding: 3px;
+  margin-left: 6px;
+  border-radius: 4px;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
+  align-self: center;
+  box-sizing: border-box !important;
   color: var(--text-muted);
   transition: var(--transition-fast);
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
-.workspace-tab .close-tab-btn:hover {
-  color: var(--neon-pink);
-  background: rgba(255, 0, 127, 0.1);
+.workspace-tab .close-tab-btn:hover,
+.workspace-tab svg.close-tab-btn:hover {
+  color: var(--neon-pink) !important;
+  background: rgba(255, 0, 127, 0.15) !important;
 }
 
 /* File Editor specific styles */
@@ -3002,9 +3018,10 @@ body.light-minimalist .workspace-tab.editor-tab.active {
   border-color: #cbd5e1;
   border-bottom: 1px solid #ffffff;
 }
-body.light-minimalist .workspace-tab .close-tab-btn:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+body.light-minimalist .workspace-tab .close-tab-btn:hover,
+body.light-minimalist .workspace-tab svg.close-tab-btn:hover {
+  color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.1) !important;
 }
 
 /* Mobile light theme overrides */
