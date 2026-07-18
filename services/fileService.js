@@ -263,17 +263,103 @@ const getUserHomeDir = (username) => {
     }
   }
 
-  // Sync config.toml from system home if user doesn't have one or has an empty/default one
-  const sysKimiConfigPath = path.join(sysHome, '.kimi-code', 'config.toml');
+  const sysKimiDir = path.join(sysHome, '.kimi-code');
+  const sysCredentialsDir = path.join(sysKimiDir, 'credentials');
+  const sysOauthDir = path.join(sysKimiDir, 'oauth');
+  const sysDeviceIdPath = path.join(sysKimiDir, 'device_id');
+  const sysConfigPath = path.join(sysKimiDir, 'config.toml');
+  const sysTuiPath = path.join(sysKimiDir, 'tui.toml');
+
+  // Seed system home Kimi config from admin if system home Kimi config is missing/incomplete
+  if (MULTI_USER_ENABLED && username && userHome !== sysHome) {
+    const adminKimiDir = path.join(PROJECT_ROOT, 'user_data', 'admin', 'home', '.kimi-code');
+    const adminConfigPath = path.join(adminKimiDir, 'config.toml');
+    const adminTuiPath = path.join(adminKimiDir, 'tui.toml');
+    const adminDeviceIdPath = path.join(adminKimiDir, 'device_id');
+    const adminCredentialsDir = path.join(adminKimiDir, 'credentials');
+    const adminOauthDir = path.join(adminKimiDir, 'oauth');
+
+    // Create system .kimi-code structure if missing
+    if (!fs.existsSync(sysKimiDir)) {
+      try {
+        fs.mkdirSync(sysKimiDir, { recursive: true });
+        chownToSudoUser(sysKimiDir);
+      } catch (e) {}
+    }
+    if (!fs.existsSync(sysCredentialsDir)) {
+      try {
+        fs.mkdirSync(sysCredentialsDir, { recursive: true });
+        chownToSudoUser(sysCredentialsDir);
+      } catch (e) {}
+    }
+    if (!fs.existsSync(sysOauthDir)) {
+      try {
+        fs.mkdirSync(sysOauthDir, { recursive: true });
+        chownToSudoUser(sysOauthDir);
+      } catch (e) {}
+    }
+
+    // Seed config.toml
+    if (!fs.existsSync(sysConfigPath) && fs.existsSync(adminConfigPath)) {
+      try {
+        fs.copyFileSync(adminConfigPath, sysConfigPath);
+        chownToSudoUser(sysConfigPath);
+      } catch (e) {}
+    }
+    // Seed tui.toml
+    if (!fs.existsSync(sysTuiPath) && fs.existsSync(adminTuiPath)) {
+      try {
+        fs.copyFileSync(adminTuiPath, sysTuiPath);
+        chownToSudoUser(sysTuiPath);
+      } catch (e) {}
+    }
+    // Seed device_id
+    if (!fs.existsSync(sysDeviceIdPath) && fs.existsSync(adminDeviceIdPath)) {
+      try {
+        fs.copyFileSync(adminDeviceIdPath, sysDeviceIdPath);
+        chownToSudoUser(sysDeviceIdPath);
+      } catch (e) {}
+    }
+    // Seed credentials
+    const sysHasCreds = fs.existsSync(path.join(sysCredentialsDir, 'kimi-code.json'));
+    if (!sysHasCreds && fs.existsSync(adminCredentialsDir)) {
+      try {
+        const credFiles = fs.readdirSync(adminCredentialsDir);
+        for (const file of credFiles) {
+          const src = path.join(adminCredentialsDir, file);
+          const dest = path.join(sysCredentialsDir, file);
+          if (!fs.lstatSync(src).isSymbolicLink()) {
+            fs.copyFileSync(src, dest);
+            chownToSudoUser(dest);
+          }
+        }
+      } catch (e) {}
+    }
+    // Seed oauth
+    const sysHasOauth = fs.readdirSync(sysOauthDir).length > 0;
+    if (!sysHasOauth && fs.existsSync(adminOauthDir)) {
+      try {
+        const oauthFiles = fs.readdirSync(adminOauthDir);
+        for (const file of oauthFiles) {
+          const src = path.join(adminOauthDir, file);
+          const dest = path.join(sysOauthDir, file);
+          if (!fs.lstatSync(src).isSymbolicLink()) {
+            fs.copyFileSync(src, dest);
+            chownToSudoUser(dest);
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  // Copy config.toml and tui.toml from system home to userHome
   const userKimiConfigPath = path.join(userKimiDir, 'config.toml');
-  const sysKimiConfigExists = fs.existsSync(sysKimiConfigPath);
+  const sysKimiConfigExists = fs.existsSync(sysConfigPath);
   let userKimiConfigNeedsSync = !fs.existsSync(userKimiConfigPath);
 
-  // Check if user config is empty/default (missing OAuth config)
   if (!userKimiConfigNeedsSync && sysKimiConfigExists) {
     try {
       const userConfig = fs.readFileSync(userKimiConfigPath, 'utf8');
-      // If config doesn't have OAuth provider setup, it needs to be synced
       if (!userConfig.includes('[providers."managed:kimi-code"]') || !userConfig.includes('oauth')) {
         userKimiConfigNeedsSync = true;
       }
@@ -284,48 +370,114 @@ const getUserHomeDir = (username) => {
 
   if (sysKimiConfigExists && userKimiConfigNeedsSync) {
     try {
-      fs.copyFileSync(sysKimiConfigPath, userKimiConfigPath);
+      fs.copyFileSync(sysConfigPath, userKimiConfigPath);
       chownToSudoUser(userKimiConfigPath);
     } catch (e) {
       console.warn(`[userHome] Could not copy kimi config.toml: ${e.message}`);
     }
   }
 
-  // Sync credentials directory from system home if user doesn't have one (for OAuth login)
-  const sysCredentialsDir = path.join(sysHome, '.kimi-code', 'credentials');
-  const userCredentialsDir = path.join(userKimiDir, 'credentials');
-  if (fs.existsSync(sysCredentialsDir) && !fs.existsSync(userCredentialsDir)) {
+  const userTuiPath = path.join(userKimiDir, 'tui.toml');
+  if (fs.existsSync(sysTuiPath) && !fs.existsSync(userTuiPath)) {
     try {
-      fs.mkdirSync(userCredentialsDir, { recursive: true });
-      chownToSudoUser(userCredentialsDir);
-      const credFiles = fs.readdirSync(sysCredentialsDir);
-      for (const credFile of credFiles) {
-        const srcPath = path.join(sysCredentialsDir, credFile);
-        const destPath = path.join(userCredentialsDir, credFile);
-        fs.copyFileSync(srcPath, destPath);
-        chownToSudoUser(destPath);
-      }
+      fs.copyFileSync(sysTuiPath, userTuiPath);
+      chownToSudoUser(userTuiPath);
     } catch (e) {
-      console.warn(`[userHome] Could not sync kimi credentials: ${e.message}`);
+      console.warn(`[userHome] Could not copy kimi tui.toml: ${e.message}`);
     }
   }
 
-  // Sync oauth directory from system home if user doesn't have one
-  const sysOauthDir = path.join(sysHome, '.kimi-code', 'oauth');
-  const userOauthDir = path.join(userKimiDir, 'oauth');
-  if (fs.existsSync(sysOauthDir) && !fs.existsSync(userOauthDir)) {
-    try {
-      fs.mkdirSync(userOauthDir, { recursive: true });
-      chownToSudoUser(userOauthDir);
-      const oauthFiles = fs.readdirSync(sysOauthDir);
-      for (const oauthFile of oauthFiles) {
-        const srcPath = path.join(sysOauthDir, oauthFile);
-        const destPath = path.join(userOauthDir, oauthFile);
-        fs.copyFileSync(srcPath, destPath);
-        chownToSudoUser(destPath);
+  // Ensure sharing credentials, oauth, and device_id via symlinks if multi-user is active
+  if (MULTI_USER_ENABLED && username && userHome !== sysHome) {
+    const userCredentialsDir = path.join(userKimiDir, 'credentials');
+    const userOauthDir = path.join(userKimiDir, 'oauth');
+    const userDeviceIdPath = path.join(userKimiDir, 'device_id');
+
+    const ensureSymlink = (target, linkPath) => {
+      let exists = false;
+      let isCorrectSymlink = false;
+      try {
+        const stats = fs.lstatSync(linkPath);
+        exists = true;
+        if (stats.isSymbolicLink() && fs.readlinkSync(linkPath) === target) {
+          isCorrectSymlink = true;
+        }
+      } catch (e) {}
+
+      if (exists && !isCorrectSymlink) {
+        try {
+          const stats = fs.lstatSync(linkPath);
+          if (stats.isDirectory() && !stats.isSymbolicLink()) {
+            fs.rmSync(linkPath, { recursive: true, force: true });
+          } else {
+            fs.unlinkSync(linkPath);
+          }
+        } catch (e) {
+          console.warn(`[userHome] Could not remove existing file/directory at ${linkPath}: ${e.message}`);
+          return;
+        }
       }
-    } catch (e) {
-      console.warn(`[userHome] Could not sync kimi oauth: ${e.message}`);
+
+      if (!isCorrectSymlink) {
+        try {
+          fs.symlinkSync(target, linkPath);
+        } catch (e) {
+          console.warn(`[userHome] Could not create symlink ${target} -> ${linkPath}: ${e.message}`);
+        }
+      }
+    };
+
+    if (fs.existsSync(sysCredentialsDir)) {
+      ensureSymlink(sysCredentialsDir, userCredentialsDir);
+    }
+    if (fs.existsSync(sysOauthDir)) {
+      ensureSymlink(sysOauthDir, userOauthDir);
+    }
+    if (fs.existsSync(sysDeviceIdPath)) {
+      ensureSymlink(sysDeviceIdPath, userDeviceIdPath);
+    }
+  } else {
+    // If not in multi-user mode, fallback to basic copying if directories don't exist
+    const userCredentialsDir = path.join(userKimiDir, 'credentials');
+    if (fs.existsSync(sysCredentialsDir) && !fs.existsSync(userCredentialsDir)) {
+      try {
+        fs.mkdirSync(userCredentialsDir, { recursive: true });
+        chownToSudoUser(userCredentialsDir);
+        const credFiles = fs.readdirSync(sysCredentialsDir);
+        for (const file of credFiles) {
+          const src = path.join(sysCredentialsDir, file);
+          const dest = path.join(userCredentialsDir, file);
+          fs.copyFileSync(src, dest);
+          chownToSudoUser(dest);
+        }
+      } catch (e) {
+        console.warn(`[userHome] Could not sync kimi credentials: ${e.message}`);
+      }
+    }
+
+    const userOauthDir = path.join(userKimiDir, 'oauth');
+    if (fs.existsSync(sysOauthDir) && !fs.existsSync(userOauthDir)) {
+      try {
+        fs.mkdirSync(userOauthDir, { recursive: true });
+        chownToSudoUser(userOauthDir);
+        const oauthFiles = fs.readdirSync(sysOauthDir);
+        for (const file of oauthFiles) {
+          const src = path.join(sysOauthDir, file);
+          const dest = path.join(userOauthDir, file);
+          fs.copyFileSync(src, dest);
+          chownToSudoUser(dest);
+        }
+      } catch (e) {
+        console.warn(`[userHome] Could not sync kimi oauth: ${e.message}`);
+      }
+    }
+
+    const userDeviceIdPath = path.join(userKimiDir, 'device_id');
+    if (fs.existsSync(sysDeviceIdPath) && !fs.existsSync(userDeviceIdPath)) {
+      try {
+        fs.copyFileSync(sysDeviceIdPath, userDeviceIdPath);
+        chownToSudoUser(userDeviceIdPath);
+      } catch (e) {}
     }
   }
 
