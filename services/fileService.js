@@ -50,6 +50,57 @@ const getDefaultWorkspacePath = (username) => {
   return p;
 };
 
+const getSystemDefaultKeys = () => {
+  const sysHome = getHomeDir();
+  const keys = {};
+
+  // 1. Anthropic / Claude
+  const sysClaudeSettings = path.join(sysHome, '.claude', 'settings.json');
+  if (fs.existsSync(sysClaudeSettings)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(sysClaudeSettings, 'utf8'));
+      if (data.env && data.env.ANTHROPIC_AUTH_TOKEN) {
+        keys.claude = data.env.ANTHROPIC_AUTH_TOKEN;
+      }
+      if (data.env && data.env.ANTHROPIC_BASE_URL) {
+        keys.claudeBaseUrl = data.env.ANTHROPIC_BASE_URL;
+      }
+      if (data.env && data.env.ANTHROPIC_MODEL) {
+        keys.claudeModel = data.env.ANTHROPIC_MODEL;
+      }
+    } catch (e) {}
+  }
+
+  // 2. OpenAI / Codex
+  const sysCodexConfig = path.join(sysHome, '.codex', 'config.toml');
+  if (fs.existsSync(sysCodexConfig)) {
+    try {
+      const content = fs.readFileSync(sysCodexConfig, 'utf8');
+      const matchApiKey = content.match(/api_key\s*=\s*"([^"]+)"/);
+      if (matchApiKey && matchApiKey[1]) {
+        keys.codex = matchApiKey[1];
+      } else {
+        const matchEnvKey = content.match(/env_key\s*=\s*"([^"]+)"/);
+        if (matchEnvKey && matchEnvKey[1] && matchEnvKey[1].startsWith('sk-')) {
+          keys.codex = matchEnvKey[1];
+        }
+      }
+      
+      const matchBaseUrl = content.match(/base_url\s*=\s*"([^"]+)"/);
+      if (matchBaseUrl && matchBaseUrl[1]) {
+        keys.codexBaseUrl = matchBaseUrl[1];
+      }
+      
+      const matchModel = content.match(/model\s*=\s*"([^"]+)"/);
+      if (matchModel && matchModel[1]) {
+        keys.codexModel = matchModel[1];
+      }
+    } catch (e) {}
+  }
+
+  return keys;
+};
+
 /**
  * Returns the per-user HOME directory (user_data/[username]/home).
  * This is set as $HOME when launching agent sessions so agents can write
@@ -123,15 +174,20 @@ const getUserHomeDir = (username) => {
     try {
       fs.mkdirSync(userClaudeDir, { recursive: true });
       chownToSudoUser(userClaudeDir);
-      
-      const sysSettingsPath = path.join(sysHome, '.claude', 'settings.json');
-      const userSettingsPath = path.join(userClaudeDir, 'settings.json');
-      if (fs.existsSync(sysSettingsPath)) {
-        fs.copyFileSync(sysSettingsPath, userSettingsPath);
-        chownToSudoUser(userSettingsPath);
-      }
     } catch (e) {
-      console.warn(`[userHome] Could not initialize private .claude directory: ${e.message}`);
+      console.warn(`[userHome] Could not create .claude directory: ${e.message}`);
+    }
+  }
+
+  // Copy settings.json if missing and exists in system home
+  const sysSettingsPath = path.join(sysHome, '.claude', 'settings.json');
+  const userSettingsPath = path.join(userClaudeDir, 'settings.json');
+  if (fs.existsSync(sysSettingsPath) && !fs.existsSync(userSettingsPath)) {
+    try {
+      fs.copyFileSync(sysSettingsPath, userSettingsPath);
+      chownToSudoUser(userSettingsPath);
+    } catch (e) {
+      console.warn(`[userHome] Could not copy settings.json: ${e.message}`);
     }
   }
 
@@ -159,15 +215,20 @@ const getUserHomeDir = (username) => {
     try {
       fs.mkdirSync(userCodexDir, { recursive: true });
       chownToSudoUser(userCodexDir);
-
-      const sysSettingsPath = path.join(sysHome, '.codex', 'config.toml');
-      const userSettingsPath = path.join(userCodexDir, 'config.toml');
-      if (fs.existsSync(sysSettingsPath)) {
-        fs.copyFileSync(sysSettingsPath, userSettingsPath);
-        chownToSudoUser(userSettingsPath);
-      }
     } catch (e) {
-      console.warn(`[userHome] Could not initialize private .codex directory: ${e.message}`);
+      console.warn(`[userHome] Could not create .codex directory: ${e.message}`);
+    }
+  }
+
+  // Copy config.toml if missing and exists in system home
+  const sysCodexConfigPath = path.join(sysHome, '.codex', 'config.toml');
+  const userCodexConfigPath = path.join(userCodexDir, 'config.toml');
+  if (fs.existsSync(sysCodexConfigPath) && !fs.existsSync(userCodexConfigPath)) {
+    try {
+      fs.copyFileSync(sysCodexConfigPath, userCodexConfigPath);
+      chownToSudoUser(userCodexConfigPath);
+    } catch (e) {
+      console.warn(`[userHome] Could not copy config.toml: ${e.message}`);
     }
   }
 
@@ -293,6 +354,18 @@ const getUserHomeDir = (username) => {
     } catch (e) {
       // Non-fatal: agent will just not find pre-existing config
       console.warn(`[userHome] Could not symlink ${src} -> ${dest}: ${e.message}`);
+    }
+  }
+
+  const keysFilePath = path.join(userHome, '.api_keys');
+  if (!fs.existsSync(keysFilePath)) {
+    try {
+      const db = require('./dbService');
+      const users = db.getUsers();
+      const userObj = users[username.toLowerCase()];
+      updateUserKeysFile(username, userObj ? (userObj.apiKeys || {}) : {});
+    } catch (e) {
+      console.warn(`[userHome] Could not pre-initialize user keys: ${e.message}`);
     }
   }
 
@@ -429,7 +502,15 @@ const ensureBashrcSourcesApiKeys = (userHome) => {
 const updateUserKeysFile = (username, keys) => {
   if (!MULTI_USER_ENABLED || !username) return;
 
-  const userHome = getUserHomeDir(username);
+  const userHome = path.join(PROJECT_ROOT, 'user_data', username, 'home');
+  if (!fs.existsSync(userHome)) {
+    try {
+      fs.mkdirSync(userHome, { recursive: true });
+      chownToSudoUser(userHome);
+    } catch (e) {
+      console.warn(`[fileService] Could not create user home directory: ${e.message}`);
+    }
+  }
   const keysFilePath = path.join(userHome, '.api_keys');
 
   let lines = [];
@@ -492,6 +573,8 @@ const updateUserKeysFile = (username, keys) => {
     }
     if (keys.claude) {
       settings.env.ANTHROPIC_AUTH_TOKEN = keys.claude;
+    } else if (keys.claude === '') {
+      delete settings.env.ANTHROPIC_AUTH_TOKEN;
     }
     if (keys.claudeBaseUrl) {
       settings.env.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
@@ -510,65 +593,6 @@ const updateUserKeysFile = (username, keys) => {
       chownToSudoUser(settingsPath);
     } catch (err) {
       console.error(`[fileService] Failed to write settings.json for user ${username}:`, err);
-    }
-  }
-
-  // Update user's private .codex/config.toml
-  const userCodexDir = path.join(userHome, '.codex');
-  if (fs.existsSync(userCodexDir)) {
-    const configPath = path.join(userCodexDir, 'config.toml');
-    let content = '';
-    if (fs.existsSync(configPath)) {
-      try {
-        content = fs.readFileSync(configPath, 'utf8');
-      } catch (e) {}
-    }
-    
-    let lines = content.split('\n');
-    let hasApiKey = false;
-    let hasBaseUrl = false;
-    let hasModel = false;
-    
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim().startsWith('api_key =') || lines[i].trim().startsWith('api_key=')) {
-        if (keys.codex) {
-          lines[i] = `api_key = "${keys.codex.replace(/"/g, '\\"')}"`;
-        }
-        hasApiKey = true;
-      }
-      if (lines[i].trim().startsWith('base_url =') || lines[i].trim().startsWith('base_url=')) {
-        if (keys.codexBaseUrl) {
-          lines[i] = `base_url = "${keys.codexBaseUrl.replace(/"/g, '\\"')}"`;
-        } else if (keys.codexBaseUrl === '') {
-          lines[i] = '';
-        }
-        hasBaseUrl = true;
-      }
-      if (lines[i].trim().startsWith('model =') || lines[i].trim().startsWith('model=')) {
-        if (keys.codexModel) {
-          lines[i] = `model = "${keys.codexModel.replace(/"/g, '\\"')}"`;
-        } else if (keys.codexModel === '') {
-          lines[i] = '';
-        }
-        hasModel = true;
-      }
-    }
-    
-    if (!hasApiKey && keys.codex) {
-      lines.push(`api_key = "${keys.codex.replace(/"/g, '\\"')}"`);
-    }
-    if (!hasBaseUrl && keys.codexBaseUrl) {
-      lines.push(`base_url = "${keys.codexBaseUrl.replace(/"/g, '\\"')}"`);
-    }
-    if (!hasModel && keys.codexModel) {
-      lines.push(`model = "${keys.codexModel.replace(/"/g, '\\"')}"`);
-    }
-    
-    try {
-      fs.writeFileSync(configPath, lines.filter(l => l !== '').join('\n') + '\n', 'utf8');
-      chownToSudoUser(configPath);
-    } catch (err) {
-      console.error(`[fileService] Failed to write config.toml for user ${username}:`, err);
     }
   }
 
@@ -622,5 +646,6 @@ module.exports = {
   getUserWorkspaceRoot,
   getUserHomeDir,
   getDefaultWorkspacePath,
-  updateUserKeysFile
+  updateUserKeysFile,
+  getSystemDefaultKeys
 };

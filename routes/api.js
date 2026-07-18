@@ -395,74 +395,64 @@ router.post('/sessions', requireAuth, (req, res) => {
   const userHome = getUserHomeDir(req.user ? req.user.username : null);
   const sysHome = getHomeDir(); // always the system user's home (for finding binaries)
   const binDir = path.resolve(PROJECT_ROOT, 'bin');
+  const nodeBinDir = path.dirname(process.execPath);
 
   // Shell prefix: cd into workspace and set HOME so agents write config into the right place.
   // In single-user mode HOME is already correct; in multi-user mode we point HOME at user sandbox.
   // Use shellescape to prevent command injection via workspace path.
   const workDir = resolvedPath || userHome;
-  let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:$PATH`;
+  let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
 
-  // Source user's private .api_keys configuration file in their home directory if in multi-user mode
+  // Inject system default fallback keys dynamically, then source user's private .api_keys
   if (MULTI_USER_ENABLED && req.user && req.user.username) {
+    const { getSystemDefaultKeys } = require('../services/fileService');
+    const defaultKeys = getSystemDefaultKeys();
+    const shellescapeVal = (val) => "'" + String(val).replace(/'/g, "'\\''") + "'";
+    
+    let fallbackExports = [];
+    const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
+    if (defaultCodexKey) {
+      fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(defaultCodexKey)}`);
+    }
+    if (defaultKeys.codexBaseUrl) {
+      fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
+      fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
+    }
+    if (defaultKeys.codexModel) {
+      fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+      fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+    }
+    
+    if (fallbackExports.length > 0) {
+      envPrefix += ` && ${fallbackExports.join(' && ')}`;
+    }
     envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
   }
 
+  const getAgentPath = (agentName) => {
+    const localPath = path.join(path.dirname(process.execPath), agentName);
+    if (fs.existsSync(localPath)) return localPath;
+    for (const p of [`${sysHome}/.local/bin/${agentName}`, `/usr/local/bin/${agentName}`, `/usr/bin/${agentName}`]) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  };
+
   if (agent === 'agy') {
-    let agyPath = null;
-    const nvmNodeDir = `${sysHome}/.nvm/versions/node`;
-    if (fs.existsSync(nvmNodeDir)) {
-      try {
-        const nodeVersions = fs.readdirSync(nvmNodeDir).filter(d => d.startsWith('v'));
-        if (nodeVersions.length > 0) {
-          const latestVersion = nodeVersions.sort((a, b) => {
-            const aNum = parseInt(a.replace('v', '').split('.')[0]);
-            const bNum = parseInt(b.replace('v', '').split('.')[0]);
-            return bNum - aNum;
-          })[0];
-          agyPath = `${nvmNodeDir}/${latestVersion}/bin/agy`;
-        }
-      } catch (e) {}
-    }
-    if (!agyPath || !fs.existsSync(agyPath)) {
-      for (const p of [`${sysHome}/.local/bin/agy`, '/usr/local/bin/agy', '/usr/bin/agy']) {
-        if (fs.existsSync(p)) { agyPath = p; break; }
-      }
-    }
+    const agyPath = getAgentPath('agy');
     const finalAgy = agyPath || 'agy';
     args.push(`${envPrefix}; ${finalAgy} --dangerously-skip-permissions; exec bash`);
   } else if (agent === 'claude') {
-    let claudePath = null;
-    const nvmNodeDir = `${sysHome}/.nvm/versions/node`;
-    if (fs.existsSync(nvmNodeDir)) {
-      try {
-        const nodeVersions = fs.readdirSync(nvmNodeDir).filter(d => d.startsWith('v'));
-        if (nodeVersions.length > 0) {
-          const latestVersion = nodeVersions.sort((a, b) => {
-            const aNum = parseInt(a.replace('v', '').split('.')[0]);
-            const bNum = parseInt(b.replace('v', '').split('.')[0]);
-            return bNum - aNum;
-          })[0];
-          claudePath = `${nvmNodeDir}/${latestVersion}/bin/claude`;
-        }
-      } catch (e) {}
-    }
-    if (!claudePath || !fs.existsSync(claudePath)) {
-      for (const p of [`${sysHome}/.local/bin/claude`, '/usr/local/bin/claude', '/usr/bin/claude']) {
-        if (fs.existsSync(p)) { claudePath = p; break; }
-      }
-    }
+    const claudePath = getAgentPath('claude');
     if (claudePath) {
       args.push(`${envPrefix}; ${claudePath} --permission-mode auto; exec bash`);
     } else {
       args.push(`${envPrefix}; exec bash`);
     }
   } else if (agent === 'codex') {
-    let codexPath = null;
-    for (const p of [`${sysHome}/.local/bin/codex`, '/usr/local/bin/codex', '/usr/bin/codex']) {
-      if (fs.existsSync(p)) { codexPath = p; break; }
-    }
+    const codexPath = getAgentPath('codex');
     if (codexPath) {
-      args.push(`${envPrefix}; ${codexPath} --dangerously-bypass-hook-trust; exec bash`);
+      args.push(`${envPrefix}; ${codexPath} -c check_for_update=false -c update_on_startup=false; exec bash`);
     } else {
       args.push(`${envPrefix}; exec bash`);
     }

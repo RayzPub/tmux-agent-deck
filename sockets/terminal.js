@@ -89,21 +89,25 @@ const initSocket = (io) => {
         const db = require('../services/dbService');
         const users = db.getUsers();
         const userObj = users[socket.user.username.toLowerCase()];
-        if (userObj && userObj.apiKeys) {
-          if (userObj.apiKeys.agy) ptyEnv.GEMINI_API_KEY = userObj.apiKeys.agy;
-          if (userObj.apiKeys.claude) ptyEnv.ANTHROPIC_API_KEY = userObj.apiKeys.claude;
-          if (userObj.apiKeys.codex) ptyEnv.OPENAI_API_KEY = userObj.apiKeys.codex;
-          if (userObj.apiKeys.kimi) {
-            ptyEnv.KIMI_API_KEY = userObj.apiKeys.kimi;
-            ptyEnv.MOONSHOT_API_KEY = userObj.apiKeys.kimi;
-          }
-          if (userObj.apiKeys.kimiBaseUrl) {
-            ptyEnv.KIMI_BASE_URL = userObj.apiKeys.kimiBaseUrl;
-            ptyEnv.MOONSHOT_BASE_URL = userObj.apiKeys.kimiBaseUrl;
-          }
-          if (userObj.apiKeys.kimiModel) {
-            ptyEnv.KIMI_MODEL = userObj.apiKeys.kimiModel;
-          }
+        const keys = userObj ? (userObj.apiKeys || {}) : {};
+
+        // Load system defaults as fallback
+        const { getSystemDefaultKeys } = require('../services/fileService');
+        const defaultKeys = getSystemDefaultKeys();
+        const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
+
+        // Codex / OpenAI
+        const codexKey = keys.codex || defaultCodexKey;
+        if (codexKey) ptyEnv.OPENAI_API_KEY = codexKey;
+        const codexBaseUrl = keys.codexBaseUrl || defaultKeys.codexBaseUrl;
+        if (codexBaseUrl) {
+          ptyEnv.OPENAI_BASE_URL = codexBaseUrl;
+          ptyEnv.OPENAI_API_BASE = codexBaseUrl;
+        }
+        const codexModel = keys.codexModel || defaultKeys.codexModel;
+        if (codexModel) {
+          ptyEnv.OPENAI_MODEL = codexModel;
+          ptyEnv.CODEX_MODEL = codexModel;
         }
       }
 
