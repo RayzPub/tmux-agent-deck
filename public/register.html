@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
   <link href="https://fonts.geekzu.org/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
-  <script src="/js/lucide.min.js"></script>
+  <script src="/js/vendor/lucide-0.344.0.min.js"></script>
   <!-- Style Sheet -->
   <link rel="stylesheet" href="/css/style.css">
   <!-- Favicon / Tab Icon -->
@@ -116,7 +116,7 @@
         </button>
 
         <div class="login-link-container" style="margin-top: 15px; text-align: center;">
-          <a href="/login.html?redirect=/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 返回登录页面</a>
+          <a href="/login?redirect=/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 返回登录页面</a>
         </div>
       </form>
 
@@ -152,7 +152,7 @@
       .then(data => {
         if (!data.multiUserEnabled) {
           // If multi user is not enabled, redirect to login
-          window.location.href = '/login.html?redirect=/welcome';
+          window.location.href = '/login?redirect=/welcome';
         }
       });
 
@@ -201,7 +201,7 @@
           successAlert.classList.remove('hidden');
           registerBtn.querySelector('.btn-text').innerText = '已创建';
           setTimeout(() => {
-            window.location.href = '/login.html?redirect=/welcome';
+            window.location.href = '/login?redirect=/welcome';
           }, 1500);
         } else {
           // Failed

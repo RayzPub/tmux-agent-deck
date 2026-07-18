@@ -146,3 +146,7 @@ workspaces/
 
 # Backup files
 *.bak
+
+# Build distribution output
+public/dist/
+

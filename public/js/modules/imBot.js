@@ -1,8 +1,7 @@
 // Cyberpunk TMUX Agent Deck - IM Bot Integration Client
 // This file is completely modular and self-contained to prevent regressions.
 
-(function () {
-  document.addEventListener('DOMContentLoaded', () => {
+export function initImBot() {
     // 1. Inject the IM Bot button in the header
     const pushToggleBtn = document.getElementById('pushToggleBtn');
     if (!pushToggleBtn) return; // Exit if header is not present (e.g. on login page)
@@ -566,5 +565,4 @@
 
     // Initial status check to update the button UI on page load
     refreshStatus();
-  });
-})();
+}

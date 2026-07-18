@@ -566,7 +566,7 @@ export function attachSession(sessionName) {
     sessionSocket.on('connect_error', (err) => {
       console.error('Socket Auth Error:', err.message);
       alert('会话连接未授权。正在跳转至登录页面。');
-      window.location.href = '/login.html';
+      window.location.href = '/login';
     });
 
     container.addEventListener('click', () => {

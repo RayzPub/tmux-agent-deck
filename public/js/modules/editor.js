@@ -41,7 +41,7 @@ export async function loadEditorFile(path) {
   try {
     const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
     const data = await response.json();
@@ -297,7 +297,7 @@ export async function saveEditorFile() {
     });
 
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
 

@@ -176,7 +176,11 @@ if [ -f "$PID_FILE" ]; then
     fi
 fi
 
-# 6. Start server in the background
+# 6. Check and build static assets
+echo -e "${BLUE}[*] Checking static assets...${NC}"
+"$NODE_BIN" bin/build.js
+
+# 7. Start server in the background
 echo -e "${GREEN}[*] Starting CCNOW in the background...${NC}"
 nohup "$NODE_BIN" server.js > "$LOG_FILE" 2>&1 &
 NEW_PID=$!

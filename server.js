@@ -19,6 +19,15 @@ const imBot = require('./im-bot');
 // Run data migrations on boot
 runMigration();
 
+// Helper to get HTML file path (prefer public/dist/ if build exists, otherwise public/)
+const getHtmlPath = (filename) => {
+  const distPath = path.join(PROJECT_ROOT, 'public', 'dist', filename);
+  if (fs.existsSync(distPath)) {
+    return distPath;
+  }
+  return path.join(PROJECT_ROOT, 'public', filename);
+};
+
 const app = express();
 
 // Enable Gzip compression
@@ -46,11 +55,36 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Middleware to control caching for HTML pages and API endpoints
+app.use((req, res, next) => {
+  const ext = path.extname(req.path).toLowerCase();
+  const cleanPath = req.path.replace(/\/$/, '');
+
+  if (cleanPath.startsWith('/api')) {
+    // API responses must never be stored or cached anywhere (critical for CDN security and real-time state)
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  } else if (
+    ext === '.html' ||
+    cleanPath === '' ||
+    cleanPath === '/welcome' ||
+    cleanPath === '/login' ||
+    cleanPath === '/register'
+  ) {
+    // HTML pages allow协商缓存 (revalidation using ETag/304), but must check with origin on every load
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // Initialize IM Bot
 imBot.init(app, execTmux, getRunUser, requireAuth);
 
 // Serve login page without authentication
-app.get('/login.html', (req, res) => {
+app.get(['/login', '/login.html'], (req, res) => {
   // If already logged in, redirect to index
   const decoded = verifyToken(req);
   if (decoded) {
@@ -60,53 +94,44 @@ app.get('/login.html', (req, res) => {
       return res.redirect('/');
     }
   }
-  res.sendFile(path.join(PROJECT_ROOT, 'public', 'login.html'));
+  res.sendFile(getHtmlPath('login.html'));
 });
 
-// Serve static assets (CSS, JS) in public folder that are non-protected (like login page assets)
-// JS/CSS must always be fresh: files under public/ ship without a server restart, and
-// ES module sub-imports (js/modules/*) cannot carry version query strings, so manual
-// ?v= bumps can't bust them. maxAge 0 makes the browser revalidate every load;
-// ETag/Last-Modified keep unchanged files at cheap 304s, changed files apply instantly.
-const codeStaticOptions = {
-  maxAge: 0,
-  etag: true,
-  lastModified: true,
-  setHeaders: (res, filePath) => {
-    const fileName = path.basename(filePath);
-    if (
-      fileName.endsWith('.min.js') ||
-      fileName.includes('.umd.js') ||
-      fileName === 'xterm.js' ||
-      fileName === 'xterm-addon-fit.js' ||
-      fileName === 'xterm.css'
-    ) {
-      // Long-term caching for third-party libraries (30 days)
-      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+// Helper to set cache headers on static files (JS, CSS, HTML)
+const setStaticCacheHeaders = (res, filePath) => {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.html' || ext === '.js' || ext === '.css') {
+    // All versioned third-party vendor resources placed under a "/vendor/" directory get 1 year strong caching
+    if (filePath.split(path.sep).includes('vendor')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     } else {
-      // Revalidate our own code on every request (allows fast 304 if unchanged)
+      // Custom assets & page layouts require revalidation (allows fast 304 if unchanged)
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
     }
   }
 };
+
+const codeStaticOptions = {
+  maxAge: 0,
+  etag: true,
+  lastModified: true,
+  setHeaders: setStaticCacheHeaders
+};
+
 const docsStaticOptions = {
   maxAge: '7d', // Cache documentation/images for 7 days
   etag: true,
   lastModified: true
 };
 
-// Middleware to disable caching for HTML and dynamic resources (like / and /welcome)
-app.use((req, res, next) => {
-  const ext = path.extname(req.path).toLowerCase();
-  if (ext === '.html' || req.path === '/' || req.path === '/welcome') {
-    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-  }
-  next();
-});
+app.use('/dist', express.static(path.join(PROJECT_ROOT, 'public', 'dist'), {
+  maxAge: '1y',
+  immutable: true,
+  etag: true,
+  lastModified: true
+}));
 
 app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), codeStaticOptions));
 app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), codeStaticOptions));
@@ -115,15 +140,20 @@ app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs'), docsStaticOptio
 
 // Serve welcome page without authentication
 app.get('/welcome', (req, res) => {
-  res.sendFile(path.join(PROJECT_ROOT, 'public', 'welcome.html'));
+  res.sendFile(getHtmlPath('welcome.html'));
+});
+
+// Serve register page
+app.get(['/register', '/register.html'], (req, res) => {
+  res.sendFile(getHtmlPath('register.html'));
 });
 
 // Protect index.html and other static routes
 app.get('/', requireAuth, (req, res) => {
-  res.sendFile(path.join(PROJECT_ROOT, 'public', 'index.html'));
+  res.sendFile(getHtmlPath('index.html'));
 });
 app.get('/index.html', requireAuth, (req, res) => {
-  res.sendFile(path.join(PROJECT_ROOT, 'public', 'index.html'));
+  res.sendFile(getHtmlPath('index.html'));
 });
 
 // Fallback to protect any other static files
@@ -131,25 +161,7 @@ app.use(express.static(path.join(PROJECT_ROOT, 'public'), {
   index: false, // Prevent serving index.html automatically without requireAuth
   etag: true,
   lastModified: true,
-  setHeaders: (res, filePath) => {
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.html' || ext === '.js' || ext === '.css') {
-      const fileName = path.basename(filePath);
-      if (
-        fileName.endsWith('.min.js') ||
-        fileName.includes('.umd.js') ||
-        fileName === 'xterm.js' ||
-        fileName === 'xterm-addon-fit.js' ||
-        fileName === 'xterm.css'
-      ) {
-        res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
-      } else {
-        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-      }
-    }
-  }
+  setHeaders: setStaticCacheHeaders
 }));
 
 // Mount API routes

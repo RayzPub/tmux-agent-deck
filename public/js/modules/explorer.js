@@ -15,7 +15,7 @@ export async function loadDirPickerPath(dirPath) {
   try {
     const response = await fetch(`/api/directories?path=${encodeURIComponent(dirPath)}`);
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
     
@@ -272,7 +272,7 @@ export async function loadDirectory(dirPath, containerEl) {
   try {
     const response = await fetch(`/api/files/list?path=${encodeURIComponent(dirPath)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
     const files = await response.json();

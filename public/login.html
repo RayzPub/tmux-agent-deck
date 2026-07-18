@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
   <link href="https://fonts.geekzu.org/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
-  <script src="/js/lucide.min.js"></script>
+  <script src="/js/vendor/lucide-0.344.0.min.js"></script>
   <!-- Style Sheet -->
   <link rel="stylesheet" href="/css/style.css">
   <!-- Favicon / Tab Icon -->
@@ -99,7 +99,7 @@
         </button>
 
         <div class="register-link-container" id="registerLinkContainer" style="margin-top: 15px; text-align: center; display: none;">
-          <a href="/register.html" class="tech-link" style="color: #00f0ff; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 注册新账号</a>
+          <a href="/register" class="tech-link" style="color: #00f0ff; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 注册新账号</a>
         </div>
 
         <div class="welcome-link-container" style="margin-top: 15px; text-align: center;">
@@ -127,7 +127,7 @@
     function getRedirectUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       let redirectUrl = urlParams.get('redirect');
-      if (!redirectUrl && document.referrer && document.referrer.includes('register.html')) {
+      if (!redirectUrl && document.referrer && document.referrer.includes('register')) {
         redirectUrl = '/welcome';
       }
       return redirectUrl || '/';

@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Update footer links to login page to directly link to /
-        const footerLinks = document.querySelectorAll('a[href="/login.html"]');
+        const footerLinks = document.querySelectorAll('a[href="/login"], a[href="/login.html"]');
         footerLinks.forEach(link => {
           link.setAttribute('href', '/');
           if (link.textContent.includes('登录控制台')) {

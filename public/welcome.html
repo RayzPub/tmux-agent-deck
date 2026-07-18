@@ -499,7 +499,7 @@
       <a class="nav-link" href="#showcase">// 界面预览</a>
       <a class="nav-link" href="#installation">// 部署安装</a>
       <a class="nav-link" href="#faq">// 常见问题</a>
-      <a href="/login.html" class="btn btn-ghost btn-sm nav-login-btn">
+      <a href="/login" class="btn btn-ghost btn-sm nav-login-btn">
         <span class="login-btn-text">登录控制台</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
       </a>
@@ -513,7 +513,7 @@
     <a href="#showcase">// 界面预览</a>
     <a href="#installation">// 部署安装</a>
     <a href="#faq">// 常见问题</a>
-    <a href="/login.html">→ 登录控制台</a>
+    <a href="/login">→ 登录控制台</a>
   </div>
 
   <main>
@@ -527,7 +527,7 @@
         无论电脑还是手机，随时随地重连现场、掌控开发进度。
       </p>
       <div class="hero-ctas">
-        <a href="/login.html" class="btn btn-primary">
+        <a href="/login" class="btn btn-primary">
           <span class="console-btn-text">进入控制台</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
         </a>
@@ -809,7 +809,7 @@
     <section class="cta-final reveal">
       <h2>启动您的控制面板</h2>
       <p>立即登录专属控制中心，让 AI 智能体在后台为您高效编码。</p>
-      <a href="/login.html" class="btn btn-primary">
+      <a href="/login" class="btn btn-primary">
         <span class="console-btn-text">进入控制台</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
       </a>
@@ -835,8 +835,8 @@
       <div>
         <h5>// 访问中心</h5>
         <ul>
-          <li><a href="/login.html">登录控制台</a></li>
-          <li><a href="/register.html">受邀用户注册</a></li>
+          <li><a href="/login">登录控制台</a></li>
+          <li><a href="/register">受邀用户注册</a></li>
           <li><a href="https://github.com/RayzPub/tmux-agent-deck" target="_blank" rel="noopener">GitHub 仓库</a></li>
         </ul>
       </div>
@@ -1026,7 +1026,7 @@
             svg.innerHTML = '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>';
           }
         }
-        document.querySelectorAll('a[href="/login.html"]').forEach(link => {
+        document.querySelectorAll('a[href="/login"], a[href="/login.html"]').forEach(link => {
           link.href = '/';
           if (link.textContent.includes('登录控制台')) link.textContent = '控制面板';
         });

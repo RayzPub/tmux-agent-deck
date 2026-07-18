@@ -19,7 +19,7 @@ export async function loadGitDiff(path = '') {
     const response = await fetch(url);
     
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
     

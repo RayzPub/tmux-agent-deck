@@ -1004,19 +1004,19 @@ router.post('/system/temp-login-token', requireAuth, (req, res) => {
 router.get('/login-by-token', (req, res) => {
   const { token } = req.query;
   if (!token) {
-    return res.redirect('/login.html?error=scan_invalid');
+    return res.redirect('/login?error=scan_invalid');
   }
 
   const tokenData = tempLoginTokens.get(token);
   if (!tokenData) {
-    return res.redirect('/login.html?error=scan_invalid');
+    return res.redirect('/login?error=scan_invalid');
   }
 
   // Delete immediately (one-time use)
   tempLoginTokens.delete(token);
 
   if (Date.now() > tokenData.expiresAt) {
-    return res.redirect('/login.html?error=scan_expired');
+    return res.redirect('/login?error=scan_expired');
   }
 
   // Generate standard JWT cookie with user context

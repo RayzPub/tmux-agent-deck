@@ -7,6 +7,7 @@ import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelec
 import { initPushNotifications, togglePushSubscription } from './modules/push.js';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
+import { initImBot } from './modules/imBot.js';
 
 // Elements
 const sessionList = document.getElementById('sessionList');
@@ -172,7 +173,7 @@ export async function loadSessions() {
   try {
     const response = await fetch('/api/sessions');
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
     
@@ -756,10 +757,10 @@ logoutBtn.addEventListener('click', async () => {
     try {
       clearSessionCache();
       await fetch('/api/logout', { method: 'POST' });
-      window.location.href = '/login.html';
+      window.location.href = '/login';
     } catch (err) {
       console.error(err);
-      window.location.href = '/login.html';
+      window.location.href = '/login';
     }
   }
 });
@@ -1034,7 +1035,7 @@ async function loadWorkspaces() {
   try {
     const response = await fetch('/api/workspaces');
     if (response.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
       return;
     }
     state.workspacesList = await response.json();
@@ -1112,6 +1113,7 @@ loadWorkspaces().then(async () => {
   initPushNotifications();
   initVoiceInput();
   initQrCode();
+  initImBot();
 
   // Control Dropdown settings panel
   const deckControlToggleBtn = document.getElementById('deckControlToggleBtn');
@@ -1193,7 +1195,7 @@ loadWorkspaces().then(async () => {
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid rgba(255, 255, 255, 0.05)';
       
-      const inviteLink = `${window.location.origin}/register.html?code=${c.code}`;
+      const inviteLink = `${window.location.origin}/register?code=${c.code}`;
       const statusColor = c.status === 'used' ? 'var(--text-muted)' : 'var(--neon-cyan)';
       const statusText = c.status === 'used' ? '已使用' : '未使用';
       
@@ -1516,7 +1518,7 @@ loadWorkspaces().then(async () => {
     .then(res => res.json())
     .then(data => {
       if (!data.authenticated) {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return;
       }
       // Store multi-user mode in state for use across the UI
