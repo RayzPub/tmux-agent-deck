@@ -100,9 +100,10 @@ fi
 if [ ! -f "$ENV_FILE" ]; then
     echo -e "${YELLOW}[!] .env file not found. Creating a default one...${NC}"
     echo "PORT=$PORT" > "$ENV_FILE"
-    echo "PASSWORD=tmuxadmin" >> "$ENV_FILE"
-    echo "JWT_SECRET=cyberpunk-tmux-secret-key-1337" >> "$ENV_FILE"
+    echo "PASSWORD=" >> "$ENV_FILE"
+    echo "JWT_SECRET=" >> "$ENV_FILE"
     echo "DEFAULT_SHELL=/bin/bash" >> "$ENV_FILE"
+    echo "MULTI_USER_ENABLED=true" >> "$ENV_FILE"
 fi
 
 # Function to generate a random hex string
@@ -124,38 +125,60 @@ generate_random_hex() {
 CURRENT_PWD=$(grep -E "^PASSWORD=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
 
 if [ -z "$CURRENT_PWD" ] || [ "$CURRENT_PWD" = "tmuxadmin" ] || [ ${#CURRENT_PWD} -lt 16 ]; then
-    NEW_PWD=$(generate_random_hex 12)
-    if [ -z "$NEW_PWD" ]; then
-        # Safe fallback if urandom/openssl read fails
-        NEW_PWD="CyberpunkSecurePass$(date +%s)"
+    SHOULD_GENERATE=true
+    if [ -t 0 ]; then
+        echo -e "${YELLOW}[!] 检测到 .env 中的 PASSWORD 缺失、过弱或为默认值。${NC}"
+        read -p "是否自动生成并保存一个 24 位强随机密码？ [Y/n]: " prompt_pwd
+        if [[ "$prompt_pwd" =~ ^[Nn]$ ]]; then
+            SHOULD_GENERATE=false
+            echo -e "${RED}[!] 已跳过生成密码。注意：PASSWORD 至少需要 16 位，否则服务将无法启动。${NC}"
+        fi
     fi
-    echo -e "${YELLOW}[!] Weak or missing PASSWORD detected in .env.${NC}"
-    echo -e "${GREEN}[+] Generating a strong password for you: ${NEW_PWD}${NC}"
-    # Replace line or append
-    if grep -q "^PASSWORD=" "$ENV_FILE"; then
-        # Use sed to replace.
-        sed -i "s|^PASSWORD=.*|PASSWORD=${NEW_PWD}|" "$ENV_FILE"
-    else
-        echo "PASSWORD=${NEW_PWD}" >> "$ENV_FILE"
+
+    if [ "$SHOULD_GENERATE" = true ]; then
+        NEW_PWD=$(generate_random_hex 12)
+        if [ -z "$NEW_PWD" ]; then
+            # Safe fallback if urandom/openssl read fails
+            NEW_PWD="CyberpunkSecurePass$(date +%s)"
+        fi
+        echo -e "${GREEN}[+] 正在生成并写入强密码...${NC}"
+        # Replace line or append
+        if grep -q "^PASSWORD=" "$ENV_FILE"; then
+            # Use sed to replace.
+            sed -i "s|^PASSWORD=.*|PASSWORD=${NEW_PWD}|" "$ENV_FILE"
+        else
+            echo "PASSWORD=${NEW_PWD}" >> "$ENV_FILE"
+        fi
+        CURRENT_PWD="$NEW_PWD"
     fi
-    CURRENT_PWD="$NEW_PWD"
 fi
 
 # 3. Check and fix JWT_SECRET
 CURRENT_JWT=$(grep -E "^JWT_SECRET=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | tr -d "'")
 
 if [ -z "$CURRENT_JWT" ] || [ "$CURRENT_JWT" = "cyberpunk-tmux-secret-key-1337" ] || [ ${#CURRENT_JWT} -lt 32 ]; then
-    NEW_JWT=$(generate_random_hex 32)
-    if [ -z "$NEW_JWT" ]; then
-        # Safe fallback
-        NEW_JWT="CyberpunkSecureSecretKey$(date +%s)GenerateLonger"
+    SHOULD_GENERATE=true
+    if [ -t 0 ]; then
+        echo -e "${YELLOW}[!] 检测到 .env 中的 JWT_SECRET 缺失、过弱或为默认值。${NC}"
+        read -p "是否自动生成并保存一个 64 位强随机密钥 (JWT_SECRET)？ [Y/n]: " prompt_jwt
+        if [[ "$prompt_jwt" =~ ^[Nn]$ ]]; then
+            SHOULD_GENERATE=false
+            echo -e "${RED}[!] 已跳过生成密钥。注意：JWT_SECRET 至少需要 32 位，否则服务将无法启动。${NC}"
+        fi
     fi
-    echo -e "${YELLOW}[!] Weak or missing JWT_SECRET detected in .env.${NC}"
-    echo -e "${GREEN}[+] Generating a strong random JWT_SECRET...${NC}"
-    if grep -q "^JWT_SECRET=" "$ENV_FILE"; then
-        sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${NEW_JWT}|" "$ENV_FILE"
-    else
-        echo "JWT_SECRET=${NEW_JWT}" >> "$ENV_FILE"
+
+    if [ "$SHOULD_GENERATE" = true ]; then
+        NEW_JWT=$(generate_random_hex 32)
+        if [ -z "$NEW_JWT" ]; then
+            # Safe fallback
+            NEW_JWT="CyberpunkSecureSecretKey$(date +%s)GenerateLonger"
+        fi
+        echo -e "${GREEN}[+] 正在生成并写入强随机密钥...${NC}"
+        if grep -q "^JWT_SECRET=" "$ENV_FILE"; then
+            sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${NEW_JWT}|" "$ENV_FILE"
+        else
+            echo "JWT_SECRET=${NEW_JWT}" >> "$ENV_FILE"
+        fi
     fi
 fi
 
@@ -230,6 +253,7 @@ if ps -p "$NEW_PID" > /dev/null 2>&1; then
             echo -e "🔗 URL:      ${GREEN}http://${DOMAIN_NAME}:${FINAL_PORT}${NC}"
         fi
     fi
+    echo -e "👤 Username: ${GREEN}admin${NC}"
     echo -e "🔑 Password: ${GREEN}${CURRENT_PWD}${NC}"
     echo -e "${BLUE}--------------------------------------------------${NC}"
     echo -e "To stop the server, run: ${YELLOW}./stop.sh${NC}"

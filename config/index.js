@@ -1,10 +1,11 @@
 const path = require('path');
 const fs = require('fs');
 
-// Load env from project root
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
-
 const PROJECT_ROOT = path.resolve(__dirname, '..');
+const envPath = path.join(PROJECT_ROOT, '.env');
+
+// Load env from project root
+require('dotenv').config({ path: envPath });
 
 const PORT = process.env.PORT || 3000;
 const HTTPS_PORT = process.env.HTTPS_PORT || 443;
@@ -12,6 +13,8 @@ const PASSWORD = process.env.PASSWORD;
 const JWT_SECRET = process.env.JWT_SECRET;
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
+
+// Default MULTI_USER_ENABLED to false if not explicitly set to 'true' in env
 const MULTI_USER_ENABLED = process.env.MULTI_USER_ENABLED === 'true';
 
 let useHttps = false;
@@ -36,6 +39,7 @@ if (SSL_CERT_PATH && SSL_KEY_PATH) {
   }
 }
 
+// Double safety check
 if (!PASSWORD || PASSWORD.length < 16) {
   console.error('FATAL: PASSWORD must be set in environment and be at least 16 characters');
   process.exit(1);
@@ -58,4 +62,3 @@ module.exports = {
   sslOptions,
   MULTI_USER_ENABLED
 };
-

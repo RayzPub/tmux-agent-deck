@@ -1177,7 +1177,7 @@ module.exports = {
         const sessionToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
         res.cookie('token', sessionToken, {
           httpOnly: true,
-          secure: useHttps,
+          secure: req.secure || useHttps,
           maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 

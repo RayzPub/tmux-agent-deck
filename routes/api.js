@@ -29,7 +29,7 @@ router.post('/login', (req, res) => {
       const token = jwt.sign({ username: 'admin', role: 'admin', isMultiUser: false }, JWT_SECRET, { expiresIn: '7d' });
       res.cookie('token', token, {
         httpOnly: true,
-        secure: useHttps,
+        secure: req.secure || useHttps,
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
       return res.json({ success: true });
@@ -51,7 +51,7 @@ router.post('/login', (req, res) => {
   const token = jwt.sign({ username: user.username, role: user.role, isMultiUser: true }, JWT_SECRET, { expiresIn: '7d' });
   res.cookie('token', token, {
     httpOnly: true,
-    secure: useHttps,
+    secure: req.secure || useHttps,
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
   res.json({ success: true });
@@ -1151,7 +1151,7 @@ router.get('/login-by-token', (req, res) => {
   const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: '7d' });
   res.cookie('token', jwtToken, {
     httpOnly: true,
-    secure: useHttps,
+    secure: req.secure || useHttps,
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 

@@ -30,6 +30,11 @@ const getHtmlPath = (filename) => {
 
 const app = express();
 
+// Trust proxy headers from CDN/reverse proxy if running on HTTP
+if (!useHttps) {
+  app.set('trust proxy', true);
+}
+
 // Enable Gzip compression
 app.use(compression());
 
@@ -190,6 +195,7 @@ if (useHttps) {
     console.log(`==================================================`);
     console.log(`🚀 Cyberpunk CCNOW started successfully with HTTPS!`);
     console.log(`🔗 URL: ${displayUrl}`);
+    console.log(`👤 Username: admin`);
     console.log(`🔒 Password: ${'•'.repeat(PASSWORD.length)} (configured via env)`);
     console.log(`==================================================`);
   });
@@ -203,6 +209,7 @@ if (useHttps) {
     console.log(`==================================================`);
     console.log(`🚀 Cyberpunk CCNOW started successfully!`);
     console.log(`🔗 URL: http://localhost:${PORT}`);
+    console.log(`👤 Username: admin`);
     console.log(`🔒 Password: ${'•'.repeat(PASSWORD.length)} (configured via env)`);
     console.log(`==================================================`);
   });
