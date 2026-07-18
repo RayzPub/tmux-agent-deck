@@ -6,15 +6,6 @@ const { getRunUser, getTmuxCommandForUser } = require('../services/tmuxService')
 const { getHomeDir, getUserWorkspaceRoot, getDefaultWorkspacePath, getUserHomeDir } = require('../services/fileService');
 const { JWT_SECRET, MULTI_USER_ENABLED, PROJECT_ROOT } = require('../config');
 
-const hasFirejail = (() => {
-  try {
-    const { execSync } = require('child_process');
-    execSync('which firejail', { stdio: 'ignore' });
-    return true;
-  } catch (e) {
-    return false;
-  }
-})();
 
 
 const initSocket = (io) => {
@@ -86,42 +77,7 @@ const initSocket = (io) => {
 
       const runUser = getRunUser();
       const tmuxArgs = ['new-session', '-A', '-s', physicalSession];
-      const isNonAdmin = MULTI_USER_ENABLED && socket.user && socket.user.role !== 'admin';
-      if (isNonAdmin && hasFirejail) {
-        const username = socket.user.username;
-        const userWorkspace = path.join(PROJECT_ROOT, 'workspaces', username);
-        const userData = path.join(PROJECT_ROOT, 'user_data', username);
-        const projectBin = path.join(PROJECT_ROOT, 'bin');
-        const sysHome = getHomeDir();
-        const nvmPath = path.join(sysHome, '.nvm');
-        const localBin = path.join(sysHome, '.local', 'bin');
-        const kimiCodeDir = path.join(sysHome, '.kimi-code');
 
-        let fjArgs = [
-          'firejail',
-          '--noprofile',
-          '--noroot',
-          `--whitelist=${userWorkspace}`,
-          `--whitelist=${userData}`,
-          `--whitelist=${projectBin}`,
-          `--read-only=${projectBin}`
-        ];
-
-        if (fs.existsSync(nvmPath)) {
-          fjArgs.push(`--whitelist=${nvmPath}`);
-          fjArgs.push(`--read-only=${nvmPath}`);
-        }
-        if (fs.existsSync(localBin)) {
-          fjArgs.push(`--whitelist=${localBin}`);
-          fjArgs.push(`--read-only=${localBin}`);
-        }
-        if (fs.existsSync(kimiCodeDir)) {
-          fjArgs.push(`--whitelist=${kimiCodeDir}`);
-          fjArgs.push(`--read-only=${kimiCodeDir}`);
-        }
-
-        tmuxArgs.push(`exec ${fjArgs.join(' ')} bash`);
-      }
       const { cmd: shell, args } = getTmuxCommandForUser(socket.user ? socket.user.username : null, tmuxArgs);
       const workspacePath = getDefaultWorkspacePath(socket.user ? socket.user.username : null);
       const userHome = getUserHomeDir(socket.user ? socket.user.username : null);

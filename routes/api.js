@@ -19,15 +19,6 @@ const shellescape = (s) => {
   return "'" + String(s).replace(/'/g, "'\\''") + "'";
 };
 
-const hasFirejail = (() => {
-  try {
-    const { execSync } = require('child_process');
-    execSync('which firejail', { stdio: 'ignore' });
-    return true;
-  } catch (e) {
-    return false;
-  }
-})();
 
 // API: Login
 router.post('/login', (req, res) => {
@@ -467,41 +458,7 @@ router.post('/sessions', requireAuth, (req, res) => {
     shellCmd = kimiPath ? `${kimiPath}; exec bash` : 'exec bash';
   }
 
-  // Wrap in firejail if non-admin and firejail is available
-  const isNonAdmin = MULTI_USER_ENABLED && req.user && req.user.role !== 'admin';
-  if (isNonAdmin && hasFirejail) {
-    const userWorkspace = path.join(PROJECT_ROOT, 'workspaces', req.user.username);
-    const userData = path.join(PROJECT_ROOT, 'user_data', req.user.username);
-    const projectBin = path.join(PROJECT_ROOT, 'bin');
-    const nvmPath = path.join(sysHome, '.nvm');
-    const localBin = path.join(sysHome, '.local', 'bin');
-    const kimiCodeDir = path.join(sysHome, '.kimi-code');
 
-    let fjArgs = [
-      'firejail',
-      '--noprofile',
-      '--noroot',
-      `--whitelist=${userWorkspace}`,
-      `--whitelist=${userData}`,
-      `--whitelist=${projectBin}`,
-      `--read-only=${projectBin}`
-    ];
-
-    if (fs.existsSync(nvmPath)) {
-      fjArgs.push(`--whitelist=${nvmPath}`);
-      fjArgs.push(`--read-only=${nvmPath}`);
-    }
-    if (fs.existsSync(localBin)) {
-      fjArgs.push(`--whitelist=${localBin}`);
-      fjArgs.push(`--read-only=${localBin}`);
-    }
-    if (fs.existsSync(kimiCodeDir)) {
-      fjArgs.push(`--whitelist=${kimiCodeDir}`);
-      fjArgs.push(`--read-only=${kimiCodeDir}`);
-    }
-
-    shellCmd = `${fjArgs.join(' ')} bash -c ${shellescape(shellCmd)}`;
-  }
 
   args.push(`${envPrefix}; ${shellCmd}`);
 

@@ -15,11 +15,20 @@ const getRunUser = () => {
   return null;
 };
 
+const hasFirejail = (() => {
+  try {
+    const { execSync } = require('child_process');
+    execSync('which firejail', { stdio: 'ignore' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+})();
+
 // Construct the secure, isolated tmux command for a given user
 const getTmuxCommandForUser = (username, args) => {
   if (MULTI_USER_ENABLED && username) {
     const runUser = getRunUser() || 'ubuntu';
-    const socketPath = `/tmp/tmux_${username}.sock`;
     const userDir = path.join(PROJECT_ROOT, 'user_data', username);
     
     if (!fs.existsSync(userDir)) {
@@ -35,12 +44,77 @@ const getTmuxCommandForUser = (username, args) => {
       }
     }
     
+    // Look up the user role to check if they are a non-admin
+    let isNonAdmin = true;
+    try {
+      const db = require('./dbService');
+      const users = db.getUsers();
+      const userObj = users[username.toLowerCase()];
+      if (userObj && userObj.role === 'admin') {
+        isNonAdmin = false;
+      }
+    } catch (err) {
+      console.error(`[tmuxService] Failed to look up user role for ${username}:`, err.message);
+    }
+
+    // Secure user-specific tmux socket path inside their private userDir
+    const socketPath = path.join(userDir, 'tmux.sock');
     const shellescape = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+    
+    let tmuxCmd = `tmux -S ${shellescape(socketPath)} ${args.map(shellescape).join(' ')}`;
+
+    // Wrap the entire tmux command in firejail for non-admin users to prevent privilege escalation
+    if (isNonAdmin && hasFirejail) {
+      const userWorkspace = path.join(PROJECT_ROOT, 'workspaces', username);
+      if (!fs.existsSync(userWorkspace)) {
+        try {
+          fs.mkdirSync(userWorkspace, { recursive: true });
+          const sysUser = getRunUser();
+          if (sysUser && process.getuid && process.getuid() === 0) {
+            const { execSync } = require('child_process');
+            execSync(`chown -R ${sysUser}:${sysUser} "${userWorkspace}"`);
+          }
+        } catch (err) {
+          console.warn(`[tmuxService] Failed to create userWorkspace ${userWorkspace}:`, err.message);
+        }
+      }
+
+      const projectBin = path.join(PROJECT_ROOT, 'bin');
+      const sysHome = `/home/${runUser}`;
+      const nvmPath = path.join(sysHome, '.nvm');
+      const localBin = path.join(sysHome, '.local', 'bin');
+      const kimiCodeDir = path.join(sysHome, '.kimi-code');
+
+      const fjArgs = [
+        'firejail',
+        '--noprofile',
+        '--noroot',
+        `--whitelist=${userWorkspace}`,
+        `--whitelist=${userDir}`,
+        `--whitelist=${projectBin}`,
+        `--read-only=${projectBin}`
+      ];
+
+      if (fs.existsSync(nvmPath)) {
+        fjArgs.push(`--whitelist=${nvmPath}`);
+        fjArgs.push(`--read-only=${nvmPath}`);
+      }
+      if (fs.existsSync(localBin)) {
+        fjArgs.push(`--whitelist=${localBin}`);
+        fjArgs.push(`--read-only=${localBin}`);
+      }
+      if (fs.existsSync(kimiCodeDir)) {
+        fjArgs.push(`--whitelist=${kimiCodeDir}`);
+        fjArgs.push(`--read-only=${kimiCodeDir}`);
+      }
+
+      tmuxCmd = `${fjArgs.join(' ')} ${tmuxCmd}`;
+    }
     
     // We run unshare -m as root, create a unique temp dir, bind-mount the real userDir to it,
     // mount tmpfs over the shared user_data parent directory (hiding other users' folders),
     // recreate userDir, bind-mount the userDir contents back from the temp dir, clean up, and execute tmux.
-    const unshareCmd = `TEMP_DIR=$(mktemp -d /tmp/tmux_bind_${username}_XXXXXX) && mount --bind ${shellescape(userDir)} "$TEMP_DIR" && mount -t tmpfs tmpfs ${shellescape(userDir)}/.. && mkdir -p ${shellescape(userDir)} && mount --bind "$TEMP_DIR" ${shellescape(userDir)} && umount "$TEMP_DIR" && rmdir "$TEMP_DIR" && sudo -u ${runUser} tmux -S ${socketPath} ${args.map(shellescape).join(' ')}`;
+    const unshareCmd = `TEMP_DIR=$(mktemp -d /tmp/tmux_bind_${username}_XXXXXX) && mount --bind ${shellescape(userDir)} "$TEMP_DIR" && mount -t tmpfs tmpfs ${shellescape(userDir)}/.. && mkdir -p ${shellescape(userDir)} && mount --bind "$TEMP_DIR" ${shellescape(userDir)} && umount "$TEMP_DIR" && rmdir "$TEMP_DIR" && sudo -u ${runUser} ${tmuxCmd}`;
     
     return {
       cmd: 'unshare',
