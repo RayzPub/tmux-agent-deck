@@ -3,6 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
@@ -733,6 +734,130 @@ router.post('/files/save', requireAuth, (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Store temporary share links in memory
+// Format: token => { workspacePath, relFileName, expiresAt, createdBy }
+const tempShareLinks = new Map();
+
+// Helper to clean up expired links periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, share] of tempShareLinks.entries()) {
+    if (now > share.expiresAt) {
+      tempShareLinks.delete(token);
+    }
+  }
+}, 5 * 60 * 1000); // Clean every 5 minutes
+
+// API: Create a secure, temporary share link for an HTML preview (requires authentication)
+router.post('/share/create', requireAuth, (req, res) => {
+  try {
+    const { workspacePath, filePath, durationHours } = req.body;
+    
+    if (!filePath || !workspacePath) {
+      return res.status(400).json({ error: 'filePath 和 workspacePath 不能为空' });
+    }
+
+    const duration = parseFloat(durationHours);
+    if (isNaN(duration) || duration < 0.1 || duration > 168) {
+      return res.status(400).json({ error: '无效的分享时长，范围必须在 0.1 到 168 小时之间' });
+    }
+
+    // Security: Validate file path and ownership before creating the link
+    const absolutePath = safeResolve(workspacePath, filePath, req.user.username);
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
+      return res.status(400).json({ error: '文件不存在，无法生成分享链接' });
+    }
+
+    // DoS Prevention: Check limit of active sharing links in memory
+    if (tempShareLinks.size >= 500) {
+      // Proactive prune
+      const now = Date.now();
+      for (const [t, s] of tempShareLinks.entries()) {
+        if (now > s.expiresAt) tempShareLinks.delete(t);
+      }
+      if (tempShareLinks.size >= 500) {
+        return res.status(429).json({ error: '系统当前分享链接数量过多，请稍后再试' });
+      }
+    }
+
+    // Generate high-entropy secure token (64-char hex)
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = Date.now() + duration * 60 * 60 * 1000;
+
+    tempShareLinks.set(token, {
+      workspacePath,
+      relFileName: filePath,
+      expiresAt,
+      createdBy: req.user.username
+    });
+
+    const filename = path.basename(filePath);
+    res.json({
+      success: true,
+      token,
+      expiresAt,
+      filename,
+      sharePath: `/api/public-preview/${token}/${encodeURIComponent(filename)}`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Route: Public preview of HTML files and their sub-resources (No authentication required)
+// Security features:
+// - Verifies token validity and expiration.
+// - Restricts access strictly to files in the parent directory of the shared HTML file.
+// - Sanitizes paths defensively.
+// - Disables caching for the shared dynamic page content.
+router.get(/^\/public-preview\/([^/]+)(?:\/(.*))?$/, (req, res) => {
+  try {
+    const token = req.params[0];
+    let subPath = req.params[1] || '';
+    
+    try { subPath = decodeURIComponent(subPath); } catch (e) { /* already decoded */ }
+
+    const share = tempShareLinks.get(token);
+    if (!share) {
+      return res.status(404).send('分享页面不存在或已失效。');
+    }
+
+    if (Date.now() > share.expiresAt) {
+      tempShareLinks.delete(token); // Prune immediately on access
+      return res.status(410).send('分享链接已过期。');
+    }
+
+    const relParentDir = path.dirname(share.relFileName);
+    const targetRelPath = subPath ? path.join(relParentDir, subPath) : share.relFileName;
+
+    // Security check: Ensure requested subPath does not traverse out of the shared HTML's directory
+    const relDiff = path.relative(relParentDir, targetRelPath);
+    const isSubPathSafe = relDiff === '' || (!relDiff.startsWith('..') && !path.isAbsolute(relDiff));
+    if (!isSubPathSafe) {
+      return res.status(403).send('无权访问此共享范围之外的路径。');
+    }
+
+    // Resolve the path on disk using standard safeResolve validation rules
+    let targetPath = safeResolve(share.workspacePath, targetRelPath, share.createdBy);
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
+      targetPath = path.join(targetPath, 'index.html');
+    }
+
+    if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+      return res.status(404).send('文件不存在。');
+    }
+
+    // Security: Set headers to disable downstream/CDN caching to ensure immediate revocation on expiry
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    res.sendFile(targetPath);
+  } catch (err) {
+    res.status(400).send(`发生错误: ${err.message}`);
   }
 });
 

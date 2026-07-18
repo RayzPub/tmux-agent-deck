@@ -1,7 +1,7 @@
 import { state } from './modules/state.js';
 import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
-import { saveEditorFile, updateMarkdownPreview, updatePreviewUI } from './modules/editor.js';
+import { saveEditorFile, updateMarkdownPreview, updatePreviewUI, buildHtmlPreviewUrl } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
 import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js';
 import { initPushNotifications, togglePushSubscription } from './modules/push.js';
@@ -663,12 +663,40 @@ closeEditorBtn.addEventListener('click', () => {
 });
 
 const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+const previewDropdownTrigger = document.getElementById('previewDropdownTrigger');
+const previewDropdownMenu = document.getElementById('previewDropdownMenu');
+
 if (togglePreviewBtn) {
   togglePreviewBtn.addEventListener('click', () => {
     state.previewActive = !state.previewActive;
     const activeTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'editor');
     const path = activeTab ? activeTab.path : null;
     updatePreviewUI(path);
+  });
+}
+
+if (previewDropdownTrigger && previewDropdownMenu) {
+  previewDropdownTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    previewDropdownMenu.classList.toggle('hidden');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!previewDropdownMenu.contains(e.target) && e.target !== previewDropdownTrigger) {
+      previewDropdownMenu.classList.add('hidden');
+    }
+  });
+}
+
+const openExternalPreviewBtn = document.getElementById('openExternalPreviewBtn');
+if (openExternalPreviewBtn) {
+  openExternalPreviewBtn.addEventListener('click', () => {
+    if (previewDropdownMenu) previewDropdownMenu.classList.add('hidden');
+    const activeTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'editor');
+    if (activeTab) {
+      const url = buildHtmlPreviewUrl(activeTab.path);
+      window.open(url, '_blank');
+    }
   });
 }
 
@@ -1114,6 +1142,7 @@ loadWorkspaces().then(async () => {
   initVoiceInput();
   initQrCode();
   initImBot();
+  initShareModal();
 
   // Control Dropdown settings panel
   const deckControlToggleBtn = document.getElementById('deckControlToggleBtn');
@@ -1561,3 +1590,124 @@ loadWorkspaces().then(async () => {
     })
     .catch(err => console.error('Auth check error:', err));
 });
+
+// Share preview link functionality
+function initShareModal() {
+  const sharePreviewBtn = document.getElementById('sharePreviewBtn');
+  const shareLinkModal = document.getElementById('shareLinkModal');
+  const closeShareLinkModalBtn = document.getElementById('closeShareLinkModalBtn');
+  const generateShareLinkBtn = document.getElementById('generateShareLinkBtn');
+  const shareDurationSelect = document.getElementById('shareDurationSelect');
+  const shareResultSection = document.getElementById('shareResultSection');
+  const shareUrlInput = document.getElementById('shareUrlInput');
+  const shareExpiryText = document.getElementById('shareExpiryText');
+
+  if (!sharePreviewBtn || !shareLinkModal) return;
+
+  const openModal = () => {
+    shareLinkModal.classList.remove('hidden');
+    shareResultSection.classList.add('hidden');
+    shareUrlInput.value = '';
+    shareExpiryText.textContent = '';
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  };
+
+  const closeModal = () => {
+    shareLinkModal.classList.add('hidden');
+  };
+
+  sharePreviewBtn.addEventListener('click', () => {
+    const previewDropdownMenu = document.getElementById('previewDropdownMenu');
+    if (previewDropdownMenu) previewDropdownMenu.classList.add('hidden');
+    openModal();
+  });
+  if (closeShareLinkModalBtn) {
+    closeShareLinkModalBtn.addEventListener('click', closeModal);
+  }
+
+  shareLinkModal.addEventListener('click', (e) => {
+    if (e.target === shareLinkModal) {
+      closeModal();
+    }
+  });
+
+  if (generateShareLinkBtn) {
+    generateShareLinkBtn.addEventListener('click', async () => {
+      const activeTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'editor');
+      if (!activeTab) {
+        alert('无法获取当前编辑文件');
+        return;
+      }
+
+      const durationHours = shareDurationSelect.value;
+      const originalText = generateShareLinkBtn.innerHTML;
+      generateShareLinkBtn.disabled = true;
+      generateShareLinkBtn.innerHTML = '<span class="btn-text">生成中...</span>';
+
+      try {
+        const response = await fetch('/api/share/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            workspacePath: state.currentWorkspacePath,
+            filePath: activeTab.path,
+            durationHours: parseFloat(durationHours)
+          })
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          // Format full sharing URL
+          const protocol = window.location.protocol;
+          const host = window.location.host;
+          const fullShareUrl = `${protocol}//${host}${data.sharePath}`;
+
+          shareUrlInput.value = fullShareUrl;
+          
+          const expiryDate = new Date(data.expiresAt);
+          shareExpiryText.textContent = `有效期至: ${expiryDate.toLocaleString()}`;
+          shareResultSection.classList.remove('hidden');
+        } else {
+          alert('生成分享链接失败: ' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('生成分享链接时发生网络错误。');
+      } finally {
+        generateShareLinkBtn.disabled = false;
+        generateShareLinkBtn.innerHTML = originalText;
+      }
+    });
+  }
+
+  if (shareUrlInput) {
+    shareUrlInput.addEventListener('click', () => {
+      shareUrlInput.select();
+      shareUrlInput.setSelectionRange(0, 99999); // For mobile devices
+      
+      navigator.clipboard.writeText(shareUrlInput.value)
+        .then(() => {
+          // Show a temporary visual feedback text
+          const originalExpiry = shareExpiryText.textContent;
+          shareExpiryText.textContent = '✓ 链接已成功复制到剪贴板！';
+          shareExpiryText.style.color = 'var(--neon-green)';
+          setTimeout(() => {
+            shareExpiryText.textContent = originalExpiry;
+            shareExpiryText.style.color = '';
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('Failed to copy: ', err);
+        });
+    });
+  }
+}

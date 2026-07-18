@@ -198,19 +198,27 @@ export function updateHtmlPreview(path, cacheBust) {
 }
 
 export function updatePreviewUI(path) {
+  const previewSplitBtnGroup = document.getElementById('previewSplitBtnGroup');
+  const previewDropdownTrigger = document.getElementById('previewDropdownTrigger');
+  const previewDropdownMenu = document.getElementById('previewDropdownMenu');
   const togglePreviewBtn = document.getElementById('togglePreviewBtn');
   const markdownPreview = document.getElementById('markdownPreview');
   const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
   const editorTextarea = document.getElementById('editorTextarea');
   const saveFileBtn = document.getElementById('saveFileBtn');
-  if (!togglePreviewBtn) return;
+  if (!previewSplitBtnGroup) return;
 
   const lang = path ? getLanguageFromExtension(path) : null;
   const isMd = lang === 'markdown';
   const isHtml = lang === 'html';
 
+  // Hide the dropdown menu when resetting the UI
+  if (previewDropdownMenu) {
+    previewDropdownMenu.classList.add('hidden');
+  }
+
   if (!isMd && !isHtml) {
-    togglePreviewBtn.classList.add('hidden');
+    previewSplitBtnGroup.classList.add('hidden');
     if (markdownPreview) markdownPreview.classList.add('hidden');
     if (htmlPreviewFrame) htmlPreviewFrame.classList.add('hidden');
     if (editorTextarea) {
@@ -220,7 +228,13 @@ export function updatePreviewUI(path) {
       saveFileBtn.classList.remove('hidden');
     }
   } else {
-    togglePreviewBtn.classList.remove('hidden');
+    previewSplitBtnGroup.classList.remove('hidden');
+    
+    // Toggle single-btn layout vs split-btn layout
+    if (previewDropdownTrigger) {
+      previewDropdownTrigger.classList.toggle('hidden', !isHtml);
+    }
+    previewSplitBtnGroup.classList.toggle('single-btn', !isHtml);
 
     // Toggle icon and text dynamically
     const iconEl = togglePreviewBtn.querySelector('i, svg');

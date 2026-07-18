@@ -282,10 +282,25 @@
           </div>
           <div class="editor-controls">
             <span class="editor-status-msg" id="editorStatusMsg"></span>
-            <button id="togglePreviewBtn" class="terminal-control-btn hidden" title="切换预览">
-              <i data-lucide="eye"></i>
-              <span>预览</span>
-            </button>
+            <div class="split-btn-group hidden" id="previewSplitBtnGroup">
+              <button id="togglePreviewBtn" class="terminal-control-btn" title="切换内嵌预览">
+                <i data-lucide="eye"></i>
+                <span>预览</span>
+              </button>
+              <button id="previewDropdownTrigger" class="terminal-control-btn split-arrow-btn" title="更多预览选项">
+                <i data-lucide="chevron-down"></i>
+              </button>
+              <div class="preview-dropdown-menu hidden" id="previewDropdownMenu">
+                <button id="openExternalPreviewBtn" class="dropdown-item-btn">
+                  <i data-lucide="external-link"></i>
+                  <span>外部独立窗口</span>
+                </button>
+                <button id="sharePreviewBtn" class="dropdown-item-btn">
+                  <i data-lucide="share-2"></i>
+                  <span>生成分享链接</span>
+                </button>
+              </div>
+            </div>
             <button id="saveFileBtn" class="terminal-control-btn" title="保存文件 (Ctrl+S)">
               <i data-lucide="save"></i>
               <span>保存</span>
@@ -875,6 +890,54 @@
               <span class="btn-text">保存个人 Key 配置</span>
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share Link Modal -->
+  <div id="shareLinkModal" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-card invite-modal-card" style="width: 90%; max-width: 450px; padding: 24px; position: relative;">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      <div class="auth-glow"></div>
+
+      <div class="modal-header invite-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px;">
+        <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 14px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">
+          <i data-lucide="share-2" style="display: inline-block; vertical-align: middle; width: 16px; height: 16px; margin-right: 6px; color: var(--neon-cyan);"></i>
+          // 生成限时免密分享链接
+        </h3>
+        <button id="closeShareLinkModalBtn" class="modal-close" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px;"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-body" style="font-family: var(--font-mono); color: var(--color-text); font-size: 12px;">
+        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 15px; line-height: 1.5; border-left: 2px solid var(--neon-cyan); padding-left: 8px;">
+          注意：生成链接后，任何人均可免密预览此页面。处于同一目录内的静态资源（如 CSS、JS、图片）同样可以被公开加载。链接到期后将自动作废失效。
+        </p>
+        
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label style="display: block; font-size: 11px; margin-bottom: 6px; color: var(--neon-cyan);">链接有效时长：</label>
+          <select id="shareDurationSelect" class="cyber-input" style="width: 100%; box-sizing: border-box; background: #000; border: 1px solid var(--border-neon); color: #fff; padding: 8px; font-family: var(--font-mono); font-size: 12px; outline: none; border-radius: 4px;">
+            <option value="1">1 小时</option>
+            <option value="3" selected>3 小时</option>
+            <option value="12">12 小时</option>
+            <option value="24">24 小时</option>
+            <option value="72">3 天 (72 小时)</option>
+          </select>
+        </div>
+
+        <div id="shareResultSection" class="hidden" style="margin-top: 20px; border: 1px dashed var(--neon-cyan); padding: 12px; background: rgba(0, 240, 255, 0.03); border-radius: 4px;">
+          <div style="font-size: 11px; color: var(--neon-pink); margin-bottom: 6px; font-weight: bold;">分享链接已就绪（点击链接输入框自动复制）：</div>
+          <input type="text" id="shareUrlInput" class="cyber-input" readonly style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.7); border: 1px solid var(--border-neon); color: #00f0ff; padding: 8px; font-size: 11px; font-family: var(--font-mono); cursor: pointer; text-overflow: ellipsis; outline: none; border-radius: 4px; box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);" />
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 6px; text-transform: uppercase;" id="shareExpiryText"></div>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" class="cyber-btn" id="generateShareLinkBtn" style="height: 32px; padding: 0 16px; font-size: 11px; font-weight: bold;">
+            <span class="btn-text">生成分享链接</span>
+          </button>
         </div>
       </div>
     </div>
