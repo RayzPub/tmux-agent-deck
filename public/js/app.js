@@ -176,10 +176,12 @@ export async function loadSessions() {
       window.location.href = '/login';
       return;
     }
-    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
     const sessions = await response.json();
-    state.sessionListCache = sessions;
-    renderSessions(sessions);
+    state.sessionListCache = Array.isArray(sessions) ? sessions : [];
+    renderSessions(state.sessionListCache);
   } catch (err) {
     console.error('Failed to load sessions:', err);
     sessionList.innerHTML = `
@@ -193,6 +195,9 @@ export async function loadSessions() {
 }
 
 export function renderSessions(sessions) {
+  if (!Array.isArray(sessions)) {
+    sessions = [];
+  }
   const activeWs = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
   const activeWorkspaceName = activeWs ? activeWs.name : '';
 

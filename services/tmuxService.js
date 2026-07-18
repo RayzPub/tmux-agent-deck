@@ -22,6 +22,19 @@ const getTmuxCommandForUser = (username, args) => {
     const socketPath = `/tmp/tmux_${username}.sock`;
     const userDir = path.join(PROJECT_ROOT, 'user_data', username);
     
+    if (!fs.existsSync(userDir)) {
+      try {
+        fs.mkdirSync(userDir, { recursive: true });
+        const sysUser = getRunUser();
+        if (sysUser && process.getuid && process.getuid() === 0) {
+          const { execSync } = require('child_process');
+          execSync(`chown -R ${sysUser}:${sysUser} "${userDir}"`);
+        }
+      } catch (err) {
+        console.warn(`[tmuxService] Failed to create userDir ${userDir}:`, err.message);
+      }
+    }
+    
     const shellescape = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
     
     // We run unshare -m as root, create a unique temp dir, bind-mount the real userDir to it,
