@@ -150,3 +150,5 @@ workspaces/
 # Build distribution output
 public/dist/
 
+# Local backups directory
+backups/
