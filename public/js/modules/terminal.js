@@ -99,14 +99,66 @@ export async function pasteFromClipboard() {
     }
   }
 
-  const text = prompt("📋 粘贴区域 // 请在下方粘贴您的文本 (Ctrl+V):");
-  if (text && state.currentSession) {
-    const cached = state.sessionCache.get(state.currentSession);
-    if (cached && cached.socket) {
-      cached.socket.emit('terminal-input', text);
-    }
-  }
+  showCustomPasteModal();
 }
+
+export function showCustomPasteModal() {
+  let existing = document.getElementById('customPasteModalOverlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'customPasteModalOverlay';
+  overlay.className = 'paste-modal-overlay';
+  overlay.innerHTML = `
+    <div class="paste-modal-card">
+      <div class="paste-modal-header">
+        <span>📋 剪贴板粘贴</span>
+      </div>
+      <div class="paste-modal-body">
+        <span class="paste-modal-tip">由于浏览器安全限制，无法直接读取剪贴板。请在下方输入框中粘贴您的文本：</span>
+        <textarea class="paste-textarea" id="pasteModalTextarea" placeholder="请在这里粘贴文本 (Ctrl+V 或长按粘贴)..." autofocus></textarea>
+      </div>
+      <div class="paste-modal-actions">
+        <button class="paste-modal-btn" id="btnPasteModalCancel">取消</button>
+        <button class="paste-modal-btn primary" id="btnPasteModalConfirm">确认粘贴</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const textarea = document.getElementById('pasteModalTextarea');
+  setTimeout(() => {
+    textarea?.focus();
+  }, 100);
+
+  const close = () => overlay.remove();
+
+  document.getElementById('btnPasteModalCancel')?.addEventListener('click', close);
+
+  const handleConfirm = () => {
+    const text = textarea?.value;
+    if (text && state.currentSession) {
+      const cached = state.sessionCache.get(state.currentSession);
+      if (cached && cached.socket) {
+        cached.socket.emit('terminal-input', text);
+      }
+    }
+    close();
+  };
+
+  document.getElementById('btnPasteModalConfirm')?.addEventListener('click', handleConfirm);
+
+  textarea?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleConfirm();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  });
+}
+
 
 export async function copySelection() {
   if (state.lastSelection && state.lastSelection.trim()) {
@@ -879,11 +931,7 @@ export function showMobileHalfScreenExtractor(sessionTerm) {
   if (window.lucide) window.lucide.createIcons();
 
   const close = () => overlay.remove();
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay || e.target.id === 'btnDrawerClose') {
-      close();
-    }
-  });
+  document.getElementById('btnDrawerClose')?.addEventListener('click', close);
 
   document.getElementById('btnDrawerCopyAll')?.addEventListener('click', () => {
     writeToClipboard(fullText);
