@@ -131,12 +131,16 @@ export function reportFocusStatus() {
 export function fitTerminalFor(sessionName) {
   const cached = state.sessionCache.get(sessionName);
   if (cached && cached.term && cached.fitAddon) {
-    cached.fitAddon.fit();
-    if (cached.socket) {
-      cached.socket.emit('resize', {
-        cols: cached.term.cols,
-        rows: cached.term.rows
-      });
+    try {
+      cached.fitAddon.fit();
+      if (cached.socket) {
+        cached.socket.emit('resize', {
+          cols: cached.term.cols,
+          rows: cached.term.rows
+        });
+      }
+    } catch (e) {
+      console.warn('fitTerminalFor failed:', e);
     }
   }
 }
@@ -231,8 +235,10 @@ export function attachSession(sessionName) {
     terminalContainer.appendChild(container);
 
     const sessionSocket = io({
+      transports: ['websocket', 'polling'],
+      upgrade: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 15,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000
@@ -282,19 +288,29 @@ export function attachSession(sessionName) {
       
       if (!isFirstConnect) {
         console.log(`Socket reconnected for session: ${sessionName}`);
-        sessionTerm.clear();
         setTimeout(() => {
-          sessionFitAddon.fit();
+          try {
+            if (container && container.clientWidth > 40 && container.clientHeight > 40) {
+              sessionFitAddon.fit();
+            }
+          } catch (e) {
+            console.warn('fit failed on reconnect:', e);
+          }
+          let cols = sessionTerm.cols;
+          let rows = sessionTerm.rows;
+          if (typeof cols !== 'number' || isNaN(cols) || cols <= 0) cols = 80;
+          if (typeof rows !== 'number' || isNaN(rows) || rows <= 0) rows = 24;
+
           sessionSocket.emit('init-terminal', {
             sessionName: sessionName,
-            cols: sessionTerm.cols,
-            rows: sessionTerm.rows
+            cols: cols,
+            rows: rows
           });
           if (sessionName === state.currentSession) {
             sessionTerm.focus();
           }
           reportFocusStatus();
-        }, 100);
+        }, 150);
       } else {
         isFirstConnect = false;
         reportFocusStatus();
@@ -484,11 +500,20 @@ export function attachSession(sessionName) {
     state.sessionCache.set(sessionName, cached);
 
     setTimeout(() => {
-      sessionFitAddon.fit();
+      try {
+        sessionFitAddon.fit();
+      } catch (e) {
+        console.warn('First connect fit failed:', e);
+      }
+      let cols = sessionTerm.cols;
+      let rows = sessionTerm.rows;
+      if (typeof cols !== 'number' || isNaN(cols) || cols <= 0) cols = 80;
+      if (typeof rows !== 'number' || isNaN(rows) || rows <= 0) rows = 24;
+
       sessionSocket.emit('init-terminal', {
         sessionName: sessionName,
-        cols: sessionTerm.cols,
-        rows: sessionTerm.rows
+        cols: cols,
+        rows: rows
       });
       setTimeout(loadSessions, 200);
 
@@ -546,6 +571,10 @@ export function attachSession(sessionName) {
             showTipToast('💡 提示：tmux 鼠标模式已开启。请按住 Shift 键（Mac上按住 Option 键）再用鼠标拖拽选择以进行复制。');
           }
         }
+      }
+
+      if (isCtrlOrCmd && key === 'v') {
+        return false;
       }
       return true;
     });

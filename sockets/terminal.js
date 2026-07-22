@@ -40,6 +40,7 @@ const initSocket = (io) => {
   io.on('connection', (socket) => {
     console.log('Client connected to terminal socket:', socket.id);
     let ptyProcess = null;
+    let isReinitializing = false;
 
     socket.isFocused = false;
     socket.activeSession = null;
@@ -54,6 +55,7 @@ const initSocket = (io) => {
       socket.sessionName = sessionName;
       if (ptyProcess) {
         console.log('Cleaning up existing PTY before re-init for socket:', socket.id);
+        isReinitializing = true;
         try {
           ptyProcess.kill();
         } catch (err) {
@@ -101,6 +103,14 @@ const initSocket = (io) => {
         const defaultKeys = getSystemDefaultKeys();
         const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
 
+        // Claude / Anthropic
+        const claudeKey = keys.claude || defaultKeys.claude;
+        if (claudeKey) ptyEnv.ANTHROPIC_API_KEY = claudeKey;
+        const claudeBaseUrl = keys.claudeBaseUrl || defaultKeys.claudeBaseUrl;
+        if (claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = claudeBaseUrl;
+        const claudeModel = keys.claudeModel || defaultKeys.claudeModel;
+        if (claudeModel) ptyEnv.ANTHROPIC_MODEL = claudeModel;
+
         // Codex / OpenAI
         const codexKey = keys.codex || defaultCodexKey;
         if (codexKey) ptyEnv.OPENAI_API_KEY = codexKey;
@@ -114,6 +124,21 @@ const initSocket = (io) => {
           ptyEnv.OPENAI_MODEL = codexModel;
           ptyEnv.CODEX_MODEL = codexModel;
         }
+
+        // Kimi / Moonshot
+        const kimiKey = keys.kimi || defaultKeys.kimi;
+        if (kimiKey) {
+          ptyEnv.KIMI_API_KEY = kimiKey;
+          ptyEnv.MOONSHOT_API_KEY = kimiKey;
+        }
+        const kimiBaseUrl = keys.kimiBaseUrl || defaultKeys.kimiBaseUrl;
+        if (kimiBaseUrl) {
+          ptyEnv.KIMI_BASE_URL = kimiBaseUrl;
+          ptyEnv.MOONSHOT_BASE_URL = kimiBaseUrl;
+        }
+        const kimiModel = keys.kimiModel || defaultKeys.kimiModel;
+        if (kimiModel) ptyEnv.KIMI_MODEL = kimiModel;
+
       }
 
       try {
@@ -130,13 +155,17 @@ const initSocket = (io) => {
         });
 
         ptyProcess.onExit(({ exitCode, signal }) => {
+          if (isReinitializing) {
+            isReinitializing = false;
+            return;
+          }
           console.log(`PTY process exited with code ${exitCode}, signal ${signal}`);
           socket.emit('terminal-exit');
           ptyProcess = null;
         });
       } catch (err) {
-        console.error('Failed to spawn PTY:', err);
-        socket.emit('terminal-output', '\r\n\x1b[31;1mError: Failed to spawn shell process.\x1b[0m\r\n');
+        console.error('Error spawning PTY:', err);
+        socket.emit('terminal-output', `\r\n\x1b[31;1mError spawning terminal process: ${err.message}\x1b[0m\r\n`);
       }
     });
 
