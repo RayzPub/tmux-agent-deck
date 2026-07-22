@@ -4079,3 +4079,169 @@ body.light-minimalist .highlight-text-btn.secondary:hover {
   border-color: #d0006f;
   box-shadow: 0 2px 8px rgba(255, 0, 127, 0.15);
 }
+
+/* Mobile Bottom Drawer for Terminal Copying */
+.mobile-drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: fadeInOverlay 0.2s ease-out;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mobile-bottom-drawer {
+  position: absolute;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: 12px;
+  right: 12px;
+  width: auto;
+  height: 50vh;
+  background: #0e121e;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  animation: slideUpDrawer 0.25s cubic-bezier(0.1, 0.9, 0.2, 1);
+  overflow: hidden;
+}
+
+@keyframes slideUpDrawer {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.drawer-header {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.12);
+  color: var(--neon-cyan);
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.drawer-title {
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+.drawer-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.drawer-header-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(30, 36, 50, 0.8);
+  color: #ccc;
+  transition: all 0.15s ease;
+}
+
+.drawer-header-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.drawer-header-btn.primary {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.15);
+}
+
+.drawer-header-btn.primary:active {
+  background: rgba(0, 240, 255, 0.3);
+  color: #fff;
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: rgba(5, 8, 15, 0.95);
+  margin: 12px 16px 16px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+}
+
+.drawer-content {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e0e0e0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* Light Theme overrides for mobile bottom drawer */
+body.light-minimalist .mobile-drawer-overlay {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+body.light-minimalist .mobile-bottom-drawer {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 12px 32px rgba(140, 149, 159, 0.12);
+}
+
+body.light-minimalist .drawer-header {
+  color: #1f2328;
+  border-bottom-color: #e1e4e8;
+}
+
+body.light-minimalist .drawer-header-btn {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+  color: #57606a;
+}
+
+body.light-minimalist .drawer-header-btn:active {
+  background: #eaeef2;
+  color: #24292f;
+}
+
+body.light-minimalist .drawer-header-btn.primary {
+  background: #0969da;
+  border-color: #0969da;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+body.light-minimalist .drawer-header-btn.primary:active {
+  background: #0c57d0;
+  border-color: #0c57d0;
+  color: #ffffff;
+}
+
+body.light-minimalist .drawer-body {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+  margin-bottom: 16px;
+}
+
+body.light-minimalist .drawer-content {
+  color: #24292f;
+}

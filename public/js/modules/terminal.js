@@ -353,27 +353,111 @@ export function attachSession(sessionName) {
     
     sessionTerm.open(container);
 
+    container.addEventListener('contextmenu', (e) => {
+      const isMobile = window.matchMedia("(max-width: 768px)").matches || ('ontouchstart' in window);
+      if (isMobile) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        let isPasteAction = false;
+        const xtermScreen = container.querySelector('.xterm-screen');
+        if (xtermScreen && sessionTerm.buffer && sessionTerm.buffer.active) {
+          const sRect = xtermScreen.getBoundingClientRect();
+          const fontSize = sessionTerm.options.fontSize || 14;
+          const lineHeight = sessionTerm.options.lineHeight || 1.2;
+          const cellHeight = fontSize * lineHeight;
+          const clickY = e.clientY || touchStartY;
+          const screenRow = Math.floor((clickY - sRect.top) / cellHeight);
+          const bufferRow = sessionTerm.buffer.active.viewportY + screenRow;
+          const cursorRow = sessionTerm.buffer.active.baseY + sessionTerm.buffer.active.cursorY;
+          
+          if (bufferRow >= cursorRow) {
+            isPasteAction = true;
+          }
+        }
+
+        if (isPasteAction) {
+          pasteFromClipboard();
+        } else {
+          showMobileHalfScreenExtractor(sessionTerm);
+        }
+      }
+    });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
     let lastTouchY = 0;
     let lastTouchTime = 0;
     let touchVelocityY = 0;
     let touchAccumulatorY = 0;
     let inertiaAnimationFrame = null;
+    let longPressTimer = null;
+    let touchMoved = false;
+    let isLongPressActive = false;
 
     container.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchMoved = false;
+        isLongPressActive = false;
+
         lastTouchY = e.touches[0].clientY;
         lastTouchTime = Date.now();
         touchVelocityY = 0;
         touchAccumulatorY = 0;
+
         if (inertiaAnimationFrame) {
           cancelAnimationFrame(inertiaAnimationFrame);
           inertiaAnimationFrame = null;
         }
+
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+          if (!touchMoved) {
+            isLongPressActive = true;
+            if (navigator.vibrate) navigator.vibrate(40);
+            sessionTerm.clearSelection();
+            if (window.getSelection) window.getSelection().removeAllRanges();
+            
+            let isPasteAction = false;
+            const xtermScreen = container.querySelector('.xterm-screen');
+            if (xtermScreen && sessionTerm.buffer && sessionTerm.buffer.active) {
+              const sRect = xtermScreen.getBoundingClientRect();
+              const fontSize = sessionTerm.options.fontSize || 14;
+              const lineHeight = sessionTerm.options.lineHeight || 1.2;
+              const cellHeight = fontSize * lineHeight;
+              const screenRow = Math.floor((touchStartY - sRect.top) / cellHeight);
+              const bufferRow = sessionTerm.buffer.active.viewportY + screenRow;
+              const cursorRow = sessionTerm.buffer.active.baseY + sessionTerm.buffer.active.cursorY;
+              
+              if (bufferRow >= cursorRow) {
+                isPasteAction = true;
+              }
+            }
+
+            if (isPasteAction) {
+              pasteFromClipboard();
+            } else {
+              showMobileHalfScreenExtractor(sessionTerm);
+            }
+          }
+          longPressTimer = null;
+        }, 500);
       }
-    }, { capture: true, passive: false });
+    }, { capture: true, passive: true });
 
     container.addEventListener('touchmove', (e) => {
       if (e.touches.length === 1) {
+        if (longPressTimer) {
+          const dist = Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY);
+          if (dist > 10) {
+            touchMoved = true;
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        }
+
         const currentY = e.touches[0].clientY;
         const currentTime = Date.now();
         const deltaY = lastTouchY - currentY;
@@ -381,7 +465,6 @@ export function attachSession(sessionName) {
 
         if (dt > 0) {
           const currentVelocity = deltaY / dt;
-          // Apply low-pass filter to smooth velocity
           touchVelocityY = touchVelocityY * 0.7 + currentVelocity * 0.3;
         }
 
@@ -409,6 +492,18 @@ export function attachSession(sessionName) {
     }, { capture: true, passive: false });
 
     container.addEventListener('touchend', (e) => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+
+      if (isLongPressActive) {
+        e.preventDefault();
+        e.stopPropagation();
+        isLongPressActive = false;
+        return;
+      }
+
       const now = Date.now();
       // Decay velocity if the user paused before lifting finger
       if (now - lastTouchTime > 100) {
@@ -453,7 +548,7 @@ export function attachSession(sessionName) {
 
         inertiaAnimationFrame = requestAnimationFrame(animateInertia);
       }
-    });
+    }, { capture: true, passive: false });
 
     let dragStart = null;
 
@@ -741,4 +836,62 @@ export function initMobileKeyboard(mobileKeyboardBar) {
     e.preventDefault(); // Prevent focus loss
     triggerHelperKey(btn);
   });
+}
+
+export function showMobileHalfScreenExtractor(sessionTerm) {
+  let existing = document.getElementById('mobileHalfScreenDrawerOverlay');
+  if (existing) existing.remove();
+
+  let textLines = [];
+  if (sessionTerm && sessionTerm.buffer && sessionTerm.buffer.active) {
+    const buffer = sessionTerm.buffer.active;
+    const count = Math.min(buffer.length, 300);
+    const start = Math.max(0, buffer.length - count);
+    for (let i = start; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        textLines.push(line.translateToString(true));
+      }
+    }
+  }
+
+  const fullText = textLines.join('\n').trim() || '（终端暂无输出内容）';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'mobileHalfScreenDrawerOverlay';
+  overlay.className = 'mobile-drawer-overlay';
+  overlay.innerHTML = `
+    <div class="mobile-bottom-drawer">
+      <div class="drawer-header">
+        <span class="drawer-title">🔍 终端提取</span>
+        <div class="drawer-header-actions">
+          <button class="drawer-header-btn primary" id="btnDrawerCopyAll">复制全部</button>
+          <button class="drawer-header-btn" id="btnDrawerClose">关闭</button>
+        </div>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-content">${escapeHtml(fullText)}</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  if (window.lucide) window.lucide.createIcons();
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.id === 'btnDrawerClose') {
+      close();
+    }
+  });
+
+  document.getElementById('btnDrawerCopyAll')?.addEventListener('click', () => {
+    writeToClipboard(fullText);
+    showTipToast('📋 已复制全部终端输出内容到剪贴板！', 2500);
+    close();
+  });
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
