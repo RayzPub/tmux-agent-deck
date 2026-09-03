@@ -892,45 +892,71 @@ router.get('/git/status', requireAuth, (req, res) => {
     if (!fs.existsSync(rootDir)) {
       return res.status(404).json({ error: 'Workspace directory not found' });
     }
-    
-    execCommand('git', ['status', '--porcelain', '-u', '--ignored'], rootDir, (err, stdout, stderr) => {
-      if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
+
+    execCommand('git', ['rev-parse', '--show-toplevel'], rootDir, (revErr, revStdout) => {
+      if (revErr || !revStdout || !revStdout.trim()) {
         return res.json({ isGit: false, files: [] });
       }
-      if (err && err.code === 'ENOENT') {
-        return res.status(500).json({ error: 'Git is not installed on the system' });
-      }
       
-      const files = [];
-      const lines = stdout.split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const code = line.substring(0, 2);
-        let filePath = line.substring(3).trim();
+      const gitRoot = revStdout.trim();
+      
+      execCommand('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '-u', '--ignored', '--', '.'], rootDir, (err, stdout, stderr) => {
+        if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
+          return res.json({ isGit: false, files: [] });
+        }
+        if (err && err.code === 'ENOENT') {
+          return res.status(500).json({ error: 'Git is not installed on the system' });
+        }
         
-        let renameFrom = null;
-        if (code.startsWith('R') || code.endsWith('R')) {
-          const parts = filePath.split(' -> ');
-          if (parts.length === 2) {
-            renameFrom = parts[0];
-            filePath = parts[1];
+        const files = [];
+        const lines = stdout.split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const code = line.substring(0, 2);
+          let filePath = line.substring(3).trim();
+          
+          let renameFrom = null;
+          if (code.startsWith('R') || code.endsWith('R')) {
+            const parts = filePath.split(' -> ');
+            if (parts.length === 2) {
+              renameFrom = parts[0];
+              filePath = parts[1];
+            }
           }
+          
+          if (filePath.startsWith('"') && filePath.endsWith('"')) {
+            filePath = filePath.slice(1, -1);
+          }
+          if (renameFrom && renameFrom.startsWith('"') && renameFrom.endsWith('"')) {
+            renameFrom = renameFrom.slice(1, -1);
+          }
+          
+          // Map filePath (which git reports relative to gitRoot) to be relative to workspace rootDir
+          const fullPath = path.resolve(gitRoot, filePath);
+          const relToWorkspace = path.relative(rootDir, fullPath);
+          
+          // If the file is outside rootDir, skip it
+          if (relToWorkspace.startsWith('..') || path.isAbsolute(relToWorkspace)) {
+            continue;
+          }
+          
+          let relRenameFrom = null;
+          if (renameFrom) {
+            const fullRenamePath = path.resolve(gitRoot, renameFrom);
+            relRenameFrom = path.relative(rootDir, fullRenamePath);
+          }
+          
+          files.push({
+            path: relToWorkspace,
+            status: code.trim(),
+            index: code[0],
+            worktree: code[1],
+            renameFrom: relRenameFrom
+          });
         }
         
-        if (filePath.startsWith('"') && filePath.endsWith('"')) {
-          filePath = filePath.slice(1, -1);
-        }
-        
-        files.push({
-          path: filePath,
-          status: code.trim(),
-          index: code[0],
-          worktree: code[1],
-          renameFrom
-        });
-      }
-      
-      res.json({ isGit: true, files });
+        res.json({ isGit: true, files });
+      });
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -947,32 +973,48 @@ router.get('/git/diff', requireAuth, (req, res) => {
     if (!fs.existsSync(rootDir)) {
       return res.status(404).json({ error: 'Workspace directory not found' });
     }
-    
-    if (filePath) {
-      const targetPath = safeResolve(workspacePath, filePath, req.user.username);
-      const relPath = path.relative(rootDir, targetPath);
+
+    execCommand('git', ['rev-parse', '--show-toplevel'], rootDir, (revErr, revStdout) => {
+      if (revErr || !revStdout || !revStdout.trim()) {
+        return res.status(400).json({ error: 'Not a git repository' });
+      }
       
-      execCommand('git', ['status', '--porcelain', '--', relPath], rootDir, (statusErr, statusStdout) => {
-        const isUntracked = statusStdout && statusStdout.trim().startsWith('??');
+      if (filePath) {
+        const targetPath = safeResolve(workspacePath, filePath, req.user.username);
+        const relPath = path.relative(rootDir, targetPath);
         
-        if (isUntracked) {
-          execCommand('git', ['diff', '--no-index', '--', '/dev/null', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
-            res.json({ diff: diffStdout || '' });
-          });
-        } else {
-          execCommand('git', ['diff', 'HEAD', '--', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
-            res.json({ diff: diffStdout || '' });
-          });
-        }
-      });
-    } else {
-      execCommand('git', ['diff', 'HEAD'], rootDir, (err, stdout, stderr) => {
-        if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
-          return res.status(400).json({ error: 'Not a git repository' });
-        }
-        res.json({ diff: stdout || '' });
-      });
-    }
+        execCommand('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '--', relPath], rootDir, (statusErr, statusStdout) => {
+          const isUntracked = statusStdout && statusStdout.trim().startsWith('??');
+          
+          if (isUntracked) {
+            execCommand('git', ['diff', '--no-index', '--', '/dev/null', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
+              res.json({ diff: diffStdout || '' });
+            });
+          } else {
+            execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', 'HEAD', '--', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
+              if (diffErr && diffStderr && diffStderr.includes("ambiguous argument 'HEAD'")) {
+                return execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', '--', relPath], rootDir, (e2, out2) => {
+                  res.json({ diff: out2 || '' });
+                });
+              }
+              res.json({ diff: diffStdout || '' });
+            });
+          }
+        });
+      } else {
+        execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', 'HEAD'], rootDir, (err, stdout, stderr) => {
+          if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
+            return res.status(400).json({ error: 'Not a git repository' });
+          }
+          if (err && stderr && stderr.includes("ambiguous argument 'HEAD'")) {
+            return execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative'], rootDir, (e2, out2) => {
+              res.json({ diff: out2 || '' });
+            });
+          }
+          res.json({ diff: stdout || '' });
+        });
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

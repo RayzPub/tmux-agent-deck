@@ -101,6 +101,19 @@ export async function updateGitStatus() {
     const response = await fetch(`/api/git/status?workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
     if (response.ok) {
       const data = await response.json();
+      state.isGit = !!data.isGit;
+      const gitDiffBtn = document.getElementById('gitDiffWorkspaceBtn');
+      if (gitDiffBtn) {
+        if (!state.isGit) {
+          gitDiffBtn.title = '当前工作区不是 Git 仓库';
+          gitDiffBtn.style.opacity = '0.4';
+          gitDiffBtn.style.cursor = 'not-allowed';
+        } else {
+          gitDiffBtn.title = state.showOnlyGitChanges ? '显示全部文件' : '仅显示已修改文件';
+          gitDiffBtn.style.opacity = '1';
+          gitDiffBtn.style.cursor = 'pointer';
+        }
+      }
       if (data.isGit && data.files) {
         data.files.forEach(file => {
           let cleanPath = file.path;

@@ -30,8 +30,11 @@ export async function loadGitDiff(path = '') {
       diffStatusMsg.textContent = '';
       parseAndRenderDiff(data.diff);
     } else {
-      diffStatusMsg.textContent = '错误';
-      container.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 20px; text-align: center;">错误: ${data.error || '获取差异对比失败'}</div>`;
+      diffStatusMsg.textContent = '提示';
+      const errMsg = (data.error === 'Not a git repository')
+        ? '当前工作区不是 Git 仓库，无法进行 Git 差异对比。'
+        : ('错误: ' + (data.error || '获取差异对比失败'));
+      container.innerHTML = `<div class="error-text" style="color: var(--neon-pink); padding: 20px; text-align: center;">${errMsg}</div>`;
     }
   } catch (err) {
     console.error(err);

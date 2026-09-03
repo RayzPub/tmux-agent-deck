@@ -636,6 +636,10 @@ collapseAllBtn.addEventListener('click', () => {
 });
 
 gitDiffWorkspaceBtn.addEventListener('click', () => {
+  if (state.isGit === false) {
+    alert('当前工作区所在目录不是 Git 仓库，无法筛选修改文件。');
+    return;
+  }
   state.showOnlyGitChanges = !state.showOnlyGitChanges;
   if (state.showOnlyGitChanges) {
     gitDiffWorkspaceBtn.classList.add('active');
