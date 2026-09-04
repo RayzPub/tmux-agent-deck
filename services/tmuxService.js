@@ -367,10 +367,78 @@ const injectAgentHooks = (workspacePath, agent, resolveWorkspacePath) => {
   }
 };
 
+// Helper: Fetch all existing logical session names for a specific user
+const getUserSessionNames = async (username = null) => {
+  try {
+    const stdout = await execPromise(['list-sessions', '-F', '#{session_name}'], username);
+    const rawSessions = stdout.trim().split('\n').filter(Boolean);
+    const prefix = (MULTI_USER_ENABLED && username) ? `u_${username}_` : '';
+    const names = [];
+    for (const fullName of rawSessions) {
+      if (prefix) {
+        if (fullName.startsWith(prefix)) {
+          names.push(fullName.substring(prefix.length));
+        }
+      } else {
+        names.push(fullName);
+      }
+    }
+    return names;
+  } catch (err) {
+    return [];
+  }
+};
+
+// Helper: Calculate the next available session name with an auto-incrementing suffix
+const getNextAvailableSessionName = (requestedName, existingNames = []) => {
+  if (!requestedName) requestedName = 'session';
+  const nameSet = new Set(existingNames);
+  if (!nameSet.has(requestedName)) {
+    return requestedName;
+  }
+
+  const matchSep = requestedName.match(/^(.*?)([-_])(\d+)$/);
+  const matchNoSep = requestedName.match(/^(.*?)(\d+)$/);
+
+  let base = requestedName;
+  let sep = '-';
+  let startNum = 2;
+
+  if (matchSep) {
+    base = matchSep[1] || requestedName;
+    sep = matchSep[2];
+    startNum = parseInt(matchSep[3], 10) + 1;
+  } else if (matchNoSep && nameSet.has(matchNoSep[1])) {
+    base = matchNoSep[1];
+    sep = '';
+    startNum = parseInt(matchNoSep[2], 10) + 1;
+  } else {
+    base = requestedName;
+    const hasUnseparated = existingNames.some(n => new RegExp(`^${base}\\d+$`).test(n));
+    const hasUnderscore = existingNames.some(n => new RegExp(`^${base}_\\d+$`).test(n));
+    if (hasUnseparated) {
+      sep = '';
+    } else if (hasUnderscore) {
+      sep = '_';
+    } else {
+      sep = '-';
+    }
+    startNum = 2;
+  }
+
+  let num = startNum;
+  while (nameSet.has(`${base}${sep}${num}`)) {
+    num++;
+  }
+  return `${base}${sep}${num}`;
+};
+
 module.exports = {
   getRunUser,
   execTmux,
   execPromise,
   injectAgentHooks,
-  getTmuxCommandForUser
+  getTmuxCommandForUser,
+  getNextAvailableSessionName,
+  getUserSessionNames
 };

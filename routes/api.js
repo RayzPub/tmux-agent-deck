@@ -7,7 +7,7 @@ const crypto = require('crypto');
 
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
-const { execTmux, injectAgentHooks, getRunUser } = require('../services/tmuxService');
+const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
 const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureClaudeTrust } = require('../services/fileService');
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
@@ -337,7 +337,7 @@ router.get('/sessions', requireAuth, (req, res) => {
 });
 
 // Create session
-router.post('/sessions', requireAuth, (req, res) => {
+router.post('/sessions', requireAuth, async (req, res) => {
   const { name, agent, workspacePath, workspaceName } = req.body;
   
   // Validate allowed agents
@@ -348,9 +348,19 @@ router.post('/sessions', requireAuth, (req, res) => {
     return res.status(403).json({ error: `智能体环境 '${reqAgent}' 已被禁用。` });
   }
 
-  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+  // Determine initial session name, defaulting based on agent if missing
+  let rawName = (typeof name === 'string') ? name.trim() : '';
+  if (!rawName) {
+    rawName = reqAgent === 'default' ? 'shell' : reqAgent;
+  }
+
+  if (!/^[a-zA-Z0-9_-]+$/.test(rawName)) {
     return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
   }
+
+  const username = req.user ? req.user.username : null;
+  const existingNames = await getUserSessionNames(username);
+  let finalName = getNextAvailableSessionName(rawName, existingNames);
 
   let resolvedWorkspacePath = workspacePath;
   if (workspaceName && !resolvedWorkspacePath) {
@@ -364,13 +374,6 @@ router.post('/sessions', requireAuth, (req, res) => {
   if (!resolvedWorkspacePath) {
     resolvedWorkspacePath = getDefaultWorkspacePath(req.user ? req.user.username : null);
   }
-
-  let physicalSession = name;
-  if (MULTI_USER_ENABLED) {
-    physicalSession = `u_${req.user.username}_${name}`;
-  }
-
-  const args = ['new-session', '-d', '-s', physicalSession];
 
   // resolvedPath is the validated absolute path on disk for this session
   let resolvedPath = null;
@@ -386,8 +389,6 @@ router.post('/sessions', requireAuth, (req, res) => {
     
     // Inject local hooks for the target agent — use the already-resolved path
     injectAgentHooks(resolvedPath, agent, (p) => resolveWorkspacePath(p, req.user.username));
-
-    args.push('-c', resolvedPath);
   }
 
   // userHome: the $HOME directory set for the session shell.
@@ -463,43 +464,66 @@ router.post('/sessions', requireAuth, (req, res) => {
     shellCmd = kimiPath ? `${kimiPath}; exec bash` : 'exec bash';
   }
 
-  args.push(`${envPrefix}; ${shellCmd}`);
-
-  execTmux(args, (err, stdout, stderr) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to create session', details: stderr });
+  const runCreation = (sessionNameToCreate, retriesLeft = 3) => {
+    let physicalSession = sessionNameToCreate;
+    if (MULTI_USER_ENABLED) {
+      physicalSession = `u_${req.user.username}_${sessionNameToCreate}`;
     }
 
-    const optionsToSet = [
-      ['set-option', '-t', physicalSession, 'status', 'off'],
-      ['set-option', '-t', physicalSession, 'mouse', 'on']
-    ];
-    if (workspaceName) {
-      optionsToSet.push(['set-option', '-t', physicalSession, '@workspace_name', workspaceName]);
+    const args = ['new-session', '-d', '-s', physicalSession];
+    if (resolvedPath) {
+      args.push('-c', resolvedPath);
     }
-    if (agent) {
-      optionsToSet.push(['set-option', '-t', physicalSession, '@agent_type', agent]);
-    }
-    if (agentSessionId) {
-      optionsToSet.push(['set-option', '-t', physicalSession, '@agent_session_id', agentSessionId]);
-    }
+    args.push(`${envPrefix}; ${shellCmd}`);
 
-    let chain = Promise.resolve();
-    optionsToSet.forEach(optArgs => {
-      chain = chain.then(() => new Promise((resolve) => {
-        execTmux(optArgs, (optErr) => {
-          if (optErr) {
-            console.error(`Failed to set tmux option ${optArgs.join(' ')}:`, optErr);
-          }
-          resolve();
-        }, req.user.username);
-      }));
-    });
+    execTmux(args, async (err, stdout, stderr) => {
+      if (err) {
+        if ((stderr || '').toLowerCase().includes('duplicate session') && retriesLeft > 0) {
+          const freshNames = await getUserSessionNames(username);
+          const nextAttemptName = getNextAvailableSessionName(sessionNameToCreate, freshNames);
+          return runCreation(nextAttemptName, retriesLeft - 1);
+        }
+        return res.status(500).json({ error: 'Failed to create session', details: stderr });
+      }
 
-    chain.then(() => {
-      res.json({ success: true, name });
-    });
-  }, req.user.username);
+      const optionsToSet = [
+        ['set-option', '-t', physicalSession, 'status', 'off'],
+        ['set-option', '-t', physicalSession, 'mouse', 'on']
+      ];
+      if (workspaceName) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@workspace_name', workspaceName]);
+      }
+      if (agent) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_type', agent]);
+      }
+      if (agentSessionId) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_session_id', agentSessionId]);
+      }
+
+      let chain = Promise.resolve();
+      optionsToSet.forEach(optArgs => {
+        chain = chain.then(() => new Promise((resolve) => {
+          execTmux(optArgs, (optErr) => {
+            if (optErr) {
+              console.error(`Failed to set tmux option ${optArgs.join(' ')}:`, optErr);
+            }
+            resolve();
+          }, req.user.username);
+        }));
+      });
+
+      chain.then(() => {
+        res.json({
+          success: true,
+          name: sessionNameToCreate,
+          originalName: rawName,
+          renamed: sessionNameToCreate !== rawName
+        });
+      });
+    }, req.user.username);
+  };
+
+  runCreation(finalName);
 });
 
 // Kill session

@@ -3,7 +3,8 @@ import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
 import { saveEditorFile, updateMarkdownPreview, updatePreviewUI, buildHtmlPreviewUrl } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
-import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard } from './modules/terminal.js';
+import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard, showTipToast } from './modules/terminal.js';
+import { getNextAvailableSessionName } from './modules/sessionUtils.js';
 import { initPushNotifications, togglePushSubscription } from './modules/push.js';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
@@ -718,10 +719,22 @@ editorTextarea.addEventListener('keydown', (e) => {
 });
 
 // Session creation
+let suggestedSessionName = '';
+
+const getSuggestedNameForAgent = (agent) => {
+  const base = agent === 'default' ? 'shell' : (agent || 'session');
+  const existingNames = (state.sessionListCache || []).map(s => s.name);
+  return getNextAvailableSessionName(base, existingNames);
+};
+
 newSessionBtn.addEventListener('click', () => {
   closeSidebarOnMobile();
   sessionModal.classList.remove('hidden');
-  newSessionNameInput.value = '';
+
+  const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
+  const agent = selectedAgentRadio ? selectedAgentRadio.value : 'default';
+  suggestedSessionName = getSuggestedNameForAgent(agent);
+  newSessionNameInput.value = suggestedSessionName;
   
   sessionWorkspaceSelect.value = state.currentWorkspacePath || '';
   const activeWs = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
@@ -732,6 +745,26 @@ newSessionBtn.addEventListener('click', () => {
   }
   
   newSessionNameInput.focus();
+  newSessionNameInput.select();
+});
+
+// Update suggested name when user switches agent options if the name wasn't customized
+document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    const curVal = newSessionNameInput.value.trim();
+    if (!curVal || curVal === suggestedSessionName) {
+      suggestedSessionName = getSuggestedNameForAgent(radio.value);
+      newSessionNameInput.value = suggestedSessionName;
+      newSessionNameInput.select();
+    }
+  });
+});
+
+// Track if user manually customizes the session name
+newSessionNameInput.addEventListener('input', () => {
+  if (newSessionNameInput.value.trim() !== suggestedSessionName) {
+    suggestedSessionName = '';
+  }
 });
 
 const welcomeNewSessionBtn = document.getElementById('welcomeNewSessionBtn');
@@ -760,11 +793,14 @@ sessionModal.addEventListener('click', (e) => {
 
 createSessionForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const name = newSessionNameInput.value.trim();
-  if (!name) return;
-
+  let name = newSessionNameInput.value.trim();
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'default';
+
+  if (!name) {
+    name = getSuggestedNameForAgent(agent);
+    newSessionNameInput.value = name;
+  }
 
   const workspacePath = sessionWorkspaceSelect.value;
   const activeWs = state.workspacesList.find(w => w.path === workspacePath);
@@ -780,9 +816,14 @@ createSessionForm.addEventListener('submit', async (e) => {
     });
 
     if (response.ok) {
+      const data = await response.json();
       closeModal();
       await loadSessions();
-      attachSession(name);
+      const actualName = (data && data.name) ? data.name : name;
+      attachSession(actualName);
+      if (data && data.renamed && data.originalName) {
+        showTipToast(`会话 "${data.originalName}" 已存在，已自动命名为 "${actualName}"`, 3500);
+      }
     } else {
       const data = await response.json();
       alert('创建会话失败: ' + (data.error || '未知错误'));
