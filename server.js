@@ -13,11 +13,15 @@ const { execTmux, getRunUser } = require('./services/tmuxService');
 const { startMonitoring } = require('./services/monitorService');
 const { initSocket } = require('./sockets/terminal');
 const { runMigration } = require('./services/dbService');
+const { initClaudeConfig } = require('./services/fileService');
 const apiRoutes = require('./routes/api');
 const imBot = require('./im-bot');
 
 // Run data migrations on boot
 runMigration();
+
+// Initialize Claude Code presets (theme: dark, trust folder bypass)
+initClaudeConfig();
 
 // Helper to get HTML file path (prefer public/dist/ if build exists, otherwise public/)
 const getHtmlPath = (filename) => {
@@ -77,8 +81,8 @@ app.use((req, res, next) => {
     cleanPath === '/login' ||
     cleanPath === '/register'
   ) {
-    // HTML pages allow协商缓存 (revalidation using ETag/304), but must check with origin on every load
-    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    // HTML pages must never be stale-cached by browser/CDN
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
   }
@@ -126,9 +130,18 @@ const codeStaticOptions = {
 };
 
 const docsStaticOptions = {
-  maxAge: '7d', // Cache documentation/images for 7 days
+  maxAge: 0,
   etag: true,
-  lastModified: true
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath && filePath.endsWith('.md')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+    }
+  }
 };
 
 app.use('/dist', express.static(path.join(PROJECT_ROOT, 'public', 'dist'), {

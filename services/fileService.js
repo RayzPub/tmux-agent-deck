@@ -102,6 +102,209 @@ const getSystemDefaultKeys = () => {
 };
 
 /**
+ * Ensures Claude Code CLI theme is preset (default 'dark') so that
+ * interactive startup theme selection dialog is skipped.
+ */
+const ensureClaudeSettings = (targetHome) => {
+  const home = targetHome || getHomeDir();
+  const claudeDir = path.join(home, '.claude');
+  if (!fs.existsSync(claudeDir)) {
+    try {
+      fs.mkdirSync(claudeDir, { recursive: true });
+      chownToSudoUser(claudeDir);
+    } catch (e) {
+      console.warn(`[fileService] Could not create .claude directory in ${home}: ${e.message}`);
+    }
+  }
+
+  const settingsPath = path.join(claudeDir, 'settings.json');
+  let settings = {};
+  let changed = false;
+
+  if (fs.existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch (e) {
+      settings = {};
+    }
+  } else {
+    changed = true;
+  }
+
+  if (!settings.theme) {
+    settings.theme = 'dark';
+    changed = true;
+  }
+
+  if (changed) {
+    try {
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      chownToSudoUser(settingsPath);
+    } catch (e) {
+      console.warn(`[fileService] Could not write settings to ${settingsPath}: ${e.message}`);
+    }
+  }
+};
+
+/**
+ * Ensures a directory (or list of directories) is marked as trusted in Claude Code's ~/.claude.json
+ * so that the interactive "Trust folder" confirmation dialog is skipped.
+ */
+const ensureClaudeTrust = (targetPaths, targetHome) => {
+  if (!targetPaths) return;
+  const rawList = Array.isArray(targetPaths) ? targetPaths : [targetPaths];
+  const pathsToTrust = new Set();
+  for (const p of rawList) {
+    if (!p) continue;
+    try {
+      pathsToTrust.add(path.resolve(p));
+      if (fs.existsSync(p)) {
+        pathsToTrust.add(fs.realpathSync(p));
+      }
+    } catch (e) {}
+  }
+  if (pathsToTrust.size === 0) return;
+
+  const sysHome = getHomeDir();
+  const targetHomeDir = targetHome || sysHome;
+
+  const candidateFiles = new Set();
+  if (targetHomeDir) candidateFiles.add(path.join(targetHomeDir, '.claude.json'));
+  if (sysHome) candidateFiles.add(path.join(sysHome, '.claude.json'));
+
+  const processedRealPaths = new Set();
+
+  for (const configPath of candidateFiles) {
+    let realConfigPath = configPath;
+    try {
+      if (fs.existsSync(configPath)) {
+        realConfigPath = fs.realpathSync(configPath);
+      }
+    } catch (e) {}
+
+    if (processedRealPaths.has(realConfigPath)) continue;
+    processedRealPaths.add(realConfigPath);
+
+    let config = {};
+    let fileExisted = false;
+    if (fs.existsSync(realConfigPath)) {
+      fileExisted = true;
+      try {
+        config = JSON.parse(fs.readFileSync(realConfigPath, 'utf8'));
+      } catch (e) {
+        config = {};
+      }
+    }
+
+    if (!config.projects) {
+      config.projects = {};
+    }
+    if (config.hasCompletedOnboarding === undefined) {
+      config.hasCompletedOnboarding = true;
+    }
+
+    let changed = !fileExisted;
+    for (const p of pathsToTrust) {
+      if (!config.projects[p]) {
+        config.projects[p] = {};
+        changed = true;
+      }
+      if (config.projects[p].hasTrustDialogAccepted !== true) {
+        config.projects[p].hasTrustDialogAccepted = true;
+        changed = true;
+      }
+      if (config.projects[p].hasCompletedProjectOnboarding !== true) {
+        config.projects[p].hasCompletedProjectOnboarding = true;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      try {
+        const dir = path.dirname(realConfigPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+          chownToSudoUser(dir);
+        }
+        fs.writeFileSync(realConfigPath, JSON.stringify(config, null, 2), 'utf8');
+        chownToSudoUser(realConfigPath);
+      } catch (e) {
+        console.warn(`[fileService] Could not write trust config to ${realConfigPath}: ${e.message}`);
+      }
+    }
+  }
+};
+
+/**
+ * Global initialization on server startup:
+ * Pre-configures Claude settings (theme: dark) and pre-trusts all registered workspaces
+ * across the system and for all users.
+ */
+const initClaudeConfig = () => {
+  const sysHome = getHomeDir();
+  ensureClaudeSettings(sysHome);
+
+  const allPathsToTrust = new Set([PROJECT_ROOT, sysHome]);
+
+  // Global workspaces
+  const globalWs = readWorkspaces();
+  if (Array.isArray(globalWs)) {
+    for (const w of globalWs) {
+      if (w && w.path) allPathsToTrust.add(resolveWorkspacePath(w.path));
+    }
+  }
+
+  // Multi-user home and workspaces
+  const userDataDir = path.join(PROJECT_ROOT, 'user_data');
+  if (fs.existsSync(userDataDir)) {
+    try {
+      const userEntries = fs.readdirSync(userDataDir, { withFileTypes: true });
+      for (const entry of userEntries) {
+        if (entry.isDirectory()) {
+          const username = entry.name;
+          const uHome = path.join(userDataDir, username, 'home');
+          allPathsToTrust.add(uHome);
+          ensureClaudeSettings(uHome);
+
+          const userWs = readWorkspaces(username);
+          if (Array.isArray(userWs)) {
+            for (const w of userWs) {
+              if (w && w.path) {
+                const resolved = resolveWorkspacePath(w.path, username);
+                allPathsToTrust.add(resolved);
+              }
+            }
+          }
+          ensureClaudeTrust(Array.from(allPathsToTrust), uHome);
+        }
+      }
+    } catch (e) {
+      console.warn(`[fileService] Error scanning user_data in initClaudeConfig: ${e.message}`);
+    }
+  }
+
+  // Also scan data/ directory for any workspaces_*.json
+  if (fs.existsSync(DATA_DIR)) {
+    try {
+      const files = fs.readdirSync(DATA_DIR);
+      for (const file of files) {
+        if (file.startsWith('workspaces_') && file.endsWith('.json')) {
+          const username = file.replace(/^workspaces_/, '').replace(/\.json$/, '');
+          const wsList = readWorkspaces(username);
+          if (Array.isArray(wsList)) {
+            for (const w of wsList) {
+              if (w && w.path) allPathsToTrust.add(resolveWorkspacePath(w.path, username));
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  ensureClaudeTrust(Array.from(allPathsToTrust), sysHome);
+};
+
+/**
  * Returns the per-user HOME directory (user_data/[username]/home).
  * This is set as $HOME when launching agent sessions so agents can write
  * their own config (shell history, local overrides) without polluting the
@@ -190,6 +393,7 @@ const getUserHomeDir = (username) => {
       console.warn(`[userHome] Could not copy settings.json: ${e.message}`);
     }
   }
+  ensureClaudeSettings(userHome);
 
   // 1.2 Initialize user's private .codex directory
   const userCodexDir = path.join(userHome, '.codex');
@@ -521,6 +725,11 @@ const getUserHomeDir = (username) => {
     }
   }
 
+  try {
+    const userWorkspaces = readWorkspaces(username).map(w => resolveWorkspacePath(w.path, username));
+    ensureClaudeTrust([userHome, PROJECT_ROOT, ...userWorkspaces], userHome);
+  } catch (e) {}
+
   return userHome;
 };
 
@@ -599,10 +808,18 @@ const writeWorkspaces = (workspaces, username) => {
       }
       const userWorkspacesFile = path.join(DATA_DIR, `workspaces_${username}.json`);
       fs.writeFileSync(userWorkspacesFile, JSON.stringify(workspaces, null, 2), 'utf8');
+      if (Array.isArray(workspaces)) {
+        const paths = workspaces.map(w => resolveWorkspacePath(w.path, username));
+        ensureClaudeTrust(paths, getUserHomeDir(username));
+      }
       return true;
     }
 
     fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(workspaces, null, 2), 'utf8');
+    if (Array.isArray(workspaces)) {
+      const paths = workspaces.map(w => resolveWorkspacePath(w.path));
+      ensureClaudeTrust(paths, getHomeDir());
+    }
     return true;
   } catch (err) {
     console.error('Error writing workspaces file:', err);
@@ -723,6 +940,9 @@ const updateUserKeysFile = (username, keys) => {
     if (!settings.env) {
       settings.env = {};
     }
+    if (!settings.theme) {
+      settings.theme = 'dark';
+    }
     if (keys.claude) {
       settings.env.ANTHROPIC_AUTH_TOKEN = keys.claude;
     } else if (keys.claude === '') {
@@ -799,5 +1019,8 @@ module.exports = {
   getUserHomeDir,
   getDefaultWorkspacePath,
   updateUserKeysFile,
-  getSystemDefaultKeys
+  getSystemDefaultKeys,
+  ensureClaudeSettings,
+  ensureClaudeTrust,
+  initClaudeConfig
 };

@@ -8,10 +8,11 @@ const crypto = require('crypto');
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureClaudeTrust } = require('../services/fileService');
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
+const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('../services/agentChatService');
 
 // Shell escape utility for safe command interpolation
 const shellescape = (s) => {
@@ -402,6 +403,8 @@ router.post('/sessions', requireAuth, (req, res) => {
   // In single-user mode HOME is already correct; in multi-user mode we point HOME at user sandbox.
   // Use shellescape to prevent command injection via workspace path.
   const workDir = resolvedPath || userHome;
+  ensureClaudeSettings(userHome);
+  ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
   let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
 
   // Inject system default fallback keys dynamically, then source user's private .api_keys
@@ -440,13 +443,15 @@ router.post('/sessions', requireAuth, (req, res) => {
   };
 
   let shellCmd = 'exec bash';
+  let agentSessionId = null;
   if (agent === 'agy') {
     const agyPath = getAgentPath('agy');
     const finalAgy = agyPath || 'agy';
     shellCmd = `${finalAgy} --dangerously-skip-permissions; exec bash`;
   } else if (agent === 'claude') {
     const claudePath = getAgentPath('claude');
-    shellCmd = claudePath ? `${claudePath} --permission-mode auto; exec bash` : 'exec bash';
+    agentSessionId = crypto.randomUUID();
+    shellCmd = claudePath ? `${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
   } else if (agent === 'codex') {
     const codexPath = getAgentPath('codex');
     shellCmd = codexPath ? `${codexPath} -c check_for_update=false -c update_on_startup=false; exec bash` : 'exec bash';
@@ -457,8 +462,6 @@ router.post('/sessions', requireAuth, (req, res) => {
     }
     shellCmd = kimiPath ? `${kimiPath}; exec bash` : 'exec bash';
   }
-
-
 
   args.push(`${envPrefix}; ${shellCmd}`);
 
@@ -476,6 +479,9 @@ router.post('/sessions', requireAuth, (req, res) => {
     }
     if (agent) {
       optionsToSet.push(['set-option', '-t', physicalSession, '@agent_type', agent]);
+    }
+    if (agentSessionId) {
+      optionsToSet.push(['set-option', '-t', physicalSession, '@agent_session_id', agentSessionId]);
     }
 
     let chain = Promise.resolve();
@@ -1188,6 +1194,78 @@ router.get('/login-by-token', (req, res) => {
 
   // Redirect to main deck
   res.redirect('/');
+});
+
+// API: Get structured chat history for a session (Agent Chat Mode)
+router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const user = req.user ? req.user.username : null;
+  const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
+
+  // Query tmux metadata including pane_pid
+  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}'], async (err, stdout) => {
+    if (err) {
+      return res.status(404).json({ error: 'Session not found', details: err.message });
+    }
+
+    const parts = (stdout || '').trim().split('|');
+    const sessionPath = parts[0] || null;
+    const workspaceName = parts[1] || '';
+    const agentType = parts[2] || '';
+    const agentSessionId = (parts[3] && parts[3].trim()) ? parts[3].trim() : null;
+    const panePid = (parts[4] && parts[4].trim()) ? parts[4].trim() : null;
+
+    const userHome = getUserHomeDir(user);
+    const sysHome = getHomeDir();
+
+    // Determine target workspace path
+    const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
+
+    // Locate the matching .jsonl session file strictly
+    const sessionFileInfo = findClaudeSessionFile(targetWorkspace, agentSessionId, panePid, userHome, sysHome);
+
+    const isClaude = (agentType === 'claude') || (sessionFileInfo && sessionFileInfo.filePath) || (panePid && getSessionIdFromPanePid(panePid));
+
+    // Only Claude Code is currently supported for Chat Mode
+    if (!isClaude) {
+      return res.json({
+        supported: false,
+        hasHistory: false,
+        sessionName: name,
+        agentType: agentType || 'terminal',
+        messages: []
+      });
+    }
+
+    if (!sessionFileInfo || !sessionFileInfo.filePath) {
+      return res.json({
+        supported: true,
+        hasHistory: false,
+        sessionName: name,
+        agentType: 'claude',
+        workspacePath: targetWorkspace,
+        messages: [],
+        pendingAction: null
+      });
+    }
+
+    try {
+      const parsed = await parseClaudeJsonl(sessionFileInfo.filePath, 60);
+      return res.json({
+        supported: true,
+        hasHistory: true,
+        sessionName: name,
+        agentType: 'claude',
+        sessionId: sessionFileInfo.sessionId,
+        workspacePath: targetWorkspace,
+        messages: parsed.messages,
+        pendingAction: parsed.pendingAction,
+        lastUpdated: parsed.lastUpdated
+      });
+    } catch (parseErr) {
+      return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
+    }
+  }, user);
 });
 
 module.exports = router;

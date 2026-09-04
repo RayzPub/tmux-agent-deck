@@ -20,6 +20,7 @@
   <!-- Custom Styles -->
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/invite-modal.css">
+  <link rel="stylesheet" href="/css/chat-mode.css">
   <!-- Favicon / Tab Icon -->
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
@@ -81,6 +82,10 @@
           <button id="qrCodeBtn" class="header-btn hidden-mobile" title="手机扫码打开网页">
             <i data-lucide="qr-code"></i>
             <span>手机扫码连接</span>
+          </button>
+          <button id="headerHelpDocBtn" class="header-btn" title="查看新手快速上手指南">
+            <i data-lucide="book-open"></i>
+            <span>使用指南</span>
           </button>
           <button id="reloadBtn" class="header-btn" title="重新加载页面">
             <i data-lucide="refresh-cw"></i>
@@ -220,14 +225,21 @@
             随时随地极客编程
           </p>
           <p class="slogan-desc" id="welcomeSloganDesc">请从侧边栏选择已有的 tmux 会话，或新建会话以建立终端连接通道。</p>
-          <div id="welcomeNoSessionAction" class="welcome-action-container" style="margin-top: 24px; display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap;">
+          <div id="welcomeNoSessionAction" class="welcome-action-container">
             <button id="welcomeNewSessionBtn" class="highlight-text-btn">
               <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i>
-              <span>新建智能体会话</span>
+              <span class="btn-text-full">新建智能体会话</span>
+              <span class="btn-text-mobile">新建会话</span>
             </button>
             <button id="welcomeSelectSessionBtn" class="highlight-text-btn hidden-desktop">
               <i data-lucide="menu" style="width: 16px; height: 16px;"></i>
-              <span>选择已有会话</span>
+              <span class="btn-text-full">选择已有会话</span>
+              <span class="btn-text-mobile">选择会话</span>
+            </button>
+            <button id="welcomeHelpDocBtn" class="highlight-text-btn secondary" title="查看新手快速上手指南">
+              <i data-lucide="book-open" style="width: 16px; height: 16px;"></i>
+              <span class="btn-text-full">新手使用指南</span>
+              <span class="btn-text-mobile">新手指南</span>
             </button>
           </div>
         </div>
@@ -355,6 +367,35 @@
         <div class="editor-container-wrapper" style="overflow: auto; padding: 16px; display: block;">
           <div id="diffContentContainer" class="diff-viewer-content">
             <!-- Diff output parsed as lines will be rendered here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Help Documentation Panel (when viewing guide tab) -->
+      <section class="editor-panel hidden" id="docPanel" style="border-color: rgba(0, 240, 255, 0.35); box-shadow: 0 0 30px rgba(0, 240, 255, 0.06);">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+
+        <!-- Doc Header -->
+        <div class="editor-header" style="border-bottom: 1px solid rgba(0, 240, 255, 0.2);">
+          <div class="editor-title">
+            <i data-lucide="book-open" class="editor-icon" style="color: var(--neon-cyan);"></i>
+            <span>帮助文档: <span class="highlight-text" id="activeDocTitle">新手快速上手指南</span></span>
+          </div>
+          <div class="editor-controls">
+            <button id="closeDocBtn" class="terminal-control-btn danger" title="关闭帮助文档">
+              <i data-lucide="x"></i>
+              <span>关闭</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Doc Content -->
+        <div class="editor-container-wrapper" style="overflow-y: auto; padding: 24px 20px; display: block; -webkit-overflow-scrolling: touch;">
+          <div id="docContentContainer" class="markdown-preview doc-guide-container" style="max-width: 840px; margin: 0 auto; line-height: 1.7;">
+            <!-- Help document markdown rendered here -->
           </div>
         </div>
       </section>

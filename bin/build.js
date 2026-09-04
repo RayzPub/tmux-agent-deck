@@ -43,6 +43,7 @@ function checkNeedsBuild() {
     path.join(PROJECT_ROOT, 'public', 'js', 'modules'),
     path.join(PROJECT_ROOT, 'public', 'css', 'style.css'),
     path.join(PROJECT_ROOT, 'public', 'css', 'invite-modal.css'),
+    path.join(PROJECT_ROOT, 'public', 'css', 'chat-mode.css'),
     path.join(PROJECT_ROOT, 'public', 'index.html'),
     path.join(PROJECT_ROOT, 'public', 'login.html'),
     path.join(PROJECT_ROOT, 'public', 'register.html'),
@@ -100,7 +101,8 @@ async function performBuild(force = false) {
     const cssResult = await esbuild.build({
       entryPoints: [
         path.join(PROJECT_ROOT, 'public', 'css', 'style.css'),
-        path.join(PROJECT_ROOT, 'public', 'css', 'invite-modal.css')
+        path.join(PROJECT_ROOT, 'public', 'css', 'invite-modal.css'),
+        path.join(PROJECT_ROOT, 'public', 'css', 'chat-mode.css')
       ],
       bundle: true,
       minify: true,
@@ -123,10 +125,12 @@ async function performBuild(force = false) {
     const appHashed = getHashedName(jsResult.metafile.outputs, 'app');
     const styleHashed = getHashedName(cssResult.metafile.outputs, 'style');
     const inviteModalHashed = getHashedName(cssResult.metafile.outputs, 'invite-modal');
+    const chatModeHashed = getHashedName(cssResult.metafile.outputs, 'chat-mode');
 
     console.log(`📦 Hashed app.js -> ${appHashed}`);
     console.log(`📦 Hashed style.css -> ${styleHashed}`);
     console.log(`📦 Hashed invite-modal.css -> ${inviteModalHashed}`);
+    console.log(`📦 Hashed chat-mode.css -> ${chatModeHashed}`);
 
     // 5. Read and transform HTML files
     const htmlFiles = ['index.html', 'login.html', 'register.html'];
@@ -139,6 +143,7 @@ async function performBuild(force = false) {
       // Replace references with hashed ones
       html = html.replace('/css/style.css', `/dist/${styleHashed}`);
       html = html.replace('/css/invite-modal.css', `/dist/${inviteModalHashed}`);
+      html = html.replace('/css/chat-mode.css', `/dist/${chatModeHashed}`);
       html = html.replace('/js/app.js', `/dist/${appHashed}`);
 
       const destPath = path.join(distDir, file);

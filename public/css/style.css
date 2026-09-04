@@ -1044,6 +1044,24 @@ body.light-minimalist .slogan-title {
   margin: 0 auto !important;
 }
 
+/* Welcome Actions Container */
+.welcome-action-container {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-text-full {
+  display: inline;
+}
+
+.btn-text-mobile {
+  display: none;
+}
+
 /* Highlighted Text Button for New Session */
 .highlight-text-btn {
   background: rgba(0, 240, 255, 0.08);
@@ -1600,6 +1618,54 @@ body.light-minimalist .highlight-text-btn:hover {
   .cyber-terminal-graphic {
     font-size: 32px;
     margin-bottom: 10px;
+  }
+
+  /* Mobile Welcome Actions: Row 1 (新建会话 + 选择会话), Row 2 (新手指南) */
+  .welcome-action-container {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+    max-width: 350px;
+    margin: 18px auto 0 auto;
+  }
+
+  .btn-text-full {
+    display: none !important;
+  }
+
+  .btn-text-mobile {
+    display: inline !important;
+  }
+
+  .welcome-action-container .highlight-text-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 8px;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .welcome-action-container .highlight-text-btn i,
+  .welcome-action-container .highlight-text-btn svg {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+  }
+
+  #welcomeNewSessionBtn {
+    grid-column: 1 / 2;
+  }
+
+  #welcomeSelectSessionBtn {
+    grid-column: 2 / 3;
+    display: inline-flex !important;
+  }
+
+  #welcomeHelpDocBtn {
+    grid-column: 1 / 3;
   }
   
   /* System spec cards grid */
@@ -3917,6 +3983,166 @@ body.light-minimalist .markdown-preview tr:nth-child(even) {
   border-radius: 6px;
   margin: 12px 0 !important;
   display: block;
+}
+
+/* Help Documentation Guide Styles */
+.doc-guide-container {
+  border-left: none !important;
+  background: transparent !important;
+  padding: 10px 16px 40px 16px !important;
+}
+
+.doc-guide-container h1 {
+  font-size: 1.8em !important;
+  color: var(--neon-cyan);
+  text-shadow: var(--glow-cyan);
+  margin-bottom: 20px;
+}
+
+body.light-minimalist .doc-guide-container h1 {
+  color: #0284c7;
+  text-shadow: none;
+}
+
+.doc-guide-container a.doc-inline-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--neon-cyan);
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  text-decoration: none;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.doc-guide-container a.doc-inline-action-btn:hover {
+  background: rgba(0, 240, 255, 0.25);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.4);
+  color: #fff;
+}
+
+body.light-minimalist .doc-guide-container a.doc-inline-action-btn {
+  background: rgba(2, 132, 199, 0.08);
+  color: #0284c7;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+
+body.light-minimalist .doc-guide-container a.doc-inline-action-btn:hover {
+  background: rgba(2, 132, 199, 0.15);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.2);
+}
+
+/* Step 2 Inline Action Button */
+.doc-guide-container a.doc-action-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--neon-cyan) !important;
+  border: 1px solid var(--neon-cyan);
+  padding: 8px 18px;
+  border-radius: 4px;
+  font-family: var(--font-header);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  margin: 6px 0 12px 0;
+}
+
+.doc-guide-container a.doc-action-card-btn:hover {
+  background: rgba(0, 240, 255, 0.25);
+  box-shadow: 0 0 25px rgba(0, 240, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Bottom CTA Card in Doc */
+.doc-cta-box {
+  margin-top: 28px;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.04) 0%, rgba(14, 18, 30, 0.85) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 6px;
+  text-align: center;
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.06);
+}
+
+.doc-cta-title {
+  font-family: var(--font-header);
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+  letter-spacing: 1px;
+}
+
+.doc-cta-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+}
+
+.doc-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--neon-cyan);
+  color: #020205 !important;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 4px;
+  font-family: var(--font-header);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.doc-cta-btn:hover {
+  background: #fff;
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.7);
+  transform: translateY(-2px);
+}
+
+body.light-minimalist .doc-guide-container a.doc-action-card-btn {
+  background: rgba(2, 132, 199, 0.08);
+  color: #0284c7 !important;
+  border-color: #0284c7;
+  box-shadow: none;
+}
+
+body.light-minimalist .doc-cta-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+body.light-minimalist .doc-cta-title {
+  color: #0f172a;
+}
+
+body.light-minimalist .doc-cta-btn {
+  background: #0284c7;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+body.light-minimalist .doc-cta-btn:hover {
+  background: #0369a1;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
 }
 
 /* Active control button state */

@@ -8,6 +8,8 @@ import { initPushNotifications, togglePushSubscription } from './modules/push.js
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
 import { initImBot } from './modules/imBot.js';
+import { initChatMode, applySessionViewMode } from './modules/chatMode.js';
+import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 
 // Elements
 const sessionList = document.getElementById('sessionList');
@@ -445,6 +447,7 @@ if (terminalWorkspace) {
       if (e.target.closest('#editorTextarea') || 
           e.target.closest('#markdownPreview') || 
           e.target.closest('#diffPanel .editor-container-wrapper') || 
+          e.target.closest('#docPanel .editor-container-wrapper') || 
           e.target.closest('#workspaceTabs')) {
         return;
       }
@@ -1168,6 +1171,10 @@ loadWorkspaces().then(async () => {
   initQrCode();
   initImBot();
   initShareModal();
+  window.applySessionViewMode = applySessionViewMode;
+  initChatMode();
+  window.openHelpDocTab = openHelpDocTab;
+  initHelpDocEvents();
 
   // Control Dropdown settings panel
   const deckControlToggleBtn = document.getElementById('deckControlToggleBtn');
@@ -1187,7 +1194,7 @@ loadWorkspaces().then(async () => {
 
     deckControlDropdownMenu.addEventListener('click', (e) => {
       const target = e.target.closest('button, .header-btn');
-      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'adminPanelBtn' || target.id === 'userKeysBtn')) {
+      if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'headerHelpDocBtn' || target.id === 'adminPanelBtn' || target.id === 'userKeysBtn')) {
         deckControlDropdownMenu.classList.add('hidden');
       }
     });

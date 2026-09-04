@@ -755,6 +755,10 @@ export function attachSession(sessionName) {
       fitTerminalFor(sessionName);
     }, 50);
   }
+
+  if (typeof window.applySessionViewMode === 'function') {
+    window.applySessionViewMode(sessionName);
+  }
 }
 
 export function detachSession() {

@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { attachSession, removeSessionFromCache, fitTerminalFor } from './terminal.js';
 import { loadEditorFile } from './editor.js';
 import { loadGitDiff } from './diff.js';
+import { renderHelpDoc } from './helpDoc.js';
 
 export function saveTabsState() {
   try {
@@ -18,12 +19,15 @@ export function updateMobileControlsVisibility() {
   if (!mobileControls) return;
 
   const hasActiveTerminal = state.tabs.length > 0 && state.activeTabId && state.tabs.some(t => t.id === state.activeTabId && t.type === 'terminal');
+  const isChatMode = state.currentSession && localStorage.getItem(`deck_mode_${state.currentSession}`) === 'chat';
 
-  if (hasActiveTerminal) {
+  if (hasActiveTerminal && !isChatMode) {
     mobileControls.classList.remove('hidden');
+    mobileControls.style.display = '';
     if (workspaceMain) workspaceMain.classList.add('has-mobile-controls');
   } else {
     mobileControls.classList.add('hidden');
+    mobileControls.style.display = 'none';
     if (workspaceMain) workspaceMain.classList.remove('has-mobile-controls');
   }
 }
@@ -34,6 +38,7 @@ export function renderTabs() {
   const terminalPanel = document.getElementById('terminalPanel');
   const editorPanel = document.getElementById('editorPanel');
   const diffPanel = document.getElementById('diffPanel');
+  const docPanel = document.getElementById('docPanel');
   
   if (state.tabs.length === 0) {
     workspaceTabs.classList.add('hidden');
@@ -41,6 +46,7 @@ export function renderTabs() {
     terminalPanel.classList.add('hidden');
     editorPanel.classList.add('hidden');
     diffPanel.classList.add('hidden');
+    if (docPanel) docPanel.classList.add('hidden');
     state.currentSession = null;
     state.activeTabId = null;
     saveTabsState();
@@ -59,7 +65,7 @@ export function renderTabs() {
 
     const icon = tab.type === 'terminal' 
       ? 'terminal' 
-      : (tab.type === 'git-diff' ? 'git-compare' : 'file-code');
+      : (tab.type === 'git-diff' ? 'git-compare' : (tab.type === 'doc' ? 'book-open' : 'file-code'));
     tabEl.innerHTML = `
       <i data-lucide="${icon}"></i>
       <span>${tab.name}</span>
@@ -96,6 +102,7 @@ export function activateTab(tabId) {
   const welcomePanel = document.getElementById('welcomePanel');
   const editorPanel = document.getElementById('editorPanel');
   const diffPanel = document.getElementById('diffPanel');
+  const docPanel = document.getElementById('docPanel');
   const activeSessionNameText = document.getElementById('activeSessionName');
   const activeFilePath = document.getElementById('activeFilePath');
   const currentPathLabel = document.getElementById('currentPathLabel');
@@ -110,6 +117,7 @@ export function activateTab(tabId) {
 
     editorPanel.classList.add('hidden');
     diffPanel.classList.add('hidden');
+    if (docPanel) docPanel.classList.add('hidden');
     welcomePanel.classList.add('hidden');
     terminalPanel.classList.remove('hidden');
 
@@ -124,6 +132,10 @@ export function activateTab(tabId) {
     state.currentSession = targetSession;
     activeSessionNameText.textContent = targetSession;
 
+    if (typeof window.applySessionViewMode === 'function') {
+      window.applySessionViewMode(targetSession);
+    }
+
     setTimeout(() => {
       fitTerminalFor(targetSession);
       const cachedSession = state.sessionCache.get(targetSession);
@@ -136,6 +148,7 @@ export function activateTab(tabId) {
     welcomePanel.classList.add('hidden');
     editorPanel.classList.remove('hidden');
     diffPanel.classList.add('hidden');
+    if (docPanel) docPanel.classList.add('hidden');
     state.currentSession = null;
 
     for (const cached of state.sessionCache.values()) {
@@ -154,6 +167,7 @@ export function activateTab(tabId) {
     welcomePanel.classList.add('hidden');
     editorPanel.classList.add('hidden');
     diffPanel.classList.remove('hidden');
+    if (docPanel) docPanel.classList.add('hidden');
     state.currentSession = null;
 
     for (const cached of state.sessionCache.values()) {
@@ -167,6 +181,22 @@ export function activateTab(tabId) {
       currentPathLabel.textContent = wsPrefix + (tab.path ? '/git-diff/' + tab.path : '/git-diff');
     }
     loadGitDiff(tab.path);
+  } else if (tab.type === 'doc') {
+    terminalPanel.classList.add('hidden');
+    welcomePanel.classList.add('hidden');
+    editorPanel.classList.add('hidden');
+    diffPanel.classList.add('hidden');
+    if (docPanel) docPanel.classList.remove('hidden');
+    state.currentSession = null;
+
+    for (const cached of state.sessionCache.values()) {
+      if (cached.container) cached.container.classList.add('hidden');
+    }
+
+    if (currentPathLabel) {
+      currentPathLabel.textContent = '// 新手使用指南与帮助文档';
+    }
+    renderHelpDoc();
   }
 }
 
