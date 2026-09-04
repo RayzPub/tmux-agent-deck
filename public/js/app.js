@@ -11,6 +11,9 @@ import { initImBot } from './modules/imBot.js';
 import { initChatMode, applySessionViewMode } from './modules/chatMode.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 
+// Expose immediately for terminal and tab operations
+window.applySessionViewMode = applySessionViewMode;
+
 // Elements
 const sessionList = document.getElementById('sessionList');
 const sessionCount = document.getElementById('sessionCount');
@@ -1155,8 +1158,16 @@ const isFirstLogin = !localStorage.getItem('lastWorkspacePath');
 
 loadWorkspaces().then(async () => {
   await loadSessions();
+  
+  // Initialize chat mode DOM containers before restoring tabs state
+  initChatMode();
   restoreTabsState();
   
+  const currentSess = state.currentSession || state.activeTabId;
+  if (currentSess) {
+    applySessionViewMode(currentSess);
+  }
+
   if (isFirstLogin) {
     const tabFilesBtn = document.getElementById('tabFilesBtn');
     if (tabFilesBtn) {
@@ -1171,8 +1182,6 @@ loadWorkspaces().then(async () => {
   initQrCode();
   initImBot();
   initShareModal();
-  window.applySessionViewMode = applySessionViewMode;
-  initChatMode();
   window.openHelpDocTab = openHelpDocTab;
   initHelpDocEvents();
 

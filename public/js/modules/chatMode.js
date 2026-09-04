@@ -147,6 +147,11 @@ export function initChatMode() {
   }
 
   console.log('[ChatMode] Decisive ChatMode initialized.');
+
+  const currentSess = getCurrentSessionName();
+  if (currentSess) {
+    applySessionViewMode(currentSess);
+  }
 }
 
 /**
@@ -214,10 +219,44 @@ export async function applySessionViewMode(sessionName, forceMode) {
     return;
   }
 
-  // Pre-hide switcher immediately if support is not yet known or cached as false
-  // to avoid flashing the tab switcher on unsupported sessions
+  // Determine target mode: prioritize forceMode -> per-session memory/localStorage -> global preference -> default 'terminal'
+  let targetMode = forceMode;
+  if (!targetMode) {
+    targetMode = sessionViewModes.get(currentSess);
+    if (!targetMode) {
+      try {
+        targetMode = localStorage.getItem(`deck_mode_${currentSess}`);
+      } catch (e) {}
+    }
+    if (!targetMode) {
+      try {
+        targetMode = localStorage.getItem('deck_global_mode_pref');
+      } catch (e) {}
+      if (!targetMode) {
+        targetMode = 'terminal';
+      }
+    }
+  }
+
+  const workspaceTabs = document.getElementById('workspaceTabs');
+
+  // Optimistically switch to chat UI if user preferred chat mode and session is not confirmed unsupported
   const cachedSupport = sessionSupportCache.get(currentSess);
-  if (cachedSupport !== true && switcher) {
+  if (targetMode === 'chat' && cachedSupport !== false) {
+    terminalContainer.classList.add('hidden');
+    chatContainer.classList.remove('hidden');
+    btnChat.classList.add('active');
+    btnTerminal.classList.remove('active');
+    if (switcher) switcher.style.display = 'inline-flex';
+    if (workspaceTabs) workspaceTabs.classList.add('hidden');
+    if (mobileControls) {
+      mobileControls.classList.add('hidden');
+      mobileControls.style.display = 'none';
+    }
+    if (workspaceMain) {
+      workspaceMain.classList.remove('has-mobile-controls');
+    }
+  } else if (cachedSupport !== true && switcher) {
     switcher.style.display = 'none';
   }
 
@@ -238,6 +277,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
 
+    if (workspaceTabs && state.tabs && state.tabs.length > 0) {
+      workspaceTabs.classList.remove('hidden');
+    }
+
     if (mobileControls) {
       mobileControls.classList.remove('hidden');
       mobileControls.style.display = '';
@@ -254,25 +297,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
   // Show mode switcher for supported Claude Code sessions
   if (switcher) switcher.style.display = 'inline-flex';
 
-  // Determine target mode: prioritize forceMode -> per-session memory/localStorage -> global preference -> default 'terminal'
-  let targetMode = forceMode;
-  if (!targetMode) {
-    targetMode = sessionViewModes.get(currentSess);
-    if (!targetMode) {
-      try {
-        targetMode = localStorage.getItem(`deck_mode_${currentSess}`);
-      } catch (e) {}
-    }
-    if (!targetMode) {
-      try {
-        targetMode = localStorage.getItem('deck_global_mode_pref');
-      } catch (e) {}
-      if (!targetMode) {
-        targetMode = 'terminal';
-      }
-    }
-  }
-
   sessionViewModes.set(currentSess, targetMode);
 
   console.log('[ChatMode] Applying mode:', targetMode, 'for session:', currentSess);
@@ -282,6 +306,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
     chatContainer.classList.remove('hidden');
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
+
+    if (workspaceTabs) {
+      workspaceTabs.classList.add('hidden');
+    }
 
     // Hide original mobile bottom controls (input bar + helper keyboard) to eliminate double-inputs
     if (mobileControls) {
@@ -299,6 +327,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
     terminalContainer.classList.remove('hidden');
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
+
+    if (workspaceTabs && state.tabs && state.tabs.length > 0) {
+      workspaceTabs.classList.remove('hidden');
+    }
 
     // Restore mobile bottom controls in classic terminal mode
     if (mobileControls) {

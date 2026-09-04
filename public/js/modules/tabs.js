@@ -54,7 +54,14 @@ export function renderTabs() {
     return;
   }
 
-  workspaceTabs.classList.remove('hidden');
+  const currentSess = state.currentSession || (state.activeTabId && state.tabs.some(t => t.id === state.activeTabId && t.type === 'terminal') ? state.activeTabId : null);
+  const isChatMode = currentSess && localStorage.getItem(`deck_mode_${currentSess}`) === 'chat';
+
+  if (isChatMode) {
+    workspaceTabs.classList.add('hidden');
+  } else {
+    workspaceTabs.classList.remove('hidden');
+  }
   workspaceTabs.innerHTML = '';
 
   state.tabs.forEach(tab => {

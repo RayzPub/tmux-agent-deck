@@ -436,6 +436,11 @@ body:has(#agentChatContainer:not(.hidden)) .terminal-workspace.has-mobile-contro
   padding-bottom: 0 !important;
 }
 
+/* Forcibly hide workspace tabs bar when agent-chat-container is active */
+body:has(#agentChatContainer:not(.hidden)) #workspaceTabs {
+  display: none !important;
+}
+
 /* Chat Mode Microphone Button (Cyberpunk cyan border/glow, matches terminal mode) */
 .chat-mic-btn {
   width: 28px;
