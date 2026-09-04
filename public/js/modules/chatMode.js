@@ -110,14 +110,10 @@ export function initChatMode() {
       <!-- Clean Decisive Composer -->
       <div class="agent-chat-composer">
         <div class="chat-input-row">
-          <button class="chat-mic-btn hidden-desktop" id="chatMicBtn" title="语音输入">
-            <i data-lucide="mic"></i>
-          </button>
           <textarea 
             class="chat-textarea" 
             id="chatComposerTextarea" 
-            rows="1" 
-            placeholder="输入需求指令 (Enter 发送, Shift+Enter 换行)..."
+            rows="1"
           ></textarea>
           <div class="chat-composer-actions">
             <button class="chat-icon-btn" id="chatInterruptBtn" title="停止执行 (Ctrl+C)">
@@ -386,114 +382,6 @@ function bindComposerEvents() {
       updateStatusBadge('已中断当前任务', 'waiting');
     });
   }
-
-  // Voice Input (Microphone) mirroring mobileMicBtn implementation
-  initChatVoiceInput();
-}
-
-/**
- * Mobile Voice Input mirroring bottom bar implementation
- */
-function initChatVoiceInput() {
-  const micBtn = document.getElementById('chatMicBtn');
-  const textarea = document.getElementById('chatComposerTextarea');
-  if (!micBtn || !textarea) return;
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    micBtn.style.display = 'none';
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'zh-CN';
-  recognition.interimResults = true;
-  recognition.continuous = false;
-
-  let isListening = false;
-  let wantsListening = false;
-
-  recognition.onstart = () => {
-    isListening = true;
-    micBtn.classList.add('listening');
-    textarea.placeholder = '正在听取指令... 请说话...';
-  };
-
-  recognition.onend = () => {
-    isListening = false;
-    wantsListening = false;
-    micBtn.classList.remove('listening');
-    textarea.placeholder = '输入需求指令 (Enter 发送, Shift+Enter 换行)...';
-  };
-
-  recognition.onresult = (event) => {
-    if (!wantsListening) return;
-
-    const transcript = Array.from(event.results)
-      .map(result => result[0])
-      .map(result => result.transcript)
-      .join('');
-
-    textarea.value = transcript;
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-  };
-
-  recognition.onerror = (event) => {
-    console.error('Speech recognition error:', event.error);
-    isListening = false;
-    wantsListening = false;
-    try {
-      recognition.stop();
-    } catch (e) {}
-  };
-
-  const startListening = () => {
-    if (!isListening) {
-      try {
-        recognition.start();
-      } catch (err) {
-        console.warn('SpeechRecognition start error:', err);
-      }
-    }
-  };
-
-  const stopListening = () => {
-    try {
-      recognition.stop();
-    } catch (err) {
-      console.warn('SpeechRecognition stop error:', err);
-    }
-  };
-
-  state.stopVoiceInputGlobal = () => {
-    if (wantsListening) {
-      wantsListening = false;
-      stopListening();
-    }
-  };
-
-  let lastTouchTime = 0;
-  const handleMicToggle = (e) => {
-    e.preventDefault();
-
-    const now = Date.now();
-    if (now - lastTouchTime < 300) return;
-    if (e.type === 'touchstart') {
-      lastTouchTime = now;
-    }
-
-    if (wantsListening) {
-      wantsListening = false;
-      stopListening();
-    } else {
-      wantsListening = true;
-      startListening();
-    }
-  };
-
-  micBtn.addEventListener('touchstart', handleMicToggle, { passive: false });
-  micBtn.addEventListener('click', handleMicToggle);
 }
 
 /**
