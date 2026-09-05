@@ -29,6 +29,77 @@ export function getCurrentSessionName(passedName) {
 }
 
 /**
+ * Curated Pool of Beginner-Friendly Starter Missions (Single-Page HTML Mini-Apps)
+ */
+const STARTER_TIPS_POOL = [
+  {
+    id: 'weekly-report',
+    icon: 'file-text',
+    label: '周五周报排版器',
+    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：周五周报与工作总结排版器。要求界面简洁现代，支持输入零散工作流水账后一键按本周完成、下周规划、风险协同进行排版，支持一键复制富文本和本地存储，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中，方便我直接在浏览器中打开使用。'
+  },
+  {
+    id: 'lunch-wheel',
+    icon: 'disc',
+    label: '中午吃什么转盘',
+    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：中午吃什么 / 聚餐幸运大转盘。要求界面精致好看，使用纯 HTML5 Canvas 绘制丝滑旋转的大转盘，支持自定义添加/删除餐厅选项，抽中后有全屏彩色纸屑撒花庆祝动画，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中。'
+  },
+  {
+    id: 'pomodoro-timer',
+    icon: 'timer',
+    label: '专注番茄钟看板',
+    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：极简办公专注番茄钟看板。要求界面具有暗黑极简科技感，包含 25 分钟专注 / 5 分钟休息倒计时、今日专注时长打卡统计，以及久坐放松提醒，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中，开箱即用。'
+  },
+  {
+    id: 'salary-calc',
+    icon: 'calculator',
+    label: '薪资个税测算器',
+    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：白领薪资与五险一金个税测算器。要求界面整洁专业，输入税前月薪和社保公积金比例，动态计算出个人与公司缴纳明细、税后到手收入，并通过 CSS 进度条直观展示各项扣除比例，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中。'
+  },
+  {
+    id: 'matrix-board',
+    icon: 'layout-grid',
+    label: '四象限任务便签',
+    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：四象限工作任务便签板。要求根据“重要-紧急”法则划分四个清晰的色彩区域，支持双击或点击新建任务卡片、拖拽移动卡片象限、勾选完成与本地 LocalStorage 自动保存，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中。'
+  }
+];
+
+let currentTipIndices = [0, 1, 2];
+
+function renderStarterPillsHtml() {
+  const tips = currentTipIndices.map(i => STARTER_TIPS_POOL[i]);
+  const tipsHtml = tips.map(t => `
+    <button class="chat-starter-pill" data-prompt="${escapeHtml(t.prompt)}" title="${escapeHtml(t.prompt)}">
+      <i data-lucide="${escapeHtml(t.icon)}"></i>
+      <span>${escapeHtml(t.label)}</span>
+    </button>
+  `).join('');
+
+  return `
+    ${tipsHtml}
+    <button class="chat-starter-pill shuffle" id="btnShuffleStarterTips" title="换一批灵感">
+      <i data-lucide="refresh-cw"></i>
+      <span>换个灵感</span>
+    </button>
+  `;
+}
+
+function shuffleStarterTips() {
+  const poolLen = STARTER_TIPS_POOL.length;
+  const indices = [];
+  while (indices.length < Math.min(3, poolLen)) {
+    const r = Math.floor(Math.random() * poolLen);
+    if (!indices.includes(r)) indices.push(r);
+  }
+  currentTipIndices = indices;
+  const pillsContainer = document.getElementById('chatStarterPills');
+  if (pillsContainer) {
+    pillsContainer.innerHTML = renderStarterPillsHtml();
+    if (window.lucide) window.lucide.createIcons();
+  }
+}
+
+/**
  * Initialize the Chat Mode extension
  */
 export function initChatMode() {
@@ -367,6 +438,35 @@ function bindComposerEvents() {
       updateStatusBadge('已中断当前任务', 'waiting');
     });
   }
+
+  // Delegate clicks on starter tips within agentChatMessages
+  const msgContainer = document.getElementById('agentChatMessages');
+  if (msgContainer && !msgContainer.dataset.starterBound) {
+    msgContainer.dataset.starterBound = 'true';
+    msgContainer.addEventListener('click', (e) => {
+      const shuffleBtn = e.target.closest('#btnShuffleStarterTips');
+      if (shuffleBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        shuffleStarterTips();
+        return;
+      }
+
+      const pill = e.target.closest('.chat-starter-pill:not(.shuffle)');
+      if (pill && pill.dataset.prompt) {
+        e.preventDefault();
+        e.stopPropagation();
+        const textarea = document.getElementById('chatComposerTextarea');
+        if (textarea) {
+          textarea.value = pill.dataset.prompt;
+          textarea.style.height = 'auto';
+          textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        }
+      }
+    });
+  }
 }
 
 /**
@@ -392,10 +492,9 @@ export function sendRawToTmux(text) {
 /**
  * Send user message to the agent
  */
-function sendChatMessage() {
+export function sendChatMessage(overrideText) {
   const textarea = document.getElementById('chatComposerTextarea');
-  if (!textarea) return;
-  const text = textarea.value.trim();
+  const text = (typeof overrideText === 'string' ? overrideText : (textarea ? textarea.value : '')).trim();
   if (!text) return;
 
   stopVoiceInput();
@@ -490,11 +589,16 @@ function renderMessages(sessionName, data) {
 
   if (messages.length === 0) {
     container.innerHTML = `
-      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #64748b; text-align: center; padding: 20px;">
-        <i data-lucide="terminal" style="width: 32px; height: 32px; margin-bottom: 10px; color: var(--neon-cyan); opacity: 0.6;"></i>
-        <div style="font-size: 13px; color: #fff; font-weight: 600; margin-bottom: 4px;">会话「${escapeHtml(displaySession)}」已就绪</div>
-        <div style="font-size: 11px; max-width: 320px; line-height: 1.5; color: #94a3b8;">
-          在下方输入框发送需求即可与当前终端直接交互。如需查看原始字符流，可随时点击右上角切回「终端」。
+      <div class="chat-empty-state">
+        <div class="chat-empty-icon">
+          <i data-lucide="sparkles" style="width: 26px; height: 26px; color: var(--neon-cyan); opacity: 0.85;"></i>
+        </div>
+        <div class="chat-empty-title">会话「${escapeHtml(displaySession)}」已就绪</div>
+        <div class="chat-empty-desc">
+          在下方输入需求，或点击灵感快捷填入并确认发送：
+        </div>
+        <div class="chat-starter-pills" id="chatStarterPills">
+          ${renderStarterPillsHtml()}
         </div>
       </div>
     `;
@@ -607,6 +711,12 @@ function renderMessages(sessionName, data) {
 function appendUserMessageToUI(text) {
   const container = document.getElementById('agentChatMessages');
   if (!container) return;
+
+  // Clear empty state placeholder if present
+  const emptyState = container.querySelector('.chat-empty-state');
+  if (emptyState) {
+    container.innerHTML = '';
+  }
 
   const row = document.createElement('div');
   row.className = 'chat-msg-row user';
