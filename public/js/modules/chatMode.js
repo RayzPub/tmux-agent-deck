@@ -608,6 +608,8 @@ function renderMessages(sessionName, data) {
   }
 
   let html = '';
+  let hasRenderedActiveQuestion = false;
+
   for (const msg of messages) {
     const isUser = msg.role === 'user';
     let bodyHtml = '';
@@ -623,26 +625,51 @@ function renderMessages(sessionName, data) {
     }
 
     // Tool executions
+    let hasAskQuestionTool = false;
     if (msg.tools && msg.tools.length > 0) {
-      const toolNames = msg.tools.map(t => t.name).join(', ');
-      bodyHtml += `
-        <details class="chat-accordion">
-          <summary>▶ 工具执行: ${escapeHtml(toolNames)}</summary>
-          <div class="chat-accordion-content">${escapeHtml(JSON.stringify(msg.tools, null, 2))}</div>
-        </details>
-      `;
+      const askTools = msg.tools.filter(t => t.isAskQuestion || t.name === 'AskUserQuestion');
+      const otherTools = msg.tools.filter(t => !t.isAskQuestion && t.name !== 'AskUserQuestion');
+
+      if (askTools.length > 0) {
+        hasAskQuestionTool = true;
+        askTools.forEach(at => {
+          const isInteractive = Boolean(
+            data.pendingAction && 
+            data.pendingAction.type === 'ask_question' && 
+            (!data.pendingAction.toolUseId || data.pendingAction.toolUseId === at.id)
+          );
+          if (isInteractive) {
+            hasRenderedActiveQuestion = true;
+          }
+          bodyHtml += renderQuestionCardHtml(at.questions || (at.input && at.input.questions) || [], isInteractive, at.id);
+        });
+      }
+
+      if (otherTools.length > 0) {
+        const toolNames = otherTools.map(t => t.name).join(', ');
+        bodyHtml += `
+          <details class="chat-accordion">
+            <summary>▶ 工具执行: ${escapeHtml(toolNames)}</summary>
+            <div class="chat-accordion-content">${escapeHtml(JSON.stringify(otherTools, null, 2))}</div>
+          </details>
+        `;
+      }
     }
 
     // Markdown / Content
     if (msg.content) {
-      if (!isUser && window.marked) {
-        try {
-          bodyHtml += `<div>${window.marked.parse(msg.content)}</div>`;
-        } catch (e) {
+      // If AskUserQuestion card is already rendered, skip raw text fallback that repeats questions
+      const isQuestionFallback = hasAskQuestionTool && msg.content.includes('智能体发起提问');
+      if (!isQuestionFallback) {
+        if (!isUser && window.marked) {
+          try {
+            bodyHtml += `<div>${window.marked.parse(msg.content)}</div>`;
+          } catch (e) {
+            bodyHtml += `<div>${escapeHtml(msg.content)}</div>`;
+          }
+        } else {
           bodyHtml += `<div>${escapeHtml(msg.content)}</div>`;
         }
-      } else {
-        bodyHtml += `<div>${escapeHtml(msg.content)}</div>`;
       }
     }
 
@@ -657,52 +684,430 @@ function renderMessages(sessionName, data) {
     `;
   }
 
-  // Pending action card (approval/rejection)
-  if (data.pendingAction && data.pendingAction.type === 'yn') {
-    html += `
-      <div class="chat-decision-card" id="chatActiveDecisionCard">
-        <span class="chat-decision-title">⚠️ 智能体请求确认操作</span>
-        <div class="chat-decision-actions">
-          <button class="chat-action-btn approve" id="btnApproveAction">
-            <span>批准 (y)</span>
-          </button>
-          <button class="chat-action-btn reject" id="btnRejectAction">
-            <span>拒绝 (n)</span>
-          </button>
-        </div>
-      </div>
-    `;
-    updateStatusBadge('等待确认', 'waiting');
+  // Pending action card (ask_question / permission / yn)
+  if (data.pendingAction) {
+    if (data.pendingAction.type === 'ask_question') {
+      if (!hasRenderedActiveQuestion) {
+        html += renderQuestionCardHtml(data.pendingAction.questions || [], true, data.pendingAction.toolUseId || '');
+      }
+      updateStatusBadge('等待回答提问', 'waiting');
+    } else if (data.pendingAction.type === 'permission') {
+      html += renderPermissionCard(data.pendingAction);
+      updateStatusBadge('等待权限审批', 'waiting');
+    } else if (data.pendingAction.type === 'yn') {
+      html += renderYnDecisionCard(data.pendingAction);
+      updateStatusBadge('等待确认', 'waiting');
+    } else {
+      updateStatusBadge('就绪', 'ready');
+    }
   } else {
     updateStatusBadge('就绪', 'ready');
   }
 
   container.innerHTML = html;
-
-  const btnApprove = document.getElementById('btnApproveAction');
-  const btnReject = document.getElementById('btnRejectAction');
-  if (btnApprove) {
-    btnApprove.addEventListener('click', () => {
-      sendRawToTmux('y\r');
-      btnApprove.disabled = true;
-      btnApprove.textContent = '已批准';
-      updateStatusBadge('执行中...', 'working');
-    });
-  }
-  if (btnReject) {
-    btnReject.addEventListener('click', () => {
-      sendRawToTmux('n\r');
-      btnReject.disabled = true;
-      btnReject.textContent = '已拒绝';
-      updateStatusBadge('就绪', 'ready');
-    });
-  }
+  bindDecisionCardEvents(data.pendingAction);
 
   if (window.lucide) {
     window.lucide.createIcons();
   }
 
   container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * Render Question Card (both interactive and completed history states)
+ */
+function renderQuestionCardHtml(questions, isInteractive = false, toolUseId = '') {
+  if (!questions || questions.length === 0) return '';
+
+  let questionsHtml = '';
+  questions.forEach((q, qIdx) => {
+    const headerBadge = q.header ? `<span class="chat-q-header-tag">${escapeHtml(q.header)}</span>` : '';
+    
+    let optionsHtml = '';
+    (q.options || []).forEach((opt, oIdx) => {
+      const num = oIdx + 1;
+      if (isInteractive) {
+        optionsHtml += `
+          <button class="chat-opt-btn" data-qidx="${qIdx}" data-oidx="${oIdx}" data-num="${num}" type="button">
+            <div class="chat-opt-top">
+              <span class="chat-opt-num">${num}</span>
+              <span class="chat-opt-label">${escapeHtml(opt.label)}</span>
+            </div>
+            ${opt.description ? `<div class="chat-opt-desc">${escapeHtml(opt.description)}</div>` : ''}
+          </button>
+        `;
+      } else {
+        optionsHtml += `
+          <div class="chat-opt-static">
+            <div class="chat-opt-top">
+              <span class="chat-opt-num">${num}</span>
+              <span class="chat-opt-label">${escapeHtml(opt.label)}</span>
+            </div>
+            ${opt.description ? `<div class="chat-opt-desc">${escapeHtml(opt.description)}</div>` : ''}
+          </div>
+        `;
+      }
+    });
+
+    questionsHtml += `
+      <div class="chat-q-block" data-qidx="${qIdx}">
+        <div class="chat-q-title-row">
+          ${headerBadge}
+          <span class="chat-q-title">${escapeHtml(q.question)}</span>
+        </div>
+        <div class="chat-q-options">
+          ${optionsHtml}
+        </div>
+      </div>
+    `;
+  });
+
+  if (isInteractive) {
+    return `
+      <div class="chat-decision-card chat-question-card interactive" id="chatActiveQuestionCard" data-total-q="${questions.length}" data-tool-id="${escapeHtml(toolUseId)}">
+        <div class="chat-decision-header">
+          <div class="chat-decision-header-left">
+            <i data-lucide="help-circle" class="chat-decision-icon question"></i>
+            <span class="chat-decision-title">智能体向您提问（请选择回答）</span>
+          </div>
+          <span class="chat-q-counter">共 ${questions.length} 个问题</span>
+        </div>
+        <div class="chat-question-body">
+          ${questionsHtml}
+        </div>
+        <div class="chat-decision-footer">
+          <button class="chat-action-btn reject" id="btnCancelQuestion" title="取消 (Esc)">
+            <i data-lucide="x"></i>
+            <span>取消 (Esc)</span>
+          </button>
+          ${questions.length > 1 ? `
+            <button class="chat-action-btn approve" id="btnSubmitAllQuestions" disabled title="请完成所有问题选择后提交">
+              <i data-lucide="check"></i>
+              <span>提交全部回答</span>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  } else {
+    return `
+      <div class="chat-decision-card chat-question-card static">
+        <div class="chat-decision-header">
+          <div class="chat-decision-header-left">
+            <i data-lucide="help-circle" class="chat-decision-icon question"></i>
+            <span class="chat-decision-title">智能体提问</span>
+          </div>
+          <span class="chat-q-counter">已完成</span>
+        </div>
+        <div class="chat-question-body">
+          ${questionsHtml}
+        </div>
+      </div>
+    `;
+  }
+}
+
+/**
+ * Render interactive Tool Permission Approval card
+ */
+function renderPermissionCard(pending) {
+  const toolName = pending.toolName || '工具执行';
+  const toolInput = pending.toolInput || {};
+  const cmd = toolInput.command || '';
+  const desc = toolInput.description || '';
+  const filePath = toolInput.file_path || toolInput.filePath || '';
+  const canAutoMode = pending.canAutoMode !== false;
+
+  return `
+    <div class="chat-decision-card chat-permission-card" id="chatActiveDecisionCard" data-tool-id="${escapeHtml(pending.toolUseId || '')}">
+      <div class="chat-decision-header">
+        <div class="chat-decision-header-left">
+          <i data-lucide="shield-alert" class="chat-decision-icon warning"></i>
+          <span class="chat-decision-title">⚠️ 智能体请求权限审批</span>
+        </div>
+        <span class="chat-perm-tool-badge">${escapeHtml(toolName)}</span>
+      </div>
+      
+      <div class="chat-permission-details">
+        ${cmd ? `
+          <div class="chat-permission-field">
+            <span class="chat-field-label">拟执行命令：</span>
+            <pre class="chat-cmd-box"><code>${escapeHtml(cmd)}</code></pre>
+          </div>
+        ` : ''}
+        ${filePath ? `
+          <div class="chat-permission-field">
+            <span class="chat-field-label">目标文件：</span>
+            <code class="chat-code-val">${escapeHtml(filePath)}</code>
+          </div>
+        ` : ''}
+        ${desc ? `
+          <div class="chat-permission-field">
+            <span class="chat-field-label">用途说明：</span>
+            <span class="chat-field-val">${escapeHtml(desc)}</span>
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="chat-decision-actions">
+        <button class="chat-action-btn approve" id="btnApproveAction" title="允许本次执行 (1 / Yes)">
+          <i data-lucide="check"></i>
+          <span>批准执行 (Yes)</span>
+        </button>
+        ${canAutoMode ? `
+          <button class="chat-action-btn auto-mode" id="btnAutoModeAction" title="切换到自动模式，后续无需频繁确认 (3)">
+            <i data-lucide="zap"></i>
+            <span>切换自动模式</span>
+          </button>
+        ` : ''}
+        <button class="chat-action-btn reject" id="btnRejectAction" title="拒绝执行此操作 (4 / No)">
+          <i data-lucide="x"></i>
+          <span>拒绝 (No)</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render classic (y/n) decision card
+ */
+function renderYnDecisionCard(pending) {
+  return `
+    <div class="chat-decision-card" id="chatActiveDecisionCard">
+      <div class="chat-decision-header">
+        <div class="chat-decision-header-left">
+          <i data-lucide="alert-triangle" class="chat-decision-icon warning"></i>
+          <span class="chat-decision-title">${escapeHtml(pending.hint || '智能体请求确认操作')}</span>
+        </div>
+      </div>
+      <div class="chat-decision-actions">
+        <button class="chat-action-btn approve" id="btnApproveAction">
+          <i data-lucide="check"></i>
+          <span>批准 (y)</span>
+        </button>
+        <button class="chat-action-btn reject" id="btnRejectAction">
+          <i data-lucide="x"></i>
+          <span>拒绝 (n)</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Bind decision card events for all modes
+ */
+function bindDecisionCardEvents(pending) {
+  if (!pending) return;
+
+  // 1. AskUserQuestion
+  if (pending.type === 'ask_question') {
+    const card = document.getElementById('chatActiveQuestionCard');
+    if (!card) return;
+
+    const totalQ = parseInt(card.dataset.totalQ, 10) || 1;
+    const btnCancel = document.getElementById('btnCancelQuestion');
+    const btnSubmitAll = document.getElementById('btnSubmitAllQuestions');
+
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        sendRawToTmux('\x1b');
+        card.style.opacity = '0.5';
+        card.style.pointerEvents = 'none';
+        updateStatusBadge('已取消提问', 'ready');
+        setTimeout(() => {
+          const currentSess = getCurrentSessionName();
+          if (currentSess) loadAndRenderChatHistory(currentSess, false);
+        }, 1000);
+      });
+    }
+
+    if (totalQ === 1) {
+      // Single question mode: direct click to answer
+      card.querySelectorAll('.chat-opt-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const num = btn.dataset.num;
+          if (!num) return;
+
+          btn.classList.add('selected');
+          card.querySelectorAll('.chat-opt-btn').forEach(b => {
+            b.disabled = true;
+          });
+          card.style.opacity = '0.7';
+          card.style.pointerEvents = 'none';
+
+          sendRawToTmux(num);
+          updateStatusBadge('已提交回答，执行中...', 'working');
+
+          setTimeout(() => {
+            const currentSess = getCurrentSessionName();
+            if (currentSess) loadAndRenderChatHistory(currentSess, false);
+          }, 1000);
+        });
+      });
+    } else {
+      // Multi-question mode: track selected option per question block
+      const selectedAnswers = new Map(); // qIdx -> num
+
+      card.querySelectorAll('.chat-opt-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const qIdx = btn.dataset.qidx;
+          const num = btn.dataset.num;
+          if (!qIdx || !num) return;
+
+          const block = btn.closest('.chat-q-block');
+          if (block) {
+            block.querySelectorAll('.chat-opt-btn').forEach(b => b.classList.remove('selected'));
+          }
+          btn.classList.add('selected');
+          selectedAnswers.set(qIdx, num);
+
+          // Check if all questions are answered
+          if (selectedAnswers.size >= totalQ && btnSubmitAll) {
+            btnSubmitAll.disabled = false;
+          }
+        });
+      });
+
+      if (btnSubmitAll) {
+        btnSubmitAll.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (selectedAnswers.size < totalQ) return;
+
+          btnSubmitAll.disabled = true;
+          btnSubmitAll.textContent = '提交中...';
+          card.style.opacity = '0.7';
+          card.style.pointerEvents = 'none';
+
+          // Send sequential keypresses to tmux
+          const sortedKeys = Array.from({ length: totalQ }, (_, i) => selectedAnswers.get(String(i)) || '1');
+          let delay = 0;
+          sortedKeys.forEach(key => {
+            setTimeout(() => {
+              sendRawToTmux(key);
+            }, delay);
+            delay += 250;
+          });
+
+          // Confirm submit review screen
+          setTimeout(() => {
+            sendRawToTmux('1\r');
+            updateStatusBadge('已提交回答，执行中...', 'working');
+            setTimeout(() => {
+              const currentSess = getCurrentSessionName();
+              if (currentSess) loadAndRenderChatHistory(currentSess, false);
+            }, 1000);
+          }, delay + 100);
+        });
+      }
+    }
+    return;
+  }
+
+  // 2. Permission Approval
+  if (pending.type === 'permission') {
+    const btnApprove = document.getElementById('btnApproveAction');
+    const btnAutoMode = document.getElementById('btnAutoModeAction');
+    const btnReject = document.getElementById('btnRejectAction');
+    const card = document.getElementById('chatActiveDecisionCard');
+
+    if (btnApprove) {
+      btnApprove.addEventListener('click', () => {
+        sendRawToTmux('1');
+        if (card) {
+          card.style.opacity = '0.6';
+          card.style.pointerEvents = 'none';
+        }
+        btnApprove.disabled = true;
+        btnApprove.textContent = '已批准';
+        updateStatusBadge('已批准执行，运行中...', 'working');
+        setTimeout(() => {
+          const currentSess = getCurrentSessionName();
+          if (currentSess) loadAndRenderChatHistory(currentSess, false);
+        }, 1000);
+      });
+    }
+
+    if (btnAutoMode) {
+      btnAutoMode.addEventListener('click', () => {
+        sendRawToTmux('3');
+        if (card) {
+          card.style.opacity = '0.6';
+          card.style.pointerEvents = 'none';
+        }
+        btnAutoMode.disabled = true;
+        btnAutoMode.textContent = '已切换自动模式';
+        updateStatusBadge('已切换为自动模式，运行中...', 'working');
+        setTimeout(() => {
+          const currentSess = getCurrentSessionName();
+          if (currentSess) loadAndRenderChatHistory(currentSess, false);
+        }, 1000);
+      });
+    }
+
+    if (btnReject) {
+      btnReject.addEventListener('click', () => {
+        sendRawToTmux('4');
+        if (card) {
+          card.style.opacity = '0.6';
+          card.style.pointerEvents = 'none';
+        }
+        btnReject.disabled = true;
+        btnReject.textContent = '已拒绝';
+        updateStatusBadge('已拒绝操作', 'ready');
+        setTimeout(() => {
+          const currentSess = getCurrentSessionName();
+          if (currentSess) loadAndRenderChatHistory(currentSess, false);
+        }, 1000);
+      });
+    }
+    return;
+  }
+
+  // 3. Classic (y/n)
+  if (pending.type === 'yn') {
+    const btnApprove = document.getElementById('btnApproveAction');
+    const btnReject = document.getElementById('btnRejectAction');
+    const card = document.getElementById('chatActiveDecisionCard');
+
+    if (btnApprove) {
+      btnApprove.addEventListener('click', () => {
+        sendRawToTmux('y\r');
+        if (card) {
+          card.style.opacity = '0.6';
+          card.style.pointerEvents = 'none';
+        }
+        btnApprove.disabled = true;
+        btnApprove.textContent = '已批准';
+        updateStatusBadge('执行中...', 'working');
+        setTimeout(() => {
+          const currentSess = getCurrentSessionName();
+          if (currentSess) loadAndRenderChatHistory(currentSess, false);
+        }, 1000);
+      });
+    }
+
+    if (btnReject) {
+      btnReject.addEventListener('click', () => {
+        sendRawToTmux('n\r');
+        if (card) {
+          card.style.opacity = '0.6';
+          card.style.pointerEvents = 'none';
+        }
+        btnReject.disabled = true;
+        btnReject.textContent = '已拒绝';
+        updateStatusBadge('就绪', 'ready');
+        setTimeout(() => {
+          const currentSess = getCurrentSessionName();
+          if (currentSess) loadAndRenderChatHistory(currentSess, false);
+        }, 1000);
+      });
+    }
+  }
 }
 
 /**

@@ -1275,17 +1275,51 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
 
     try {
       const parsed = await parseClaudeJsonl(sessionFileInfo.filePath, 60);
-      return res.json({
-        supported: true,
-        hasHistory: true,
-        sessionName: name,
-        agentType: 'claude',
-        sessionId: sessionFileInfo.sessionId,
-        workspacePath: targetWorkspace,
-        messages: parsed.messages,
-        pendingAction: parsed.pendingAction,
-        lastUpdated: parsed.lastUpdated
-      });
+      
+      // Also inspect real-time pane buffer for terminal permission/question states
+      execTmux(['capture-pane', '-pt', physicalSession, '-S', '-25'], (capErr, capStdout) => {
+        const paneText = capStdout || '';
+
+        // If terminal is currently prompting for permission
+        if (paneText.includes('Do you want to proceed?') || paneText.includes('switch to auto mode') || paneText.includes('Allow this time')) {
+          if (!parsed.pendingAction || parsed.pendingAction.type !== 'ask_question') {
+            if (!parsed.pendingAction) {
+              parsed.pendingAction = {
+                type: 'permission',
+                toolName: 'Bash',
+                toolInput: {},
+                hint: '终端请求权限审批'
+              };
+            }
+          }
+        }
+
+        // If terminal has classic (y/n) prompt
+        if (!parsed.pendingAction && /\([yY]\/[nN]\)|\[[yY]\/[nN]\]/i.test(paneText)) {
+          parsed.pendingAction = {
+            type: 'yn',
+            hint: '等待确认操作'
+          };
+        }
+
+        // Enrich permission details
+        if (parsed.pendingAction && parsed.pendingAction.type === 'permission') {
+          parsed.pendingAction.canAutoMode = paneText.includes('switch to auto mode') || paneText.includes('3. Yes, and switch to auto mode');
+          parsed.pendingAction.canAlwaysAllow = paneText.includes('always allow');
+        }
+
+        return res.json({
+          supported: true,
+          hasHistory: true,
+          sessionName: name,
+          agentType: 'claude',
+          sessionId: sessionFileInfo.sessionId,
+          workspacePath: targetWorkspace,
+          messages: parsed.messages,
+          pendingAction: parsed.pendingAction,
+          lastUpdated: parsed.lastUpdated
+        });
+      }, user);
     } catch (parseErr) {
       return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
     }

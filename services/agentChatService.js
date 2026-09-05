@@ -98,7 +98,7 @@ function findClaudeSessionFile(workspacePath, explicitSessionId, panePid, userHo
 /**
  * Extract clean user text from string, array of text/tool_result, or object
  */
-function extractUserText(rawContent) {
+function extractUserText(rawContent, event) {
   if (!rawContent) return '';
   if (typeof rawContent === 'string') {
     if (rawContent.includes('<local-command-caveat>')) return '';
@@ -114,12 +114,25 @@ function extractUserText(rawContent) {
     const textPieces = [];
     for (const item of rawContent) {
       if (typeof item === 'string') {
-        const cleaned = extractUserText(item);
+        const cleaned = extractUserText(item, event);
         if (cleaned) textPieces.push(cleaned);
       } else if (item && typeof item === 'object') {
         if (item.type === 'text' && item.text) {
-          const cleaned = extractUserText(item.text);
+          const cleaned = extractUserText(item.text, event);
           if (cleaned) textPieces.push(cleaned);
+        } else if (item.type === 'tool_result') {
+          // Format user answers to AskUserQuestion
+          if (event && event.toolUseResult && event.toolUseResult.answers) {
+            const ansList = Object.entries(event.toolUseResult.answers)
+              .map(([q, a]) => `**${q}**\n↳ ${a}`)
+              .join('\n\n');
+            textPieces.push(`📋 **已回答智能体提问：**\n\n${ansList}`);
+          } else if (typeof item.content === 'string' && item.content.startsWith('Your questions have been answered:')) {
+            const cleanContent = item.content.replace(/^Your questions have been answered:\s*/, '').replace(/\.\s*You can now continue with these answers in mind\./, '');
+            textPieces.push(`📋 **已回答智能体提问：**\n\n${cleanContent}`);
+          } else if ((event && event.toolDenialKind === 'user-rejected') || (typeof item.content === 'string' && item.content.includes("user doesn't want to proceed"))) {
+            textPieces.push(`🛑 **已拒绝此工具执行操作**`);
+          }
         }
       }
     }
@@ -128,10 +141,10 @@ function extractUserText(rawContent) {
 
   if (typeof rawContent === 'object') {
     if (rawContent.type === 'text' && rawContent.text) {
-      return extractUserText(rawContent.text);
+      return extractUserText(rawContent.text, event);
     }
     if (rawContent.text && typeof rawContent.text === 'string') {
-      return extractUserText(rawContent.text);
+      return extractUserText(rawContent.text, event);
     }
   }
 
@@ -164,13 +177,23 @@ async function parseClaudeJsonl(filePath, maxMessages = 50) {
   }
 
   const messages = [];
+  const toolUses = new Map(); // tool_use_id -> toolInfo
+  const toolResults = new Set(); // tool_use_id
 
   for (const event of parsedEvents) {
     // User message
     if (event.type === 'user' && event.message && event.message.content) {
       if (event.isMeta) continue;
+
+      if (Array.isArray(event.message.content)) {
+        for (const item of event.message.content) {
+          if (item && item.type === 'tool_result' && item.tool_use_id) {
+            toolResults.add(item.tool_use_id);
+          }
+        }
+      }
       
-      const cleanText = extractUserText(event.message.content);
+      const cleanText = extractUserText(event.message.content, event);
       if (!cleanText) continue; // Ignore empty or internal-only messages
 
       messages.push({
@@ -197,11 +220,29 @@ async function parseClaudeJsonl(filePath, maxMessages = 50) {
         } else if (part.type === 'thinking' && part.thinking) {
           thinkingParts.push(part.thinking);
         } else if (part.type === 'tool_use') {
-          tools.push({
+          const isAskQ = part.name === 'AskUserQuestion';
+          const tInfo = {
+            id: part.id,
             name: part.name || 'tool',
-            input: part.input || {}
-          });
+            input: part.input || {},
+            isAskQuestion: isAskQ,
+            questions: (isAskQ && part.input && part.input.questions) ? part.input.questions : []
+          };
+          tools.push(tInfo);
+          if (part.id) {
+            toolUses.set(part.id, tInfo);
+          }
         }
+      }
+
+      // If AskUserQuestion without accompanying text, provide friendly title and options
+      const askTool = tools.find(t => t.isAskQuestion);
+      if (askTool && textParts.length === 0 && askTool.questions && askTool.questions.length > 0) {
+        const qSummary = askTool.questions.map((q, idx) => {
+          const opts = (q.options || []).map((o, oIdx) => `   - **${oIdx + 1}. ${o.label}**${o.description ? `：${o.description}` : ''}`).join('\n');
+          return `${idx + 1}. **${q.question}**\n${opts}`;
+        }).join('\n\n');
+        textParts.push(`❓ **智能体发起提问：**\n\n${qSummary}`);
       }
 
       const combinedText = textParts.join('\n\n').trim();
@@ -222,7 +263,53 @@ async function parseClaudeJsonl(filePath, maxMessages = 50) {
 
   // Detect pending interactive decision on the latest assistant message
   let pendingAction = null;
-  if (messages.length > 0) {
+
+  // 1. Check if the latest assistant message has unresolved tool calls (AskUserQuestion or Tool Permission)
+  if (parsedEvents.length > 0) {
+    let lastAssistantEvent = null;
+    let lastAssistantIdx = -1;
+    for (let i = parsedEvents.length - 1; i >= 0; i--) {
+      if (parsedEvents[i].type === 'assistant') {
+        lastAssistantEvent = parsedEvents[i];
+        lastAssistantIdx = i;
+        break;
+      }
+    }
+
+    const hasSubsequentUserMessage = parsedEvents.slice(lastAssistantIdx + 1).some(e => e.type === 'user' && !e.isMeta);
+
+    if (lastAssistantEvent && lastAssistantEvent.message && !hasSubsequentUserMessage) {
+      const contentList = Array.isArray(lastAssistantEvent.message.content)
+        ? lastAssistantEvent.message.content
+        : [];
+
+      for (const part of contentList) {
+        if (part.type === 'tool_use' && part.id && !toolResults.has(part.id)) {
+          if (part.name === 'AskUserQuestion') {
+            pendingAction = {
+              type: 'ask_question',
+              toolUseId: part.id,
+              questions: part.input?.questions || [],
+              hint: '智能体提出问题，请在下方选择回答'
+            };
+            break;
+          } else {
+            pendingAction = {
+              type: 'permission',
+              toolUseId: part.id,
+              toolName: part.name || 'tool',
+              toolInput: part.input || {},
+              hint: `智能体请求权限执行: ${part.name || '工具'}`
+            };
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Fallback check on latest message text content for (y/n) prompts
+  if (!pendingAction && messages.length > 0) {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role === 'assistant' && lastMsg.content) {
       const contentLower = lastMsg.content.toLowerCase();
