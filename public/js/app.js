@@ -732,7 +732,7 @@ newSessionBtn.addEventListener('click', () => {
   sessionModal.classList.remove('hidden');
 
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
-  const agent = selectedAgentRadio ? selectedAgentRadio.value : 'default';
+  const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
   suggestedSessionName = getSuggestedNameForAgent(agent);
   newSessionNameInput.value = suggestedSessionName;
   
@@ -795,7 +795,7 @@ createSessionForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   let name = newSessionNameInput.value.trim();
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
-  const agent = selectedAgentRadio ? selectedAgentRadio.value : 'default';
+  const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
 
   if (!name) {
     name = getSuggestedNameForAgent(agent);
@@ -1542,7 +1542,8 @@ loadWorkspaces().then(async () => {
   }
 
   function applyAgentVisibility() {
-    const allowed = state.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
+    const allowed = state.enabledAgents || ['agy', 'claude', 'codex', 'kimi', 'default'];
+    let needRecheck = false;
     document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
       const card = radio.closest('.agent-card-option');
       if (card) {
@@ -1552,12 +1553,20 @@ loadWorkspaces().then(async () => {
         } else {
           card.classList.add('hidden');
           if (radio.checked) {
-            const defRadio = document.querySelector('input[name="sessionAgent"][value="default"]');
-            if (defRadio) defRadio.checked = true;
+            needRecheck = true;
           }
         }
       }
     });
+    if (needRecheck) {
+      const firstVisible = document.querySelector('.agent-card-option:not(.hidden) input[name="sessionAgent"]');
+      if (firstVisible) {
+        firstVisible.checked = true;
+      } else {
+        const defRadio = document.querySelector('input[name="sessionAgent"][value="default"]');
+        if (defRadio) defRadio.checked = true;
+      }
+    }
   }
 
   if (generateCodeBtn) {

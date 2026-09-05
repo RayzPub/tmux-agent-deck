@@ -500,17 +500,7 @@
           </label>
           <div class="agent-cards-container">
             <label class="agent-card-option">
-              <input type="radio" name="sessionAgent" value="default" checked>
-              <div class="agent-card-inner">
-                <i data-lucide="terminal"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">Shell</span>
-                  <span class="agent-desc">标准 Bash 环境</span>
-                </div>
-              </div>
-            </label>
-            <label class="agent-card-option">
-              <input type="radio" name="sessionAgent" value="agy">
+              <input type="radio" name="sessionAgent" value="agy" checked>
               <div class="agent-card-inner">
                 <i data-lucide="bot"></i>
                 <div class="agent-card-info">
@@ -546,6 +536,16 @@
                 <div class="agent-card-info">
                   <span class="agent-title">Kimi</span>
                   <span class="agent-desc">Kimi Code CLI 智能体</span>
+                </div>
+              </div>
+            </label>
+            <label class="agent-card-option">
+              <input type="radio" name="sessionAgent" value="default">
+              <div class="agent-card-inner">
+                <i data-lucide="terminal"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">Shell</span>
+                  <span class="agent-desc">标准 Bash 环境</span>
                 </div>
               </div>
             </label>
@@ -811,13 +811,6 @@
           </div>
           <div class="agent-config-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
-              <input type="checkbox" id="agentCfgDefault" value="default" checked disabled style="accent-color: var(--neon-cyan);">
-              <div>
-                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-cyan);">Shell</div>
-                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">标准 Bash 环境 (必须启用)</div>
-              </div>
-            </label>
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
               <input type="checkbox" id="agentCfgAgy" value="agy" style="accent-color: var(--neon-cyan);">
               <div>
                 <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-pink);">Antigravity</div>
@@ -843,6 +836,13 @@
               <div>
                 <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-cyan);">Kimi</div>
                 <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">Kimi Code CLI 智能体</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; background: rgba(255,255,255,0.01);">
+              <input type="checkbox" id="agentCfgDefault" value="default" checked disabled style="accent-color: var(--neon-cyan);">
+              <div>
+                <div style="font-family: var(--font-title); font-size: 11px; font-weight: bold; color: var(--neon-cyan);">Shell</div>
+                <div style="font-size: 9px; color: var(--text-muted); font-family: var(--font-mono);">标准 Bash 环境 (必须启用)</div>
               </div>
             </label>
           </div>
