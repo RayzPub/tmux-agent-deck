@@ -20,6 +20,7 @@ export const state = {
   multiUserEnabled: false,
   username: null,
   role: null,
+  appIcon: 'shape-diamond',
   lastDragWithoutShiftTime: 0,
   lastSelection: '',
   themeConstants: {

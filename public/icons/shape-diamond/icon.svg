@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  
+      <defs>
+        <linearGradient id="bg-diamond" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0b162c"/>
+          <stop offset="100%" stop-color="#040915"/>
+        </linearGradient>
+        <linearGradient id="grad-diamond" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00f0ff"/>
+          <stop offset="100%" stop-color="#0090ff"/>
+        </linearGradient>
+        <filter id="glow-diamond" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="22" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      
+      <!-- Base container -->
+      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-diamond)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
+      
+      <!-- Subtle Grid -->
+      <g stroke="#00f0ff" stroke-width="2" stroke-opacity="0.12">
+        <line x1="160" y1="256" x2="864" y2="256"/>
+        <line x1="160" y1="512" x2="864" y2="512"/>
+        <line x1="160" y1="768" x2="864" y2="768"/>
+        <line x1="256" y1="160" x2="256" y2="864"/>
+        <line x1="512" y1="160" x2="512" y2="864"/>
+        <line x1="768" y1="160" x2="768" y2="864"/>
+      </g>
+
+      <!-- Outer Diamond Shield -->
+      <g filter="url(#glow-diamond)">
+        <polygon points="512,180 820,512 512,844 204,512" fill="none" stroke="url(#grad-diamond)" stroke-width="26" stroke-linejoin="round"/>
+        <polygon points="512,270 730,512 512,754 294,512" fill="none" stroke="#00f0ff" stroke-width="10" stroke-dasharray="28 16" stroke-opacity="0.7"/>
+        
+        <!-- Solid Core Diamond -->
+        <polygon points="512,390 620,512 512,634 404,512" fill="url(#grad-diamond)"/>
+        <circle cx="512" cy="512" r="28" fill="#ffffff"/>
+      </g>
+      
+      <circle cx="512" cy="180" r="16" fill="#00f0ff"/>
+      <circle cx="820" cy="512" r="16" fill="#00f0ff"/>
+      <circle cx="512" cy="844" r="16" fill="#00f0ff"/>
+      <circle cx="204" cy="512" r="16" fill="#00f0ff"/>
+    
+</svg>

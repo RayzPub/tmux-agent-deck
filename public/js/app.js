@@ -11,6 +11,7 @@ import { initQrCode } from './modules/qrcode.js';
 import { initImBot } from './modules/imBot.js';
 import { initChatMode, applySessionViewMode } from './modules/chatMode.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
+import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 
 // Expose immediately for terminal and tab operations
 window.applySessionViewMode = applySessionViewMode;
@@ -113,6 +114,8 @@ if (themeToggleBtn) {
   themeToggleBtn.addEventListener('click', toggleTheme);
 }
 initTheme();
+loadAppIcons();
+initAppIconAdminPanel();
 
 // Push notification toggling initialization
 if (pushToggleBtn) {
@@ -1396,9 +1399,11 @@ loadWorkspaces().then(async () => {
       const adminTabsHeader = document.getElementById('adminTabsHeader');
       const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
       const tabAgentsBtn = document.getElementById('tabAgentsBtn');
+      const tabAppIconsBtn = document.getElementById('tabAppIconsBtn');
       const adminAgentCfgSection = document.getElementById('adminAgentCfgSection');
       const tabContentInviteCodes = document.getElementById('tabContentInviteCodes');
       const tabContentAgents = document.getElementById('tabContentAgents');
+      const tabContentAppIcons = document.getElementById('tabContentAppIcons');
 
       // Load user keys
       loadUserKeys();
@@ -1407,13 +1412,16 @@ loadWorkspaces().then(async () => {
         // Admins see everything, just switch tab to agents
         if (adminTabsHeader) adminTabsHeader.classList.remove('hidden');
         if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
+        if (tabAppIconsBtn) tabAppIconsBtn.classList.remove('hidden');
         if (adminAgentCfgSection) adminAgentCfgSection.classList.remove('hidden');
         if (tabAgentsBtn) tabAgentsBtn.click();
       } else {
         // Regular users only see the personal API keys settings inside tabContentAgents
         if (adminTabsHeader) adminTabsHeader.classList.add('hidden');
+        if (tabAppIconsBtn) tabAppIconsBtn.classList.add('hidden');
         if (adminAgentCfgSection) adminAgentCfgSection.classList.add('hidden');
         if (tabContentInviteCodes) tabContentInviteCodes.classList.add('hidden');
+        if (tabContentAppIcons) tabContentAppIcons.classList.add('hidden');
         if (tabContentAgents) tabContentAgents.classList.remove('hidden');
       }
 
@@ -1458,20 +1466,27 @@ loadWorkspaces().then(async () => {
   }
 
   // Tab switching logic
+  const tabAppIconsBtn = document.getElementById('tabAppIconsBtn');
+  const tabContentAppIcons = document.getElementById('tabContentAppIcons');
+
   if (tabInviteCodesBtn && tabAgentsBtn && tabContentInviteCodes && tabContentAgents) {
     tabInviteCodesBtn.addEventListener('click', () => {
       tabInviteCodesBtn.classList.add('active');
       tabAgentsBtn.classList.remove('active');
+      if (tabAppIconsBtn) tabAppIconsBtn.classList.remove('active');
       tabContentInviteCodes.classList.remove('hidden');
       tabContentAgents.classList.add('hidden');
+      if (tabContentAppIcons) tabContentAppIcons.classList.add('hidden');
       loadInviteCodes();
     });
 
     tabAgentsBtn.addEventListener('click', () => {
       tabAgentsBtn.classList.add('active');
       tabInviteCodesBtn.classList.remove('active');
+      if (tabAppIconsBtn) tabAppIconsBtn.classList.remove('active');
       tabContentAgents.classList.remove('hidden');
       tabContentInviteCodes.classList.add('hidden');
+      if (tabContentAppIcons) tabContentAppIcons.classList.add('hidden');
       if (state.role === 'admin') {
         loadAgentSettings();
       }
@@ -1535,6 +1550,9 @@ loadWorkspaces().then(async () => {
         const settings = await res.json();
         state.enabledAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
         applyAgentVisibility();
+        if (settings.appIcon) {
+          applyAppIcon(settings.appIcon);
+        }
       }
     } catch (err) {
       console.error('Failed to load settings:', err);

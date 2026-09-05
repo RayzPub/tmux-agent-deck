@@ -150,6 +150,9 @@ module.exports = {
     if (!current.enabledAgents) {
       current.enabledAgents = ['default', 'agy', 'claude', 'codex'];
     }
+    if (!current.appIcon) {
+      current.appIcon = 'shape-diamond';
+    }
     return current;
   },
   saveSettings: (settings) => writeJSON(SETTINGS_FILE, settings),

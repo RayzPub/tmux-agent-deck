@@ -1,0 +1,11 @@
+{
+  "id": "shape-terminal",
+  "name": "极客终端",
+  "subtitle": "Terminal Prompt",
+  "description": "命令行提示符 >_，代表控制台与 Tmux 终端智能体",
+  "preview": "/icons/shape-terminal/icon-192.png",
+  "favicon": "/icons/shape-terminal/favicon.png",
+  "appleTouchIcon": "/icons/shape-terminal/apple-touch-icon.png",
+  "icon192": "/icons/shape-terminal/icon-192.png",
+  "icon512": "/icons/shape-terminal/icon-512.png"
+}

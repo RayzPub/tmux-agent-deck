@@ -1,0 +1,11 @@
+{
+  "id": "shape-neural",
+  "name": "神经节点",
+  "subtitle": "Neural Network",
+  "description": "多维智能互联中枢，象征多 Agent 协同与知识流动",
+  "preview": "/icons/shape-neural/icon-192.png",
+  "favicon": "/icons/shape-neural/favicon.png",
+  "appleTouchIcon": "/icons/shape-neural/apple-touch-icon.png",
+  "icon192": "/icons/shape-neural/icon-192.png",
+  "icon512": "/icons/shape-neural/icon-512.png"
+}

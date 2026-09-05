@@ -12,6 +12,7 @@ const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getH
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
+const iconService = require('../services/iconService');
 const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('../services/agentChatService');
 
 // Shell escape utility for safe command interpolation
@@ -264,6 +265,16 @@ router.post('/user/keys', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// API: Get app icon themes (Authenticated users)
+router.get('/app-icons', requireAuth, (req, res) => {
+  const themes = iconService.getThemes();
+  const activeTheme = iconService.getActiveTheme();
+  res.json({
+    themes,
+    activeTheme
+  });
+});
+
 // API: Get admin settings (Admin only)
 router.get('/admin/settings', requireAdmin, (req, res) => {
   res.json(db.getSettings());
@@ -271,13 +282,30 @@ router.get('/admin/settings', requireAdmin, (req, res) => {
 
 // API: Update admin settings (Admin only)
 router.post('/admin/settings', requireAdmin, (req, res) => {
-  const { enabledAgents } = req.body;
-  if (!Array.isArray(enabledAgents)) {
-    return res.status(400).json({ error: 'enabledAgents must be an array' });
-  }
+  const { enabledAgents, appIcon } = req.body;
   const current = db.getSettings();
-  current.enabledAgents = enabledAgents;
-  db.saveSettings(current);
+
+  if (enabledAgents !== undefined) {
+    if (!Array.isArray(enabledAgents)) {
+      return res.status(400).json({ error: 'enabledAgents must be an array' });
+    }
+    current.enabledAgents = enabledAgents;
+  }
+
+  if (appIcon !== undefined) {
+    if (typeof appIcon !== 'string') {
+      return res.status(400).json({ error: 'appIcon must be a string' });
+    }
+    try {
+      iconService.setActiveTheme(appIcon);
+      current.appIcon = appIcon;
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  } else {
+    db.saveSettings(current);
+  }
+
   res.json({ success: true, settings: current });
 });
 

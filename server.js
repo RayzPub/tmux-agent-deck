@@ -154,7 +154,40 @@ app.use('/dist', express.static(path.join(PROJECT_ROOT, 'public', 'dist'), {
 app.use('/css', express.static(path.join(PROJECT_ROOT, 'public', 'css'), codeStaticOptions));
 app.use('/js', express.static(path.join(PROJECT_ROOT, 'public', 'js'), codeStaticOptions));
 app.use('/images', express.static(path.join(PROJECT_ROOT, 'public', 'images'), docsStaticOptions));
+app.use('/icons', express.static(path.join(PROJECT_ROOT, 'public', 'icons'), docsStaticOptions));
 app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs'), docsStaticOptions));
+
+// Dynamic PWA Manifest responding to active icon theme
+app.get('/manifest.json', (req, res) => {
+  const iconService = require('./services/iconService');
+  const activeTheme = iconService.getActiveTheme();
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.json({
+    name: 'CCNOW',
+    short_name: 'CCNOW',
+    description: 'Cyberpunk CCNOW Console',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#0a0c16',
+    theme_color: '#00f0ff',
+    orientation: 'any',
+    icons: [
+      {
+        src: `/icons/${activeTheme.id}/icon-192.png`,
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any'
+      },
+      {
+        src: `/icons/${activeTheme.id}/icon-512.png`,
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any'
+      }
+    ]
+  });
+});
 
 // Serve welcome page without authentication
 app.get('/welcome', (req, res) => {

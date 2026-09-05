@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "build": "node bin/build.js",
+    "generate-icons": "node bin/generate-icons.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -23,6 +24,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "sharp": "^0.35.4"
   }
 }

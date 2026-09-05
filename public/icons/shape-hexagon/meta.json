@@ -1,0 +1,11 @@
+{
+  "id": "shape-hexagon",
+  "name": "战术六边",
+  "subtitle": "Tactical Hexagon",
+  "description": "蜂巢结构与战术护盾，象征稳固架构与安全隔离",
+  "preview": "/icons/shape-hexagon/icon-192.png",
+  "favicon": "/icons/shape-hexagon/favicon.png",
+  "appleTouchIcon": "/icons/shape-hexagon/apple-touch-icon.png",
+  "icon192": "/icons/shape-hexagon/icon-192.png",
+  "icon512": "/icons/shape-hexagon/icon-512.png"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "shape-diamond",
+  "name": "赛博菱形",
+  "subtitle": "Cyber Diamond",
+  "description": "经典 CCNOW 菱形战徽，呼应系统顶栏动态指示器",
+  "preview": "/icons/shape-diamond/icon-192.png",
+  "favicon": "/icons/shape-diamond/favicon.png",
+  "appleTouchIcon": "/icons/shape-diamond/apple-touch-icon.png",
+  "icon192": "/icons/shape-diamond/icon-192.png",
+  "icon512": "/icons/shape-diamond/icon-512.png"
+}

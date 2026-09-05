@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  
+      <defs>
+        <linearGradient id="bg-terminal" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0b162c"/>
+          <stop offset="100%" stop-color="#040915"/>
+        </linearGradient>
+        <linearGradient id="grad-terminal" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00f0ff"/>
+          <stop offset="100%" stop-color="#0090ff"/>
+        </linearGradient>
+        <filter id="glow-terminal" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="22" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      
+      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-terminal)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
+      
+      <!-- Terminal Frame -->
+      <rect x="180" y="200" width="664" height="624" rx="40" fill="none" stroke="#00f0ff" stroke-width="8" stroke-opacity="0.25"/>
+      <line x1="180" y1="280" x2="844" y2="280" stroke="#00f0ff" stroke-width="4" stroke-opacity="0.2"/>
+      <circle cx="230" cy="240" r="10" fill="#00f0ff" opacity="0.6"/>
+      <circle cx="264" cy="240" r="10" fill="#00f0ff" opacity="0.6"/>
+      <circle cx="298" cy="240" r="10" fill="#00f0ff" opacity="0.6"/>
+
+      <!-- Terminal Prompt Symbol >_ -->
+      <g filter="url(#glow-terminal)">
+        <polyline points="320,400 450,530 320,660" fill="none" stroke="url(#grad-terminal)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="500" y1="660" x2="680" y2="660" stroke="#00f0ff" stroke-width="48" stroke-linecap="round"/>
+      </g>
+    
+</svg>

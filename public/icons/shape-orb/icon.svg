@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  
+      <defs>
+        <linearGradient id="bg-orb" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0b162c"/>
+          <stop offset="100%" stop-color="#040915"/>
+        </linearGradient>
+        <linearGradient id="grad-orb" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00f0ff"/>
+          <stop offset="100%" stop-color="#0090ff"/>
+        </linearGradient>
+        <filter id="glow-orb" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="22" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      
+      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-orb)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
+      
+      <g filter="url(#glow-orb)">
+        <!-- Outer Track Ring -->
+        <circle cx="512" cy="512" r="310" fill="none" stroke="url(#grad-orb)" stroke-width="24"/>
+        
+        <!-- Segmented Track Ring -->
+        <circle cx="512" cy="512" r="230" fill="none" stroke="#00f0ff" stroke-width="14" stroke-dasharray="64 24" stroke-opacity="0.75"/>
+        
+        <!-- Axis Crosshairs -->
+        <line x1="202" y1="512" x2="272" y2="512" stroke="#00f0ff" stroke-width="10"/>
+        <line x1="752" y1="512" x2="822" y2="512" stroke="#00f0ff" stroke-width="10"/>
+        <line x1="512" y1="202" x2="512" y2="272" stroke="#00f0ff" stroke-width="10"/>
+        <line x1="512" y1="752" x2="512" y2="822" stroke="#00f0ff" stroke-width="10"/>
+
+        <!-- Core Energy Sphere -->
+        <circle cx="512" cy="512" r="90" fill="url(#grad-orb)"/>
+        <circle cx="512" cy="512" r="40" fill="#ffffff"/>
+      </g>
+    
+</svg>

@@ -1,0 +1,11 @@
+{
+  "id": "shape-cube",
+  "name": "等距立方",
+  "subtitle": "Isometric Cube",
+  "description": "3D 悬浮空间立方，象征多工作区 Workspace 隔离与容器",
+  "preview": "/icons/shape-cube/icon-192.png",
+  "favicon": "/icons/shape-cube/favicon.png",
+  "appleTouchIcon": "/icons/shape-cube/apple-touch-icon.png",
+  "icon192": "/icons/shape-cube/icon-192.png",
+  "icon512": "/icons/shape-cube/icon-512.png"
+}
