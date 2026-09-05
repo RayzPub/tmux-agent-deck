@@ -1204,7 +1204,8 @@ loadWorkspaces().then(async () => {
   initChatMode();
   restoreTabsState();
   
-  const currentSess = state.currentSession || state.activeTabId;
+  const activeTerminalTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'terminal');
+  const currentSess = state.currentSession || (activeTerminalTab ? activeTerminalTab.id : null);
   if (currentSess) {
     applySessionViewMode(currentSess);
   }

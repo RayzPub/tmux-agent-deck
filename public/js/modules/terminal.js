@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { closeTab, renderTabs } from './tabs.js';
+import { closeTab, renderTabs, switchMainPanel } from './tabs.js';
 import { refreshFileTree } from './explorer.js';
 
 export function showTipToast(message, duration = 4000) {
@@ -267,15 +267,9 @@ export function attachSession(sessionName) {
     loadSessions();
   }
 
-  // Show terminal panel
-  const welcomePanel = document.getElementById('welcomePanel');
-  const editorPanel = document.getElementById('editorPanel');
-  const terminalPanel = document.getElementById('terminalPanel');
+  // Show terminal panel & ensure all other panels (editor/diff/doc/welcome) are completely hidden
+  switchMainPanel('terminal');
   const terminalContainer = document.getElementById('terminal-container');
-
-  welcomePanel.classList.add('hidden');
-  editorPanel.classList.add('hidden');
-  terminalPanel.classList.remove('hidden');
 
   let cached = state.sessionCache.get(sessionName);
   if (!cached) {

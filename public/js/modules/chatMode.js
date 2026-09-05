@@ -234,8 +234,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
   }
 
-  const workspaceTabs = document.getElementById('workspaceTabs');
-
   // Optimistically switch to chat UI if user preferred chat mode and session is not confirmed unsupported
   const cachedSupport = sessionSupportCache.get(currentSess);
   if (targetMode === 'chat' && cachedSupport !== false) {
@@ -244,7 +242,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
     if (switcher) switcher.style.display = 'inline-flex';
-    if (workspaceTabs) workspaceTabs.classList.add('hidden');
     if (mobileControls) {
       mobileControls.classList.add('hidden');
       mobileControls.style.display = 'none';
@@ -273,10 +270,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
 
-    if (workspaceTabs && state.tabs && state.tabs.length > 0) {
-      workspaceTabs.classList.remove('hidden');
-    }
-
     if (mobileControls) {
       mobileControls.classList.remove('hidden');
       mobileControls.style.display = '';
@@ -303,10 +296,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
 
-    if (workspaceTabs) {
-      workspaceTabs.classList.add('hidden');
-    }
-
     // Hide original mobile bottom controls (input bar + helper keyboard) to eliminate double-inputs
     if (mobileControls) {
       mobileControls.classList.add('hidden');
@@ -323,10 +312,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     terminalContainer.classList.remove('hidden');
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
-
-    if (workspaceTabs && state.tabs && state.tabs.length > 0) {
-      workspaceTabs.classList.remove('hidden');
-    }
 
     // Restore mobile bottom controls in classic terminal mode
     if (mobileControls) {

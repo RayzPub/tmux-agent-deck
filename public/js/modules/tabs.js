@@ -32,21 +32,41 @@ export function updateMobileControlsVisibility() {
   }
 }
 
+export function switchMainPanel(panelType) {
+  const panels = {
+    welcome: document.getElementById('welcomePanel'),
+    terminal: document.getElementById('terminalPanel'),
+    editor: document.getElementById('editorPanel'),
+    'git-diff': document.getElementById('diffPanel'),
+    doc: document.getElementById('docPanel')
+  };
+
+  const targetKey = panels[panelType] ? panelType : 'welcome';
+
+  for (const [key, el] of Object.entries(panels)) {
+    if (!el) continue;
+    if (key === targetKey) {
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  }
+
+  // Double safeguard: if leaving terminal panel, ensure chat container is marked hidden
+  if (targetKey !== 'terminal') {
+    const chatContainer = document.getElementById('agentChatContainer');
+    if (chatContainer) {
+      chatContainer.classList.add('hidden');
+    }
+  }
+}
+
 export function renderTabs() {
   const workspaceTabs = document.getElementById('workspaceTabs');
-  const welcomePanel = document.getElementById('welcomePanel');
-  const terminalPanel = document.getElementById('terminalPanel');
-  const editorPanel = document.getElementById('editorPanel');
-  const diffPanel = document.getElementById('diffPanel');
-  const docPanel = document.getElementById('docPanel');
   
   if (state.tabs.length === 0) {
     workspaceTabs.classList.add('hidden');
-    welcomePanel.classList.remove('hidden');
-    terminalPanel.classList.add('hidden');
-    editorPanel.classList.add('hidden');
-    diffPanel.classList.add('hidden');
-    if (docPanel) docPanel.classList.add('hidden');
+    switchMainPanel('welcome');
     state.currentSession = null;
     state.activeTabId = null;
     saveTabsState();
@@ -54,14 +74,7 @@ export function renderTabs() {
     return;
   }
 
-  const currentSess = state.currentSession || (state.activeTabId && state.tabs.some(t => t.id === state.activeTabId && t.type === 'terminal') ? state.activeTabId : null);
-  const isChatMode = currentSess && localStorage.getItem(`deck_mode_${currentSess}`) === 'chat';
-
-  if (isChatMode) {
-    workspaceTabs.classList.add('hidden');
-  } else {
-    workspaceTabs.classList.remove('hidden');
-  }
+  workspaceTabs.classList.remove('hidden');
   workspaceTabs.innerHTML = '';
 
   state.tabs.forEach(tab => {
@@ -103,16 +116,15 @@ export function activateTab(tabId) {
   if (!tab) return;
 
   state.activeTabId = tabId;
+  state.currentSession = tab.type === 'terminal' ? tab.id : null;
   renderTabs();
 
-  const terminalPanel = document.getElementById('terminalPanel');
-  const welcomePanel = document.getElementById('welcomePanel');
-  const editorPanel = document.getElementById('editorPanel');
-  const diffPanel = document.getElementById('diffPanel');
-  const docPanel = document.getElementById('docPanel');
   const activeSessionNameText = document.getElementById('activeSessionName');
   const activeFilePath = document.getElementById('activeFilePath');
   const currentPathLabel = document.getElementById('currentPathLabel');
+
+  // Enforce mutual exclusivity of main workspace panels
+  switchMainPanel(tab.type);
 
   if (tab.type === 'terminal') {
     const targetSession = tab.id;
@@ -121,12 +133,6 @@ export function activateTab(tabId) {
       attachSession(targetSession);
       return;
     }
-
-    editorPanel.classList.add('hidden');
-    diffPanel.classList.add('hidden');
-    if (docPanel) docPanel.classList.add('hidden');
-    welcomePanel.classList.add('hidden');
-    terminalPanel.classList.remove('hidden');
 
     for (const [name, cachedSession] of state.sessionCache.entries()) {
       if (name === targetSession) {
@@ -137,7 +143,7 @@ export function activateTab(tabId) {
     }
 
     state.currentSession = targetSession;
-    activeSessionNameText.textContent = targetSession;
+    if (activeSessionNameText) activeSessionNameText.textContent = targetSession;
 
     if (typeof window.applySessionViewMode === 'function') {
       window.applySessionViewMode(targetSession);
@@ -151,18 +157,13 @@ export function activateTab(tabId) {
       }
     }, 50);
   } else if (tab.type === 'editor') {
-    terminalPanel.classList.add('hidden');
-    welcomePanel.classList.add('hidden');
-    editorPanel.classList.remove('hidden');
-    diffPanel.classList.add('hidden');
-    if (docPanel) docPanel.classList.add('hidden');
     state.currentSession = null;
 
     for (const cached of state.sessionCache.values()) {
       if (cached.container) cached.container.classList.add('hidden');
     }
 
-    activeFilePath.textContent = tab.path;
+    if (activeFilePath) activeFilePath.textContent = tab.path;
     const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
     const wsPrefix = ws ? `[${ws.name}] ` : '';
     if (currentPathLabel) {
@@ -170,18 +171,13 @@ export function activateTab(tabId) {
     }
     loadEditorFile(tab.path);
   } else if (tab.type === 'git-diff') {
-    terminalPanel.classList.add('hidden');
-    welcomePanel.classList.add('hidden');
-    editorPanel.classList.add('hidden');
-    diffPanel.classList.remove('hidden');
-    if (docPanel) docPanel.classList.add('hidden');
     state.currentSession = null;
 
     for (const cached of state.sessionCache.values()) {
       if (cached.container) cached.container.classList.add('hidden');
     }
 
-    activeFilePath.textContent = tab.path || 'All Changes';
+    if (activeFilePath) activeFilePath.textContent = tab.path || 'All Changes';
     const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
     const wsPrefix = ws ? `[${ws.name}] ` : '';
     if (currentPathLabel) {
@@ -189,11 +185,6 @@ export function activateTab(tabId) {
     }
     loadGitDiff(tab.path);
   } else if (tab.type === 'doc') {
-    terminalPanel.classList.add('hidden');
-    welcomePanel.classList.add('hidden');
-    editorPanel.classList.add('hidden');
-    diffPanel.classList.add('hidden');
-    if (docPanel) docPanel.classList.remove('hidden');
     state.currentSession = null;
 
     for (const cached of state.sessionCache.values()) {

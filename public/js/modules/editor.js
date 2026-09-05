@@ -46,6 +46,12 @@ export async function loadEditorFile(path) {
     }
     const data = await response.json();
     if (response.ok) {
+      // Safeguard: Ensure this editor tab is still active before manipulating state/focus
+      const activeTab = state.tabs.find(t => t.id === state.activeTabId);
+      if (!activeTab || activeTab.type !== 'editor' || activeTab.path !== path) {
+        return;
+      }
+
       if (state.editorInstance) {
         state.editorInstance.setValue(data.content);
         state.editorInstance.updateOptions({ readOnly: false });

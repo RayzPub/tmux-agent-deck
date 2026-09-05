@@ -427,18 +427,13 @@
   }
 }
 
-/* Forcibly hide duplicate mobile-bottom-controls when agent-chat-container is active */
-body:has(#agentChatContainer:not(.hidden)) .mobile-bottom-controls {
+/* Forcibly hide duplicate mobile-bottom-controls when agent-chat-container is active inside visible terminalPanel */
+body:has(#terminalPanel:not(.hidden) #agentChatContainer:not(.hidden)) .mobile-bottom-controls {
   display: none !important;
 }
 
-body:has(#agentChatContainer:not(.hidden)) .terminal-workspace.has-mobile-controls {
+body:has(#terminalPanel:not(.hidden) #agentChatContainer:not(.hidden)) .terminal-workspace.has-mobile-controls {
   padding-bottom: 0 !important;
-}
-
-/* Forcibly hide workspace tabs bar when agent-chat-container is active */
-body:has(#agentChatContainer:not(.hidden)) #workspaceTabs {
-  display: none !important;
 }
 
 /* Chat Mode Microphone Button (Cyberpunk cyan border/glow, matches terminal mode) */
