@@ -212,3 +212,44 @@ body.light-minimalist .cyber-tab.active {
   color: #2563eb;
   border-bottom: 2px solid #2563eb;
 }
+
+/* Wide Modal for JSON editing */
+.invite-modal-card.wide-modal {
+  max-width: 760px !important;
+  transition: max-width 0.25s ease;
+}
+
+.llm-gateway-editor {
+  width: 100%;
+  height: 380px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 4px;
+  color: #38bdf8;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 12px;
+  resize: vertical;
+  outline: none;
+  tab-size: 2;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.llm-gateway-editor:focus {
+  border-color: var(--neon-cyan, #00f0ff);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.25);
+}
+
+body.light-minimalist .llm-gateway-editor {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+body.light-minimalist .llm-gateway-editor:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.2);
+}
+

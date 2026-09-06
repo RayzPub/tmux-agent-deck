@@ -315,6 +315,40 @@ router.get('/admin/llm-gateway', requireAdmin, (req, res) => {
   res.json(llmGatewayService.getGatewayStatus());
 });
 
+// API: Get Raw LLM Gateway configuration JSON (Admin only)
+router.get('/admin/llm-gateway/raw', requireAdmin, (req, res) => {
+  try {
+    const config = llmGatewayService.loadConfig();
+    res.json({ success: true, config, raw: JSON.stringify(config, null, 2) });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load LLM gateway config: ' + err.message });
+  }
+});
+
+// API: Save Raw LLM Gateway configuration JSON (Admin only)
+router.post('/admin/llm-gateway/raw', requireAdmin, (req, res) => {
+  try {
+    let newConfig = req.body.config;
+    if (typeof req.body.raw === 'string') {
+      try {
+        newConfig = JSON.parse(req.body.raw);
+      } catch (parseErr) {
+        return res.status(400).json({ error: 'JSON 语法错误: ' + parseErr.message });
+      }
+    }
+    if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) {
+      return res.status(400).json({ error: '配置必须是一个有效的 JSON 对象' });
+    }
+    const ok = llmGatewayService.saveConfig(newConfig);
+    if (!ok) {
+      return res.status(500).json({ error: '保存配置文件失败' });
+    }
+    res.json({ success: true, message: 'LLM 网关配置已保存并生效', config: newConfig });
+  } catch (err) {
+    res.status(500).json({ error: '保存失败: ' + err.message });
+  }
+});
+
 // API: Update LLM Gateway config (Admin only)
 router.post('/admin/llm-gateway', requireAdmin, (req, res) => {
   const { enabled, allowExternalAccess, virtualKey, allowLocalhostWithoutKey, injectToTerminal, providers } = req.body;

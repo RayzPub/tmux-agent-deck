@@ -12,6 +12,7 @@ import { initImBot } from './modules/imBot.js';
 import { initChatMode, applySessionViewMode } from './modules/chatMode.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
+import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
 
 // Expose immediately for terminal and tab operations
 window.applySessionViewMode = applySessionViewMode;
@@ -116,6 +117,7 @@ if (themeToggleBtn) {
 initTheme();
 loadAppIcons();
 initAppIconAdminPanel();
+initLlmGatewayAdminPanel();
 
 // Push notification toggling initialization
 if (pushToggleBtn) {
@@ -1342,10 +1344,12 @@ loadWorkspaces().then(async () => {
       
       const adminTabsHeader = document.getElementById('adminTabsHeader');
       const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
+      const tabLlmGatewayBtn = document.getElementById('tabLlmGatewayBtn');
       const adminAgentCfgSection = document.getElementById('adminAgentCfgSection');
       
       if (adminTabsHeader) adminTabsHeader.classList.remove('hidden');
       if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
+      if (tabLlmGatewayBtn) tabLlmGatewayBtn.classList.remove('hidden');
       if (adminAgentCfgSection) adminAgentCfgSection.classList.remove('hidden');
 
       // Default to invite codes tab on open
@@ -1356,6 +1360,8 @@ loadWorkspaces().then(async () => {
   if (closeAdminPanelModalBtn && adminPanelModal) {
     closeAdminPanelModalBtn.addEventListener('click', () => {
       adminPanelModal.classList.add('hidden');
+      const card = adminPanelModal.querySelector('.modal-card');
+      if (card) card.classList.remove('wide-modal');
     });
   }
 
@@ -1363,6 +1369,8 @@ loadWorkspaces().then(async () => {
     adminPanelModal.addEventListener('click', (e) => {
       if (e.target === adminPanelModal) {
         adminPanelModal.classList.add('hidden');
+        const card = adminPanelModal.querySelector('.modal-card');
+        if (card) card.classList.remove('wide-modal');
       }
     });
   }
@@ -1400,10 +1408,12 @@ loadWorkspaces().then(async () => {
       const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
       const tabAgentsBtn = document.getElementById('tabAgentsBtn');
       const tabAppIconsBtn = document.getElementById('tabAppIconsBtn');
+      const tabLlmGatewayBtn = document.getElementById('tabLlmGatewayBtn');
       const adminAgentCfgSection = document.getElementById('adminAgentCfgSection');
       const tabContentInviteCodes = document.getElementById('tabContentInviteCodes');
       const tabContentAgents = document.getElementById('tabContentAgents');
       const tabContentAppIcons = document.getElementById('tabContentAppIcons');
+      const tabContentLlmGateway = document.getElementById('tabContentLlmGateway');
 
       // Load user keys
       loadUserKeys();
@@ -1413,15 +1423,18 @@ loadWorkspaces().then(async () => {
         if (adminTabsHeader) adminTabsHeader.classList.remove('hidden');
         if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
         if (tabAppIconsBtn) tabAppIconsBtn.classList.remove('hidden');
+        if (tabLlmGatewayBtn) tabLlmGatewayBtn.classList.remove('hidden');
         if (adminAgentCfgSection) adminAgentCfgSection.classList.remove('hidden');
         if (tabAgentsBtn) tabAgentsBtn.click();
       } else {
         // Regular users only see the personal API keys settings inside tabContentAgents
         if (adminTabsHeader) adminTabsHeader.classList.add('hidden');
         if (tabAppIconsBtn) tabAppIconsBtn.classList.add('hidden');
+        if (tabLlmGatewayBtn) tabLlmGatewayBtn.classList.add('hidden');
         if (adminAgentCfgSection) adminAgentCfgSection.classList.add('hidden');
         if (tabContentInviteCodes) tabContentInviteCodes.classList.add('hidden');
         if (tabContentAppIcons) tabContentAppIcons.classList.add('hidden');
+        if (tabContentLlmGateway) tabContentLlmGateway.classList.add('hidden');
         if (tabContentAgents) tabContentAgents.classList.remove('hidden');
       }
 

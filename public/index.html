@@ -770,10 +770,11 @@
       </div>
 
       <!-- Tabs Navigation -->
-      <div class="admin-tabs" id="adminTabsHeader" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 10px;">
+      <div class="admin-tabs" id="adminTabsHeader" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 10px; flex-wrap: wrap;">
         <button id="tabInviteCodesBtn" class="cyber-tab active">[ 邀请码管理 ]</button>
         <button id="tabAgentsBtn" class="cyber-tab">[ 智能体配置 ]</button>
         <button id="tabAppIconsBtn" class="cyber-tab">[ 应用图标 ]</button>
+        <button id="tabLlmGatewayBtn" class="cyber-tab">[ LLM 网关配置 ]</button>
       </div>
 
       <!-- Tab Content: Invite Codes -->
@@ -952,6 +953,34 @@
           <span id="appIconThemeHint" style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan);"></span>
           <button id="saveAppIconBtn" class="cyber-btn" style="height: 30px; padding: 0 16px; font-size: 11px; font-weight: bold;">
             <span class="btn-text">保存应用图标</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Content: LLM Gateway JSON Configuration (Admin Only) -->
+      <div id="tabContentLlmGateway" class="admin-tab-content hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+          <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">
+            // LLM 网关多厂商模型及密钥配置 (data/llm_gateway.json)
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="formatLlmGatewayJsonBtn" class="cyber-btn-outline" style="height: 26px; padding: 0 10px; font-size: 11px; cursor: pointer;" title="格式化 JSON 缩进">
+              <i data-lucide="align-left" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i>格式化
+            </button>
+            <button type="button" id="reloadLlmGatewayJsonBtn" class="cyber-btn-outline" style="height: 26px; padding: 0 10px; font-size: 11px; cursor: pointer;" title="重新从磁盘读取">
+              <i data-lucide="refresh-cw" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i>重载
+            </button>
+          </div>
+        </div>
+
+        <div style="position: relative; margin-bottom: 12px;">
+          <textarea id="llmGatewayJsonEditor" class="llm-gateway-editor" spellcheck="false" placeholder="正在加载网关配置..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 12px; gap: 10px;">
+          <div id="llmGatewayStatusHint" style="font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+          <button type="button" id="saveLlmGatewayJsonBtn" class="cyber-btn" style="height: 30px; padding: 0 18px; font-size: 11px; font-weight: bold; min-width: 100px;">
+            <span class="btn-text">保存并生效</span>
           </button>
         </div>
       </div>
