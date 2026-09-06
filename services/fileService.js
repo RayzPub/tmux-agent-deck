@@ -224,6 +224,7 @@ const ensureCodexConfig = (targetHome, customConfig = {}) => {
     const providerName = isGateway ? 'deck_gateway' : 'custom_provider';
     const tomlContent = `model_provider = "${providerName}"
 model = "${targetModel}"
+check_for_update_on_startup = false
 
 [model_providers.${providerName}]
 name = "${providerName}"
@@ -238,6 +239,12 @@ trust_level = "trusted"
 trust_level = "trusted"
 `;
     try {
+      if (fs.existsSync(configPath)) {
+        const existing = fs.readFileSync(configPath, 'utf8');
+        if (existing === tomlContent) {
+          return;
+        }
+      }
       fs.writeFileSync(configPath, tomlContent, 'utf8');
       chownToSudoUser(configPath);
     } catch (e) {
