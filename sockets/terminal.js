@@ -104,10 +104,15 @@ const initSocket = (io) => {
           ptyEnv.ANTHROPIC_BASE_URL = `http://127.0.0.1:${localPort}`;
           ptyEnv.ANTHROPIC_API_KEY = vKey;
           ptyEnv.ANTHROPIC_AUTH_TOKEN = vKey;
+          const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
+          ptyEnv.ANTHROPIC_MODEL = defaultAnthropicModel;
 
           ptyEnv.OPENAI_BASE_URL = `http://127.0.0.1:${localPort}/v1`;
           ptyEnv.OPENAI_API_BASE = `http://127.0.0.1:${localPort}/v1`;
           ptyEnv.OPENAI_API_KEY = vKey;
+          const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
+          ptyEnv.OPENAI_MODEL = defaultOpenAiModel;
+          ptyEnv.CODEX_MODEL = defaultOpenAiModel;
         }
       } catch (gwErr) {
         console.warn('⚠️ Failed to inject LLM Gateway env:', gwErr.message);
@@ -141,8 +146,10 @@ const initSocket = (io) => {
           if (defaultKeys.claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = defaultKeys.claudeBaseUrl;
         }
 
-        if (keys.claudeModel || defaultKeys.claudeModel) {
-          ptyEnv.ANTHROPIC_MODEL = keys.claudeModel || defaultKeys.claudeModel;
+        if (keys.claudeModel) {
+          ptyEnv.ANTHROPIC_MODEL = keys.claudeModel;
+        } else if (!ptyEnv.ANTHROPIC_MODEL && defaultKeys.claudeModel) {
+          ptyEnv.ANTHROPIC_MODEL = defaultKeys.claudeModel;
         }
 
         // Codex / OpenAI
