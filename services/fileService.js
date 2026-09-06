@@ -889,19 +889,25 @@ const updateUserKeysFile = (username, keys) => {
 
   if (keys.claude) {
     lines.push(`export ANTHROPIC_API_KEY=${shellescapeVal(keys.claude)}`);
-  }
-  if (keys.claudeBaseUrl) {
-    lines.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(keys.claudeBaseUrl)}`);
+    lines.push(`export ANTHROPIC_AUTH_TOKEN=${shellescapeVal(keys.claude)}`);
+    if (keys.claudeBaseUrl) {
+      lines.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(keys.claudeBaseUrl)}`);
+    } else {
+      lines.push(`unset ANTHROPIC_BASE_URL`);
+    }
   }
   if (keys.claudeModel) {
     lines.push(`export ANTHROPIC_MODEL=${shellescapeVal(keys.claudeModel)}`);
   }
   if (keys.codex) {
     lines.push(`export OPENAI_API_KEY=${shellescapeVal(keys.codex)}`);
-  }
-  if (keys.codexBaseUrl) {
-    lines.push(`export OPENAI_BASE_URL=${shellescapeVal(keys.codexBaseUrl)}`);
-    lines.push(`export OPENAI_API_BASE=${shellescapeVal(keys.codexBaseUrl)}`);
+    if (keys.codexBaseUrl) {
+      lines.push(`export OPENAI_BASE_URL=${shellescapeVal(keys.codexBaseUrl)}`);
+      lines.push(`export OPENAI_API_BASE=${shellescapeVal(keys.codexBaseUrl)}`);
+    } else {
+      lines.push(`unset OPENAI_BASE_URL`);
+      lines.push(`unset OPENAI_API_BASE`);
+    }
   }
   if (keys.codexModel) {
     lines.push(`export OPENAI_MODEL=${shellescapeVal(keys.codexModel)}`);

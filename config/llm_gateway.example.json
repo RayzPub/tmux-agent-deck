@@ -1,0 +1,51 @@
+{
+  "enabled": true,
+  "allowExternalAccess": false,
+  "virtualKey": "sk-deck-local",
+  "allowLocalhostWithoutKey": true,
+  "injectToTerminal": true,
+  "providers": {
+    "tencent": {
+      "name": "腾讯云 LKEAP",
+      "enabled": true,
+      "keys": [
+        "your-tencent-api-key"
+      ],
+      "endpoints": {
+        "anthropic": "https://api.lkeap.cloud.tencent.com/plan/anthropic",
+        "openai": "https://api.lkeap.cloud.tencent.com/plan/v3"
+      },
+      "models": {
+        "anthropic": [
+          "glm-5.3-flash"
+        ],
+        "openai": [
+          "glm-5.3-flash"
+        ]
+      }
+    },
+    "kimi": {
+      "name": "Moonshot Kimi",
+      "enabled": true,
+      "keys": [
+        "your-kimi-api-key"
+      ],
+      "endpoints": {
+        "anthropic": "https://api.kimi.com/coding",
+        "openai": "https://api.kimi.com/coding/v1"
+      },
+      "models": {
+        "anthropic": [
+          "k3-256k"
+        ],
+        "openai": [
+          "k3-256k"
+        ]
+      }
+    }
+  },
+  "defaults": {
+    "anthropic": "tencent",
+    "openai": "tencent"
+  }
+}

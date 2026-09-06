@@ -15,6 +15,7 @@ const { initSocket } = require('./sockets/terminal');
 const { runMigration } = require('./services/dbService');
 const { initClaudeConfig } = require('./services/fileService');
 const apiRoutes = require('./routes/api');
+const llmGatewayRoutes = require('./routes/llmGateway');
 const imBot = require('./im-bot');
 
 // Run data migrations on boot
@@ -42,12 +43,24 @@ if (!useHttps) {
 // Enable Gzip compression
 app.use(compression());
 
-// Redirect HTTP to HTTPS if enabled
+// Redirect HTTP to HTTPS if enabled (strictly localhost TCP loopback allowed on plain HTTP)
 app.use((req, res, next) => {
   if (useHttps && !req.secure) {
-    const host = req.headers.host ? req.headers.host.split(':')[0] : 'outshine.cloud';
+    const socketIp = req.socket?.remoteAddress || '';
+    const isLoopback =
+      socketIp === '127.0.0.1' ||
+      socketIp === '::1' ||
+      socketIp === '::ffff:127.0.0.1';
+
+    // Only allow genuine local loopback connections without SSL redirects
+    if (isLoopback) {
+      return next();
+    }
+
+    const host = req.headers.host ? req.headers.host.split(':')[0] : '';
+    const domainHost = (host && host !== '127.0.0.1' && host !== 'localhost') ? host : 'outshine.cloud';
     const redirectPort = HTTPS_PORT === 443 ? '' : `:${HTTPS_PORT}`;
-    return res.redirect(`https://${host}${redirectPort}${req.url}`);
+    return res.redirect(`https://${domainHost}${redirectPort}${req.url}`);
   }
   next();
 });
@@ -60,8 +73,8 @@ const io = socketIo(useHttps ? httpsServer : httpServer);
 app.set('io', io);
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
 // Middleware to control caching for HTML pages and API endpoints
@@ -69,8 +82,8 @@ app.use((req, res, next) => {
   const ext = path.extname(req.path).toLowerCase();
   const cleanPath = req.path.replace(/\/$/, '');
 
-  if (cleanPath.startsWith('/api')) {
-    // API responses must never be stored or cached anywhere (critical for CDN security and real-time state)
+  if (cleanPath.startsWith('/api') || cleanPath.startsWith('/v1') || cleanPath.startsWith('/llm')) {
+    // API & LLM gateway responses must never be stored or cached anywhere (critical for CDN security and real-time state)
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -206,6 +219,23 @@ app.get('/', requireAuth, (req, res) => {
 app.get('/index.html', requireAuth, (req, res) => {
   res.sendFile(getHtmlPath('index.html'));
 });
+
+// Health check endpoint for Claude Code bootstrap (strictly local loopback only)
+app.all('/api/hello', (req, res) => {
+  const socketIp = req.socket?.remoteAddress || '';
+  const isLoopback =
+    socketIp === '127.0.0.1' ||
+    socketIp === '::1' ||
+    socketIp === '::ffff:127.0.0.1';
+
+  if (!isLoopback) {
+    return res.status(404).end();
+  }
+  res.status(200).json({ status: 'ok' });
+});
+
+// Mount LLM Gateway routes (Anthropic & OpenAI CLIs localhost proxy)
+app.use(['/v1', '/llm/v1'], llmGatewayRoutes);
 
 // Fallback to protect any other static files
 app.use(express.static(path.join(PROJECT_ROOT, 'public'), {

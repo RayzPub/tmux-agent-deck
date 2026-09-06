@@ -92,6 +92,28 @@ const initSocket = (io) => {
         SKIP_SUDO_HINT: '1'
       };
 
+      // 1. LLM Gateway auto-injection (Platform baseline fallback)
+      try {
+        const llmGatewayService = require('../services/llmGatewayService');
+        const gwConfig = llmGatewayService.loadConfig();
+        if (gwConfig.enabled && gwConfig.injectToTerminal) {
+          const { PORT } = require('../config');
+          const localPort = PORT || 3000;
+          const vKey = gwConfig.virtualKey || 'sk-deck-local';
+
+          ptyEnv.ANTHROPIC_BASE_URL = `http://127.0.0.1:${localPort}`;
+          ptyEnv.ANTHROPIC_API_KEY = vKey;
+          ptyEnv.ANTHROPIC_AUTH_TOKEN = vKey;
+
+          ptyEnv.OPENAI_BASE_URL = `http://127.0.0.1:${localPort}/v1`;
+          ptyEnv.OPENAI_API_BASE = `http://127.0.0.1:${localPort}/v1`;
+          ptyEnv.OPENAI_API_KEY = vKey;
+        }
+      } catch (gwErr) {
+        console.warn('⚠️ Failed to inject LLM Gateway env:', gwErr.message);
+      }
+
+      // 2. User-specific / Custom Keys (Higher Priority - Overrides Gateway)
       if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
         const db = require('../services/dbService');
         const users = db.getUsers();
@@ -104,23 +126,47 @@ const initSocket = (io) => {
         const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
 
         // Claude / Anthropic
-        const claudeKey = keys.claude || defaultKeys.claude;
-        if (claudeKey) ptyEnv.ANTHROPIC_API_KEY = claudeKey;
-        const claudeBaseUrl = keys.claudeBaseUrl || defaultKeys.claudeBaseUrl;
-        if (claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = claudeBaseUrl;
-        const claudeModel = keys.claudeModel || defaultKeys.claudeModel;
-        if (claudeModel) ptyEnv.ANTHROPIC_MODEL = claudeModel;
+        if (keys.claude) {
+          // User explicitly configured custom Claude Key
+          ptyEnv.ANTHROPIC_API_KEY = keys.claude;
+          ptyEnv.ANTHROPIC_AUTH_TOKEN = keys.claude;
+          if (keys.claudeBaseUrl) {
+            ptyEnv.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
+          } else {
+            // Unset gateway's localhost URL so Claude can connect directly to official Anthropic API
+            delete ptyEnv.ANTHROPIC_BASE_URL;
+          }
+        } else if (!ptyEnv.ANTHROPIC_API_KEY && defaultKeys.claude) {
+          ptyEnv.ANTHROPIC_API_KEY = defaultKeys.claude;
+          if (defaultKeys.claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = defaultKeys.claudeBaseUrl;
+        }
+
+        if (keys.claudeModel || defaultKeys.claudeModel) {
+          ptyEnv.ANTHROPIC_MODEL = keys.claudeModel || defaultKeys.claudeModel;
+        }
 
         // Codex / OpenAI
-        const codexKey = keys.codex || defaultCodexKey;
-        if (codexKey) ptyEnv.OPENAI_API_KEY = codexKey;
-        const codexBaseUrl = keys.codexBaseUrl || defaultKeys.codexBaseUrl;
-        if (codexBaseUrl) {
-          ptyEnv.OPENAI_BASE_URL = codexBaseUrl;
-          ptyEnv.OPENAI_API_BASE = codexBaseUrl;
+        if (keys.codex) {
+          // User explicitly configured custom OpenAI/Codex Key
+          ptyEnv.OPENAI_API_KEY = keys.codex;
+          if (keys.codexBaseUrl) {
+            ptyEnv.OPENAI_BASE_URL = keys.codexBaseUrl;
+            ptyEnv.OPENAI_API_BASE = keys.codexBaseUrl;
+          } else {
+            // Unset gateway's localhost URL so OpenAI can connect directly
+            delete ptyEnv.OPENAI_BASE_URL;
+            delete ptyEnv.OPENAI_API_BASE;
+          }
+        } else if (!ptyEnv.OPENAI_API_KEY && defaultCodexKey) {
+          ptyEnv.OPENAI_API_KEY = defaultCodexKey;
+          if (defaultKeys.codexBaseUrl) {
+            ptyEnv.OPENAI_BASE_URL = defaultKeys.codexBaseUrl;
+            ptyEnv.OPENAI_API_BASE = defaultKeys.codexBaseUrl;
+          }
         }
-        const codexModel = keys.codexModel || defaultKeys.codexModel;
-        if (codexModel) {
+
+        if (keys.codexModel || defaultKeys.codexModel) {
+          const codexModel = keys.codexModel || defaultKeys.codexModel;
           ptyEnv.OPENAI_MODEL = codexModel;
           ptyEnv.CODEX_MODEL = codexModel;
         }
@@ -138,7 +184,6 @@ const initSocket = (io) => {
         }
         const kimiModel = keys.kimiModel || defaultKeys.kimiModel;
         if (kimiModel) ptyEnv.KIMI_MODEL = kimiModel;
-
       }
 
       try {

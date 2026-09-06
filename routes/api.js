@@ -14,6 +14,7 @@ const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAl
 const db = require('../services/dbService');
 const iconService = require('../services/iconService');
 const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('../services/agentChatService');
+const llmGatewayService = require('../services/llmGatewayService');
 
 // Shell escape utility for safe command interpolation
 const shellescape = (s) => {
@@ -307,6 +308,108 @@ router.post('/admin/settings', requireAdmin, (req, res) => {
   }
 
   res.json({ success: true, settings: current });
+});
+
+// API: Get LLM Gateway status & config (Admin only)
+router.get('/admin/llm-gateway', requireAdmin, (req, res) => {
+  res.json(llmGatewayService.getGatewayStatus());
+});
+
+// API: Update LLM Gateway config (Admin only)
+router.post('/admin/llm-gateway', requireAdmin, (req, res) => {
+  const { enabled, allowExternalAccess, virtualKey, allowLocalhostWithoutKey, injectToTerminal, providers } = req.body;
+  const current = llmGatewayService.loadConfig();
+
+  if (enabled !== undefined) current.enabled = !!enabled;
+  if (allowExternalAccess !== undefined) current.allowExternalAccess = !!allowExternalAccess;
+  if (virtualKey !== undefined) current.virtualKey = String(virtualKey).trim();
+  if (allowLocalhostWithoutKey !== undefined) current.allowLocalhostWithoutKey = !!allowLocalhostWithoutKey;
+  if (injectToTerminal !== undefined) current.injectToTerminal = !!injectToTerminal;
+
+  if (providers && typeof providers === 'object') {
+    for (const [pName, pConfig] of Object.entries(providers)) {
+      if (!current.providers[pName]) {
+        current.providers[pName] = { enabled: true, baseUrl: '', keys: [] };
+      }
+      if (pConfig.enabled !== undefined) current.providers[pName].enabled = !!pConfig.enabled;
+      if (pConfig.baseUrl !== undefined) current.providers[pName].baseUrl = String(pConfig.baseUrl).trim();
+      if (Array.isArray(pConfig.keys)) {
+        current.providers[pName].keys = pConfig.keys.map(k => String(k).trim()).filter(Boolean);
+      }
+    }
+  }
+
+  const ok = llmGatewayService.saveConfig(current);
+  if (!ok) {
+    return res.status(500).json({ error: 'Failed to save LLM gateway configuration' });
+  }
+
+  res.json({ success: true, status: llmGatewayService.getGatewayStatus() });
+});
+
+// API: Test LLM Gateway Provider (Admin only)
+router.post('/admin/llm-gateway/test', requireAdmin, async (req, res) => {
+  const { provider } = req.body;
+  if (!provider) {
+    return res.status(400).json({ error: 'Provider name required (anthropic, openai, gemini)' });
+  }
+
+  const config = llmGatewayService.loadConfig();
+  const key = llmGatewayService.getNextKey(provider, config);
+  if (!key) {
+    return res.status(400).json({ error: `No available API keys found for provider '${provider}'` });
+  }
+
+  const pConfig = config.providers[provider] || {};
+  const isAnthropic = !!(pConfig.endpoints?.anthropic || provider === 'anthropic' || provider === 'kimi');
+  const baseUrl = (pConfig.endpoints?.anthropic || pConfig.endpoints?.openai || pConfig.baseUrl || '').trim();
+
+  try {
+    if (isAnthropic) {
+      const endpoint = (pConfig.endpoints?.anthropic || baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
+      const testRes = await fetch(`${endpoint}/v1/messages`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: pConfig.models?.anthropic?.[0] || 'glm-5.3-flash',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'hi' }]
+        })
+      });
+      return res.json({
+        ok: testRes.ok,
+        status: testRes.status,
+        statusText: testRes.statusText,
+        maskedKey: llmGatewayService.maskKey(key)
+      });
+    } else {
+      const endpoint = (pConfig.endpoints?.openai || baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+      const testRes = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: pConfig.models?.openai?.[0] || 'glm-5.3-flash',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'hi' }]
+        })
+      });
+      return res.json({
+        ok: testRes.ok,
+        status: testRes.status,
+        statusText: testRes.statusText,
+        maskedKey: llmGatewayService.maskKey(key)
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message, maskedKey: llmGatewayService.maskKey(key) });
+  }
 });
 
 // API: Tmux Commands (Protected)
