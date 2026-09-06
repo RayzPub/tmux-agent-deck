@@ -696,6 +696,12 @@ export function attachSession(sessionName) {
     sessionTerm.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true;
 
+      // PC Desktop Tab 键优化：防止桌面浏览器按 Tab 时将焦点跳出终端，确保补全字符正常送达 shell
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        return true;
+      }
+
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 

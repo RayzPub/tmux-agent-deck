@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc } = require('../services/fileService');
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
@@ -571,6 +571,8 @@ router.post('/sessions', requireAuth, async (req, res) => {
   const workDir = resolvedPath || userHome;
   ensureClaudeSettings(userHome);
   ensureCodexConfig(userHome);
+  ensureInputrc(userHome);
+  ensureBashrc(userHome);
   ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
   let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
 
