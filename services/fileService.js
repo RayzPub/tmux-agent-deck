@@ -136,6 +136,16 @@ const ensureClaudeSettings = (targetHome) => {
     changed = true;
   }
 
+  if (!settings.env) {
+    settings.env = {};
+    changed = true;
+  }
+
+  if (settings.env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT !== '1') {
+    settings.env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
+    changed = true;
+  }
+
   if (changed) {
     try {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
@@ -148,11 +158,14 @@ const ensureClaudeSettings = (targetHome) => {
 
 /**
  * Ensures a directory (or list of directories) is marked as trusted in Claude Code's ~/.claude.json
- * so that the interactive "Trust folder" confirmation dialog is skipped.
+ * so that the interactive "Trust folder" confirmation dialog is skipped, onboarding is bypassed,
+ * and custom API keys are pre-approved so Claude Code never prompts on startup.
  */
-const ensureClaudeTrust = (targetPaths, targetHome) => {
-  if (!targetPaths) return;
-  const rawList = Array.isArray(targetPaths) ? targetPaths : [targetPaths];
+const ensureClaudeTrust = (targetPaths, targetHome, extraApiKeyToApprove) => {
+  const sysHome = getHomeDir();
+  const targetHomeDir = targetHome || sysHome;
+
+  const rawList = Array.isArray(targetPaths) ? targetPaths : (targetPaths ? [targetPaths] : []);
   const pathsToTrust = new Set();
   for (const p of rawList) {
     if (!p) continue;
@@ -163,14 +176,45 @@ const ensureClaudeTrust = (targetPaths, targetHome) => {
       }
     } catch (e) {}
   }
-  if (pathsToTrust.size === 0) return;
-
-  const sysHome = getHomeDir();
-  const targetHomeDir = targetHome || sysHome;
 
   const candidateFiles = new Set();
   if (targetHomeDir) candidateFiles.add(path.join(targetHomeDir, '.claude.json'));
   if (sysHome) candidateFiles.add(path.join(sysHome, '.claude.json'));
+
+  // Collect candidate API keys to pre-approve in customApiKeyResponses
+  const candidateKeys = new Set();
+  if (extraApiKeyToApprove && typeof extraApiKeyToApprove === 'string') {
+    candidateKeys.add(extraApiKeyToApprove.trim());
+  }
+  if (process.env.ANTHROPIC_API_KEY) candidateKeys.add(process.env.ANTHROPIC_API_KEY.trim());
+  if (process.env.ANTHROPIC_AUTH_TOKEN) candidateKeys.add(process.env.ANTHROPIC_AUTH_TOKEN.trim());
+
+  for (const homeDir of [targetHomeDir, sysHome]) {
+    if (!homeDir) continue;
+    const kf = path.join(homeDir, '.api_keys');
+    if (fs.existsSync(kf)) {
+      try {
+        const content = fs.readFileSync(kf, 'utf8');
+        const m1 = content.match(/export ANTHROPIC_API_KEY=['"]?([^'"\n\r]+)['"]?/);
+        if (m1 && m1[1]) candidateKeys.add(m1[1].trim());
+        const m2 = content.match(/export ANTHROPIC_AUTH_TOKEN=['"]?([^'"\n\r]+)['"]?/);
+        if (m2 && m2[1]) candidateKeys.add(m2[1].trim());
+      } catch (e) {}
+    }
+    const sf = path.join(homeDir, '.claude', 'settings.json');
+    if (fs.existsSync(sf)) {
+      try {
+        const sc = JSON.parse(fs.readFileSync(sf, 'utf8'));
+        if (sc.env?.ANTHROPIC_API_KEY) candidateKeys.add(String(sc.env.ANTHROPIC_API_KEY).trim());
+        if (sc.env?.ANTHROPIC_AUTH_TOKEN) candidateKeys.add(String(sc.env.ANTHROPIC_AUTH_TOKEN).trim());
+      } catch (e) {}
+    }
+  }
+
+  try {
+    const gwConfig = require('./llmGatewayService').loadConfig();
+    if (gwConfig && gwConfig.virtualKey) candidateKeys.add(gwConfig.virtualKey.trim());
+  } catch (e) {}
 
   const processedRealPaths = new Set();
 
@@ -199,11 +243,44 @@ const ensureClaudeTrust = (targetPaths, targetHome) => {
     if (!config.projects) {
       config.projects = {};
     }
-    if (config.hasCompletedOnboarding === undefined) {
+    let changed = !fileExisted;
+
+    if (config.hasCompletedOnboarding !== true) {
       config.hasCompletedOnboarding = true;
+      changed = true;
     }
 
-    let changed = !fileExisted;
+    if (!config.customApiKeyResponses) {
+      config.customApiKeyResponses = { approved: [], rejected: [] };
+      changed = true;
+    }
+    if (!Array.isArray(config.customApiKeyResponses.approved)) {
+      config.customApiKeyResponses.approved = [];
+      changed = true;
+    }
+    if (!Array.isArray(config.customApiKeyResponses.rejected)) {
+      config.customApiKeyResponses.rejected = [];
+      changed = true;
+    }
+
+    for (const rawKey of candidateKeys) {
+      if (rawKey && rawKey.length >= 3) {
+        const suffix = rawKey.slice(-20);
+        if (!config.customApiKeyResponses.approved.includes(suffix)) {
+          config.customApiKeyResponses.approved.push(suffix);
+          changed = true;
+        }
+      }
+    }
+
+    if (config.customApiKeyResponses.rejected && config.customApiKeyResponses.rejected.length > 0) {
+      const filtered = config.customApiKeyResponses.rejected.filter(r => !config.customApiKeyResponses.approved.includes(r));
+      if (filtered.length !== config.customApiKeyResponses.rejected.length) {
+        config.customApiKeyResponses.rejected = filtered;
+        changed = true;
+      }
+    }
+
     for (const p of pathsToTrust) {
       if (!config.projects[p]) {
         config.projects[p] = {};
@@ -889,12 +966,13 @@ const updateUserKeysFile = (username, keys) => {
 
   if (keys.claude) {
     lines.push(`export ANTHROPIC_API_KEY=${shellescapeVal(keys.claude)}`);
-    lines.push(`export ANTHROPIC_AUTH_TOKEN=${shellescapeVal(keys.claude)}`);
+    lines.push(`unset ANTHROPIC_AUTH_TOKEN`);
     if (keys.claudeBaseUrl) {
       lines.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(keys.claudeBaseUrl)}`);
     } else {
       lines.push(`unset ANTHROPIC_BASE_URL`);
     }
+    lines.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
   }
   if (keys.claudeModel) {
     lines.push(`export ANTHROPIC_MODEL=${shellescapeVal(keys.claudeModel)}`);
@@ -949,9 +1027,12 @@ const updateUserKeysFile = (username, keys) => {
     if (!settings.theme) {
       settings.theme = 'dark';
     }
+    settings.env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
     if (keys.claude) {
-      settings.env.ANTHROPIC_AUTH_TOKEN = keys.claude;
+      settings.env.ANTHROPIC_API_KEY = keys.claude;
+      delete settings.env.ANTHROPIC_AUTH_TOKEN;
     } else if (keys.claude === '') {
+      delete settings.env.ANTHROPIC_API_KEY;
       delete settings.env.ANTHROPIC_AUTH_TOKEN;
     }
     if (keys.claudeBaseUrl) {
@@ -973,6 +1054,11 @@ const updateUserKeysFile = (username, keys) => {
       console.error(`[fileService] Failed to write settings.json for user ${username}:`, err);
     }
   }
+
+  // Pre-approve the Claude API key and trust workspace directories
+  try {
+    ensureClaudeTrust([userHome, PROJECT_ROOT], userHome, keys.claude);
+  } catch (e) {}
 
   // Update user's private .kimi-code/config.toml and .kimi/config.toml
   if (keys.kimi) {

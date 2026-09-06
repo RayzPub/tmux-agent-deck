@@ -103,7 +103,8 @@ const initSocket = (io) => {
 
           ptyEnv.ANTHROPIC_BASE_URL = `http://127.0.0.1:${localPort}`;
           ptyEnv.ANTHROPIC_API_KEY = vKey;
-          ptyEnv.ANTHROPIC_AUTH_TOKEN = vKey;
+          delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
+          ptyEnv.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
           const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
           ptyEnv.ANTHROPIC_MODEL = defaultAnthropicModel;
 

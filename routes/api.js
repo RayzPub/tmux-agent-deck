@@ -583,7 +583,7 @@ router.post('/sessions', requireAuth, async (req, res) => {
   } else if (agent === 'claude') {
     const claudePath = getAgentPath('claude');
     agentSessionId = crypto.randomUUID();
-    shellCmd = claudePath ? `${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
+    shellCmd = claudePath ? `unset ANTHROPIC_AUTH_TOKEN && export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 && ${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
   } else if (agent === 'codex') {
     const codexPath = getAgentPath('codex');
     shellCmd = codexPath ? `${codexPath} -c check_for_update=false -c update_on_startup=false; exec bash` : 'exec bash';
