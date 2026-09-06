@@ -163,12 +163,24 @@ const ensureClaudeSettings = (targetHome) => {
     changed = true;
   }
 
-  // Keep settings.json clean of sensitive credentials and hardcoded network URLs:
+  // Keep settings.json clean of sensitive credentials, network URLs, and model locks:
   // Claude Code merges settings.env into process.env at startup, which overrides PTY and shell env.
-  // To ensure runtime environment variables (ptyEnv / ~/.api_keys) remain the single source of truth,
-  // we strictly purge ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, and ANTHROPIC_AUTH_TOKEN from settings.json.
+  // To ensure runtime environment variables (ptyEnv / per-session exports) remain the single source of truth,
+  // we strictly purge ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, and ANTHROPIC_MODEL from settings.json.
   if (settings.env.ANTHROPIC_BASE_URL) {
     delete settings.env.ANTHROPIC_BASE_URL;
+    changed = true;
+  }
+  if (settings.env.ANTHROPIC_MODEL) {
+    delete settings.env.ANTHROPIC_MODEL;
+    changed = true;
+  }
+  if (settings.env.ANTHROPIC_DEFAULT_MODEL) {
+    delete settings.env.ANTHROPIC_DEFAULT_MODEL;
+    changed = true;
+  }
+  if (settings.model) {
+    delete settings.model;
     changed = true;
   }
 
@@ -1215,13 +1227,9 @@ const updateUserKeysFile = (username, keys) => {
     delete settings.env.ANTHROPIC_API_KEY;
     delete settings.env.ANTHROPIC_AUTH_TOKEN;
     delete settings.env.ANTHROPIC_BASE_URL;
-    if (keys.claudeModel) {
-      settings.model = keys.claudeModel;
-      settings.env.ANTHROPIC_MODEL = keys.claudeModel;
-    } else if (keys.claudeModel === '') {
-      delete settings.model;
-      delete settings.env.ANTHROPIC_MODEL;
-    }
+    delete settings.env.ANTHROPIC_MODEL;
+    delete settings.env.ANTHROPIC_DEFAULT_MODEL;
+    delete settings.model;
     try {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
       chownToSudoUser(settingsPath);

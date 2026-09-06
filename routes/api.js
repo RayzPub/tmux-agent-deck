@@ -642,6 +642,9 @@ router.post('/sessions', requireAuth, async (req, res) => {
   // Use shellescape to prevent command injection via workspace path.
   const workDir = resolvedPath || userHome;
   ensureClaudeSettings(userHome);
+  if (workDir && workDir !== userHome) {
+    ensureClaudeSettings(workDir);
+  }
   ensureCodexConfig(userHome);
   ensureInputrc(userHome);
   ensureBashrc(userHome);
@@ -703,30 +706,48 @@ router.post('/sessions', requireAuth, async (req, res) => {
     }
   } catch (gwErr) {}
   
-  // Explicit per-session model / provider selection override
-  if (modelProvider && modelProvider !== 'default') {
-    const { PORT } = require('../config');
-    const localPort = PORT || 3000;
-    const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
-    if (agent === 'claude') {
-      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
-      if (modelName) {
-        fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(modelName)}`);
-      }
-    } else if (agent === 'codex') {
-      fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
-      fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
-      if (modelName) {
-        fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(modelName)}`);
-        fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(modelName)}`);
-      }
-    }
-  }
-  
   if (fallbackExports.length > 0) {
     envPrefix += ` && ${fallbackExports.join(' && ')}`;
   }
   envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
+
+  // Explicit per-session model / provider selection override (HIGHEST PRIORITY)
+  // When user selects a specific provider/model at session creation, this must override
+  // any static configuration from ~/.api_keys.
+  let sessionOverrides = [];
+  if (modelProvider && modelProvider !== 'default') {
+    const { PORT } = require('../config');
+    const localPort = PORT || 3000;
+    const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
+    let vKey = 'sk-deck-local';
+    try {
+      const llmGatewayService = require('../services/llmGatewayService');
+      const gwConfig = llmGatewayService.loadConfig();
+      if (gwConfig && gwConfig.virtualKey) vKey = gwConfig.virtualKey;
+    } catch (e) {}
+
+    if (agent === 'claude') {
+      sessionOverrides.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      sessionOverrides.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
+      sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
+      sessionOverrides.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
+      if (modelName) {
+        sessionOverrides.push(`export ANTHROPIC_MODEL=${shellescapeVal(modelName)}`);
+      }
+    } else if (agent === 'codex') {
+      sessionOverrides.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      sessionOverrides.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      sessionOverrides.push(`export OPENAI_API_KEY=${shellescapeVal(vKey)}`);
+      if (modelName) {
+        sessionOverrides.push(`export OPENAI_MODEL=${shellescapeVal(modelName)}`);
+        sessionOverrides.push(`export CODEX_MODEL=${shellescapeVal(modelName)}`);
+      }
+    }
+  }
+
+  if (sessionOverrides.length > 0) {
+    envPrefix += ` && ${sessionOverrides.join(' && ')}`;
+  }
 
   const getAgentPath = (agentName) => {
     const localPath = path.join(path.dirname(process.execPath), agentName);
