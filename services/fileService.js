@@ -146,6 +146,16 @@ const ensureClaudeSettings = (targetHome) => {
     changed = true;
   }
 
+  if (settings.env.ANTHROPIC_API_KEY) {
+    delete settings.env.ANTHROPIC_API_KEY;
+    changed = true;
+  }
+
+  if (settings.env.ANTHROPIC_AUTH_TOKEN) {
+    delete settings.env.ANTHROPIC_AUTH_TOKEN;
+    changed = true;
+  }
+
   if (changed) {
     try {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
@@ -1027,14 +1037,10 @@ const updateUserKeysFile = (username, keys) => {
     if (!settings.theme) {
       settings.theme = 'dark';
     }
-    settings.env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
-    if (keys.claude) {
-      settings.env.ANTHROPIC_API_KEY = keys.claude;
-      delete settings.env.ANTHROPIC_AUTH_TOKEN;
-    } else if (keys.claude === '') {
-      delete settings.env.ANTHROPIC_API_KEY;
-      delete settings.env.ANTHROPIC_AUTH_TOKEN;
-    }
+    // Keep settings.json completely free of sensitive API keys:
+    // Keys are strictly managed via ~/.api_keys and runtime environment variables.
+    delete settings.env.ANTHROPIC_API_KEY;
+    delete settings.env.ANTHROPIC_AUTH_TOKEN;
     if (keys.claudeBaseUrl) {
       settings.env.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
     } else if (keys.claudeBaseUrl === '') {
