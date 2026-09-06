@@ -4,7 +4,7 @@
  */
 
 import { state } from './state.js';
-import { fitTerminal, attachSession } from './terminal.js';
+import { fitTerminal, attachSession, isTouchDevice } from './terminal.js';
 import { stopVoiceInput } from './voice.js';
 
 const sessionViewModes = new Map();
@@ -461,8 +461,10 @@ function bindComposerEvents() {
           textarea.value = pill.dataset.prompt;
           textarea.style.height = 'auto';
           textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-          textarea.focus();
-          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          if (!isTouchDevice()) {
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          }
         }
       }
     });

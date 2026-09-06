@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { attachSession, removeSessionFromCache, fitTerminalFor } from './terminal.js';
+import { attachSession, removeSessionFromCache, fitTerminalFor, isTouchDevice } from './terminal.js';
 import { loadEditorFile } from './editor.js';
 import { loadGitDiff } from './diff.js';
 import { renderHelpDoc } from './helpDoc.js';
@@ -152,7 +152,7 @@ export function activateTab(tabId) {
     setTimeout(() => {
       fitTerminalFor(targetSession);
       const cachedSession = state.sessionCache.get(targetSession);
-      if (cachedSession && cachedSession.term) {
+      if (!isTouchDevice() && cachedSession && cachedSession.term) {
         cachedSession.term.focus();
       }
     }, 50);

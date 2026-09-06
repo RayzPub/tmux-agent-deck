@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { updateGitStatus, applyGitTreeClasses } from './explorer.js';
+import { isTouchDevice } from './terminal.js';
 
 export function getLanguageFromExtension(path) {
   if (!path) return 'plaintext';
@@ -60,7 +61,9 @@ export async function loadEditorFile(path) {
           const lang = getLanguageFromExtension(path);
           monaco.editor.setModelLanguage(model, lang);
         }
-        state.editorInstance.focus();
+        if (!isTouchDevice()) {
+          state.editorInstance.focus();
+        }
       } else {
         editorTextarea.textContent = data.content;
       }

@@ -278,6 +278,7 @@ export function renderSessions(sessions) {
         <div class="session-workspace" title="${session.path || '默认工作区'}">
           <i data-lucide="folder"></i>
           <span>${workspaceText}</span>
+          ${session.agentModel ? `<span class="session-model-badge" title="模型: ${session.agentModel}">${session.agentModel}</span>` : ''}
         </div>
       </div>
       <div class="session-meta">
@@ -732,6 +733,58 @@ const getSuggestedNameForAgent = (agent) => {
   return getNextAvailableSessionName(base, existingNames);
 };
 
+// Dynamic LLM models cache and renderer
+state.availableModels = null;
+
+export async function loadLlmModels() {
+  try {
+    const res = await fetch('/api/llm-models');
+    if (res.ok) {
+      state.availableModels = await res.json();
+    }
+  } catch (err) {
+    console.warn('Failed to load LLM models:', err);
+  }
+}
+
+function renderSessionFlatModels(agent) {
+  const modelGroup = document.getElementById('sessionModelGroup');
+  const container = document.getElementById('sessionModelCardsContainer');
+  if (!modelGroup || !container) return;
+
+  if (!state.availableModels || (agent !== 'claude' && agent !== 'codex')) {
+    modelGroup.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  const items = state.availableModels[agent] || [];
+  if (items.length === 0) {
+    modelGroup.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  modelGroup.classList.remove('hidden');
+  container.innerHTML = items.map((item, idx) => `
+    <label class="model-card-option">
+      <input type="radio" name="sessionFlatModel" value="${item.provider}" data-model="${item.model}" data-provider-name="${item.providerName}" data-model-name="${item.modelName}" data-display-name="${item.displayName}" ${idx === 0 ? 'checked' : ''}>
+      <div class="model-card-inner">
+        <div class="model-provider-tag">${item.providerName}</div>
+        <div class="model-card-title">
+          <i data-lucide="${item.provider === 'kimi' ? 'sparkles' : (item.provider === 'tencent' ? 'cloud' : 'cpu')}" style="width: 13px; height: 13px;"></i>
+          <span>${item.modelName}</span>
+        </div>
+        <div class="model-card-desc" title="${item.desc}">${item.desc}</div>
+      </div>
+    </label>
+  `).join('');
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
 newSessionBtn.addEventListener('click', () => {
   closeSidebarOnMobile();
   sessionModal.classList.remove('hidden');
@@ -749,8 +802,7 @@ newSessionBtn.addEventListener('click', () => {
     badgeEl.textContent = activeWorkspaceName;
   }
   
-  newSessionNameInput.focus();
-  newSessionNameInput.select();
+  renderSessionFlatModels(agent);
 });
 
 // Update suggested name when user switches agent options if the name wasn't customized
@@ -760,8 +812,8 @@ document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
     if (!curVal || curVal === suggestedSessionName) {
       suggestedSessionName = getSuggestedNameForAgent(radio.value);
       newSessionNameInput.value = suggestedSessionName;
-      newSessionNameInput.select();
     }
+    renderSessionFlatModels(radio.value);
   });
 });
 
@@ -788,6 +840,7 @@ if (welcomeSelectSessionBtn) {
 }
 
 const closeModal = () => {
+  if (newSessionNameInput) newSessionNameInput.blur();
   sessionModal.classList.add('hidden');
 };
 closeModalBtn.addEventListener('click', closeModal);
@@ -798,6 +851,7 @@ sessionModal.addEventListener('click', (e) => {
 
 createSessionForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (newSessionNameInput) newSessionNameInput.blur();
   let name = newSessionNameInput.value.trim();
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
@@ -811,13 +865,19 @@ createSessionForm.addEventListener('submit', async (e) => {
   const activeWs = state.workspacesList.find(w => w.path === workspacePath);
   const workspaceName = activeWs ? activeWs.name : '';
 
+  const selectedModelRadio = document.querySelector('input[name="sessionFlatModel"]:checked');
+
+  const modelProvider = selectedModelRadio ? selectedModelRadio.value : 'default';
+  const modelName = selectedModelRadio ? (selectedModelRadio.dataset.model || '') : '';
+  const modelLabel = selectedModelRadio ? (selectedModelRadio.dataset.displayName || '') : '';
+
   try {
     const response = await fetch('/api/sessions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ name, agent, workspacePath, workspaceName })
+      body: JSON.stringify({ name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel })
     });
 
     if (response.ok) {
@@ -1203,6 +1263,7 @@ convertSelectToCustom(document.getElementById('qrCodeUrlSelect'));
 const isFirstLogin = !localStorage.getItem('lastWorkspacePath');
 
 loadWorkspaces().then(async () => {
+  await loadLlmModels();
   await loadSessions();
   
   // Initialize chat mode DOM containers before restoring tabs state
@@ -1819,6 +1880,7 @@ function initShareModal() {
       
       navigator.clipboard.writeText(shareUrlInput.value)
         .then(() => {
+          shareUrlInput.blur();
           // Show a temporary visual feedback text
           const originalExpiry = shareExpiryText.textContent;
           shareExpiryText.textContent = '✓ 链接已成功复制到剪贴板！';

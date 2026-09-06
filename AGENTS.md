@@ -71,4 +71,34 @@ When integrating or modifying execution flows for **Claude Code** and **OpenAI C
 - **Codex CLI Configuration Rule**: Codex CLI defaults to reading `base_url` from `~/.codex/config.toml` and **ignores** `OPENAI_BASE_URL` from the environment. Use `ensureCodexConfig()` from `services/fileService.js` to ensure `deck_gateway` is written to `config.toml` pointing to `http://127.0.0.1/v1`.
 - **Sensitive Key Separation**: Never write plaintext `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` into `settings.json` or `config.toml`. All real keys belong in `data/llm_gateway.json` and are dynamically managed by the backend.
 
+## 5. 前端主题色适配规范 (Theme & Color Adaptation Guidelines)
+系统支持深浅双主题切换，任何前端界面新增或迭代必须严格遵守以下主题色规范：
+
+- **双主题架构机制**：
+  - 默认深色：Cyberpunk 赛博朋克深黑霓虹主题（根作用域）。
+  - 浅色极简：通过 `document.body` 挂载 `.light-minimalist` 类实现（`body.light-minimalist`）。
+- **全要素双态适配要求（强制）**：
+  - 任何新增的 UI 组件（弹窗、选项卡片、输入框、徽章、下拉菜单、交互图表）**必须同步编写 `body.light-minimalist` 浅色适配样式**。
+  - 严禁出现“仅适配深色”导致切换至浅色模式时产生白底白字、未反色的深黑孤岛或对比度过低等视觉残缺。
+- **深浅色彩映射对照标准**：
+  - **容器与卡片底色**：
+    - 深色：`rgba(7, 9, 18, 0.7)` / `#0e121e` / `var(--bg-card)`
+    - 浅色：纯白 `#ffffff` / 底白 `#f8fafc`，悬停态反显 `#f1f5f9`
+  - **边框与分割线**：
+    - 深色：`rgba(255, 255, 255, 0.08)` / 赛博青微光边框
+    - 浅色：柔和浅灰 `#cbd5e1` / `#e2e8f0`，悬停或获得焦点时加深为 `#94a3b8`
+  - **选中与高亮态 (Checked / Active)**：
+    - 深色：霓虹青 `var(--neon-cyan)` 边框 + 赛博发光阴影 + 青色微底
+    - 浅色：优雅靛蓝 `#4f46e5` 边框 + 柔和浅紫 `#eef2ff` 底色，消除发光滤镜（`box-shadow: 0 0 0 1px #4f46e5`）
+  - **文字层级对比度**：
+    - 主标题 / 核心文本：深色 `#ffffff` ➔ 浅色 `#0f172a`（高对比度深墨灰）
+    - 提供商 Tag / 高亮标识：深色 `var(--neon-cyan)` ➔ 浅色 `#4f46e5`
+    - 辅助说明 / 次级文本：深色 `var(--text-muted)` ➔ 浅色 `#64748b` / `#475569`
+  - **状态徽章 (Badges & Pills)**：
+    - 深色：`rgba(0, 240, 255, 0.1)` 底色 + 霓虹青字色与细边框
+    - 浅色：`#eef2ff` 浅底 + `#4f46e5` 靛蓝字色 + `#c7d2fe` 浅紫细边框
+- **静态资源构建提醒**：
+  - 修改 `public/css/` 下的任何样式文件后，必须执行 `npm run build` 生成生产环境 Hash 资源文件，确保 CDN/强缓存机制下能立即加载最新样式。
+
+
 

@@ -175,9 +175,12 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      // Reset UI state
+      // Reset UI state and dismiss mobile keyboard
       errorAlert.classList.add('hidden');
       successAlert.classList.add('hidden');
+      codeInput.blur();
+      usernameInput.blur();
+      passwordInput.blur();
       registerBtn.classList.add('loading');
       registerBtn.disabled = true;
 

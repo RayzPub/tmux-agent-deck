@@ -446,10 +446,80 @@ router.post('/admin/llm-gateway/test', requireAdmin, async (req, res) => {
   }
 });
 
+// Get dynamically available models (flat: provider + model) from LLM Gateway configuration
+router.get('/llm-models', requireAuth, (req, res) => {
+  try {
+    const llmGatewayService = require('../services/llmGatewayService');
+    const config = llmGatewayService.loadConfig();
+    const providers = config.providers || {};
+
+    const buildFlatList = (protocol) => {
+      const defaultModel = protocol === 'anthropic'
+        ? (config.defaults?.anthropicModel || 'glm-5.3-flash')
+        : (config.defaults?.openaiModel || 'glm-5.3-flash');
+
+      const list = [
+        {
+          id: 'default',
+          provider: 'default',
+          providerName: '网关默认',
+          model: defaultModel,
+          modelName: `默认 (${defaultModel})`,
+          displayName: `网关默认 · ${defaultModel}`,
+          desc: '跟随系统全局网关默认'
+        }
+      ];
+
+      for (const [pId, prov] of Object.entries(providers)) {
+        if (!prov || !prov.enabled) continue;
+        const models = (prov.models && prov.models[protocol]) || [];
+        const provName = prov.name || pId;
+
+        for (const m of models) {
+          if (!m || typeof m !== 'string') continue;
+          const clean = m.trim();
+          if (clean.includes('*')) continue;
+
+          let modelTitle = clean;
+          let desc = '支持模型';
+          if (clean === 'k3-256k') {
+            modelTitle = 'Kimi K3 (256k)';
+            desc = '超长上下文 (256k) 深度推理';
+          } else if (clean === 'glm-5.3-flash') {
+            modelTitle = 'GLM-5.3-Flash';
+            desc = '高并发低延迟响应';
+          } else if (clean === 'glm-5') {
+            modelTitle = 'GLM-5';
+            desc = '旗舰级大模型代码生成';
+          }
+
+          list.push({
+            id: `${pId}_${clean}`,
+            provider: pId,
+            providerName: provName,
+            model: clean,
+            modelName: modelTitle,
+            displayName: `${provName} · ${modelTitle}`,
+            desc
+          });
+        }
+      }
+      return list;
+    };
+
+    res.json({
+      claude: buildFlatList('anthropic'),
+      codex: buildFlatList('openai')
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get models: ' + err.message });
+  }
+});
+
 // API: Tmux Commands (Protected)
 // List sessions
 router.get('/sessions', requireAuth, (req, res) => {
-  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}'], (err, stdout, stderr) => {
+  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}'], (err, stdout, stderr) => {
     if (err) {
       const errMsg = (stderr || '').toLowerCase();
       const isNoSessions = err.code === 1 || 
@@ -470,7 +540,7 @@ router.get('/sessions', requireAuth, (req, res) => {
 
     const sessions = [];
     for (const line of rawSessions) {
-      const [fullName, attached, created, sessionPath, workspaceName, agentType] = line.split('|');
+      const [fullName, attached, created, sessionPath, workspaceName, agentType, agentModel] = line.split('|');
       
       // If MULTI_USER_ENABLED is true, filter by prefix and strip it
       if (MULTI_USER_ENABLED) {
@@ -484,7 +554,8 @@ router.get('/sessions', requireAuth, (req, res) => {
           created: new Date(parseInt(created) * 1000).toLocaleString(),
           path: sessionPath || '',
           workspaceName: workspaceName || '',
-          agentType: agentType || ''
+          agentType: agentType || '',
+          agentModel: agentModel || ''
         });
       } else {
         sessions.push({
@@ -493,7 +564,8 @@ router.get('/sessions', requireAuth, (req, res) => {
           created: new Date(parseInt(created) * 1000).toLocaleString(),
           path: sessionPath || '',
           workspaceName: workspaceName || '',
-          agentType: agentType || ''
+          agentType: agentType || '',
+          agentModel: agentModel || ''
         });
       }
     }
@@ -503,7 +575,7 @@ router.get('/sessions', requireAuth, (req, res) => {
 
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { name, agent, workspacePath, workspaceName } = req.body;
+  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel } = req.body;
   
   // Validate allowed agents
   const settings = db.getSettings();
@@ -631,6 +703,26 @@ router.post('/sessions', requireAuth, async (req, res) => {
     }
   } catch (gwErr) {}
   
+  // Explicit per-session model / provider selection override
+  if (modelProvider && modelProvider !== 'default') {
+    const { PORT } = require('../config');
+    const localPort = PORT || 3000;
+    const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
+    if (agent === 'claude') {
+      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      if (modelName) {
+        fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(modelName)}`);
+      }
+    } else if (agent === 'codex') {
+      fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      if (modelName) {
+        fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(modelName)}`);
+        fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(modelName)}`);
+      }
+    }
+  }
+  
   if (fallbackExports.length > 0) {
     envPrefix += ` && ${fallbackExports.join(' && ')}`;
   }
@@ -700,6 +792,10 @@ router.post('/sessions', requireAuth, async (req, res) => {
       }
       if (agentSessionId) {
         optionsToSet.push(['set-option', '-t', physicalSession, '@agent_session_id', agentSessionId]);
+      }
+      const finalModelTag = modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '');
+      if (finalModelTag) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_model', finalModelTag]);
       }
 
       let chain = Promise.resolve();

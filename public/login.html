@@ -86,7 +86,6 @@
               placeholder="••••••••••••••" 
               required 
               autocomplete="current-password"
-              autofocus
             >
             <div class="input-indicator"></div>
           </div>
@@ -182,8 +181,10 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      // Reset UI state
+      // Reset UI state and dismiss mobile keyboard
       errorAlert.classList.add('hidden');
+      passwordInput.blur();
+      document.getElementById('username')?.blur();
       loginBtn.classList.add('loading');
       loginBtn.disabled = true;
 

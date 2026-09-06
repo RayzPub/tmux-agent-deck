@@ -2,6 +2,12 @@ import { state } from './state.js';
 import { closeTab, renderTabs, switchMainPanel } from './tabs.js';
 import { refreshFileTree } from './explorer.js';
 
+export function isTouchDevice() {
+  return window.matchMedia('(pointer: coarse)').matches || 
+         window.matchMedia('(max-width: 768px)').matches || 
+         ('ontouchstart' in window);
+}
+
 export function showTipToast(message, duration = 4000) {
   const existing = document.querySelector('.connection-toast.tip-toast');
   if (existing) {
@@ -73,7 +79,7 @@ export function writeToClipboard(text) {
   }
   document.body.removeChild(textArea);
 
-  if (state.currentSession) {
+  if (state.currentSession && !isTouchDevice()) {
     const cached = state.sessionCache.get(state.currentSession);
     if (cached && cached.term) {
       cached.term.focus();
@@ -116,7 +122,7 @@ export function showCustomPasteModal() {
       </div>
       <div class="paste-modal-body">
         <span class="paste-modal-tip">由于浏览器安全限制，无法直接读取剪贴板。请在下方输入框中粘贴您的文本：</span>
-        <textarea class="paste-textarea" id="pasteModalTextarea" placeholder="请在这里粘贴文本 (Ctrl+V 或长按粘贴)..." autofocus></textarea>
+        <textarea class="paste-textarea" id="pasteModalTextarea" placeholder="请在这里粘贴文本 (Ctrl+V 或长按粘贴)..."></textarea>
       </div>
       <div class="paste-modal-actions">
         <button class="paste-modal-btn" id="btnPasteModalCancel">取消</button>
@@ -127,9 +133,11 @@ export function showCustomPasteModal() {
   document.body.appendChild(overlay);
 
   const textarea = document.getElementById('pasteModalTextarea');
-  setTimeout(() => {
-    textarea?.focus();
-  }, 100);
+  if (!isTouchDevice()) {
+    setTimeout(() => {
+      textarea?.focus();
+    }, 100);
+  }
 
   const close = () => overlay.remove();
 
@@ -352,7 +360,7 @@ export function attachSession(sessionName) {
             cols: cols,
             rows: rows
           });
-          if (sessionName === state.currentSession) {
+          if (!isTouchDevice() && sessionName === state.currentSession) {
             sessionTerm.focus();
           }
           reportFocusStatus();
@@ -742,14 +750,17 @@ export function attachSession(sessionName) {
     });
 
     container.addEventListener('click', () => {
-      if (sessionTerm) {
+      // On touch devices, do not automatically focus terminal on container click/tap
+      // to avoid keyboard popups when scrolling or viewing logs.
+      // Users can click the dedicated keyboard toggle button in the mobile action bar.
+      if (!isTouchDevice() && sessionTerm) {
         sessionTerm.focus();
       }
     });
   } else {
     cached.container.classList.remove('hidden');
     setTimeout(() => {
-      if (cached.term) {
+      if (!isTouchDevice() && cached.term) {
         cached.term.focus();
       }
       fitTerminalFor(sessionName);
