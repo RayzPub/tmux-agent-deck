@@ -163,9 +163,11 @@ const ensureClaudeSettings = (targetHome) => {
     changed = true;
   }
 
-  // Keep settings.json clean of hardcoded localhost/gateway URLs:
-  // Gateway endpoints and API keys are strictly managed via runtime environment variables
-  if (settings.env.ANTHROPIC_BASE_URL && (settings.env.ANTHROPIC_BASE_URL.includes('127.0.0.1') || settings.env.ANTHROPIC_BASE_URL.includes('localhost'))) {
+  // Keep settings.json clean of sensitive credentials and hardcoded network URLs:
+  // Claude Code merges settings.env into process.env at startup, which overrides PTY and shell env.
+  // To ensure runtime environment variables (ptyEnv / ~/.api_keys) remain the single source of truth,
+  // we strictly purge ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, and ANTHROPIC_AUTH_TOKEN from settings.json.
+  if (settings.env.ANTHROPIC_BASE_URL) {
     delete settings.env.ANTHROPIC_BASE_URL;
     changed = true;
   }
@@ -176,6 +178,70 @@ const ensureClaudeSettings = (targetHome) => {
       chownToSudoUser(settingsPath);
     } catch (e) {
       console.warn(`[fileService] Could not write settings to ${settingsPath}: ${e.message}`);
+    }
+  }
+};
+
+/**
+ * Ensures ~/.codex/config.toml is configured properly for Codex CLI.
+ * If LLM Gateway is active and user has not configured a custom Base URL,
+ * it routes Codex through the local 127 gateway (e.g. http://127.0.0.1/v1 or http://127.0.0.1:PORT/v1).
+ * Also pre-trusts the user home and workspaces to avoid interactive confirmation prompts.
+ */
+const ensureCodexConfig = (targetHome, customConfig = {}) => {
+  const sysHome = getHomeDir();
+  const home = targetHome || sysHome;
+  const codexDir = path.join(home, '.codex');
+  if (!fs.existsSync(codexDir)) {
+    try {
+      fs.mkdirSync(codexDir, { recursive: true });
+      chownToSudoUser(codexDir);
+    } catch (e) {
+      console.warn(`[ensureCodexConfig] Could not create .codex dir in ${home}: ${e.message}`);
+    }
+  }
+
+  const configPath = path.join(codexDir, 'config.toml');
+
+  // Determine gateway config
+  let gwUrl = null;
+  let defaultOpenAiModel = 'glm-5.3-flash';
+  try {
+    const gwConfig = require('./llmGatewayService').loadConfig();
+    if (gwConfig && gwConfig.enabled && gwConfig.injectToTerminal) {
+      const { PORT } = require('../config');
+      const localPort = PORT || 3000;
+      gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1/v1' : `http://127.0.0.1:${localPort}/v1`;
+      defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
+    }
+  } catch (e) {}
+
+  const targetBaseUrl = customConfig.baseUrl || gwUrl;
+  const targetModel = customConfig.model || defaultOpenAiModel;
+
+  if (targetBaseUrl) {
+    const isGateway = (targetBaseUrl === gwUrl);
+    const providerName = isGateway ? 'deck_gateway' : 'custom_provider';
+    const tomlContent = `model_provider = "${providerName}"
+model = "${targetModel}"
+
+[model_providers.${providerName}]
+name = "${providerName}"
+base_url = "${targetBaseUrl}"
+env_key = "OPENAI_API_KEY"
+wire_api = "chat"
+
+[projects."${home}"]
+trust_level = "trusted"
+
+[projects."${PROJECT_ROOT}"]
+trust_level = "trusted"
+`;
+    try {
+      fs.writeFileSync(configPath, tomlContent, 'utf8');
+      chownToSudoUser(configPath);
+    } catch (e) {
+      console.warn(`[ensureCodexConfig] Could not write ${configPath}: ${e.message}`);
     }
   }
 };
@@ -344,6 +410,7 @@ const ensureClaudeTrust = (targetPaths, targetHome, extraApiKeyToApprove) => {
 const initClaudeConfig = () => {
   const sysHome = getHomeDir();
   ensureClaudeSettings(sysHome);
+  ensureCodexConfig(sysHome);
 
   const allPathsToTrust = new Set([PROJECT_ROOT, sysHome]);
 
@@ -366,6 +433,7 @@ const initClaudeConfig = () => {
           const uHome = path.join(userDataDir, username, 'home');
           allPathsToTrust.add(uHome);
           ensureClaudeSettings(uHome);
+          ensureCodexConfig(uHome);
 
           const userWs = readWorkspaces(username);
           if (Array.isArray(userWs)) {
@@ -536,6 +604,7 @@ const getUserHomeDir = (username) => {
       console.warn(`[userHome] Could not copy config.toml: ${e.message}`);
     }
   }
+  ensureCodexConfig(userHome);
 
   // 1.3 Initialize/sync user's private .kimi-code directory
   // This handles both new directories and existing ones missing credentials/oauth
@@ -1051,15 +1120,12 @@ const updateUserKeysFile = (username, keys) => {
     if (!settings.theme) {
       settings.theme = 'dark';
     }
-    // Keep settings.json completely free of sensitive API keys:
-    // Keys are strictly managed via ~/.api_keys and runtime environment variables.
+    // Keep settings.json completely free of sensitive API keys and Base URLs:
+    // Keys and endpoints are strictly managed via ~/.api_keys and runtime environment variables (ptyEnv).
+    // This prevents settings.json.env from overriding shell/PTY environment variables.
     delete settings.env.ANTHROPIC_API_KEY;
     delete settings.env.ANTHROPIC_AUTH_TOKEN;
-    if (keys.claudeBaseUrl) {
-      settings.env.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
-    } else if (keys.claudeBaseUrl === '') {
-      delete settings.env.ANTHROPIC_BASE_URL;
-    }
+    delete settings.env.ANTHROPIC_BASE_URL;
     if (keys.claudeModel) {
       settings.model = keys.claudeModel;
       settings.env.ANTHROPIC_MODEL = keys.claudeModel;
@@ -1078,6 +1144,11 @@ const updateUserKeysFile = (username, keys) => {
   // Pre-approve the Claude API key and trust workspace directories
   try {
     ensureClaudeTrust([userHome, PROJECT_ROOT], userHome, keys.claude);
+  } catch (e) {}
+
+  // Update user's private .codex/config.toml
+  try {
+    ensureCodexConfig(userHome, { baseUrl: keys.codexBaseUrl, model: keys.codexModel });
   } catch (e) {}
 
   // Update user's private .kimi-code/config.toml and .kimi/config.toml
@@ -1133,6 +1204,7 @@ module.exports = {
   updateUserKeysFile,
   getSystemDefaultKeys,
   ensureClaudeSettings,
+  ensureCodexConfig,
   ensureClaudeTrust,
   initClaudeConfig
 };

@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureClaudeTrust } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust } = require('../services/fileService');
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
@@ -570,6 +570,7 @@ router.post('/sessions', requireAuth, async (req, res) => {
   // Use shellescape to prevent command injection via workspace path.
   const workDir = resolvedPath || userHome;
   ensureClaudeSettings(userHome);
+  ensureCodexConfig(userHome);
   ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
   let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
 
@@ -590,6 +591,15 @@ router.post('/sessions', requireAuth, async (req, res) => {
   if (defaultKeys.codexModel) {
     fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
     fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+  }
+  if (defaultKeys.claude) {
+    fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(defaultKeys.claude)}`);
+  }
+  if (defaultKeys.claudeBaseUrl) {
+    fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(defaultKeys.claudeBaseUrl)}`);
+  }
+  if (defaultKeys.claudeModel) {
+    fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultKeys.claudeModel)}`);
   }
 
   // 127 LLM Gateway baseline injection (fallback for Claude & general shells)

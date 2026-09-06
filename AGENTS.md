@@ -64,3 +64,11 @@ To support CDN deployments and browser caching optimizations without causing sta
   - Must remain in the root directory `public/sw.js` (cannot be placed in `/dist` due to scope limitations).
   - Must not use a hashed filename and is served with `Cache-Control: no-cache` to allow automatic browser byte-by-byte updates.
 
+## 4. AI Agent CLI Integration & Environment Guard (Claude Code & Codex)
+When integrating or modifying execution flows for **Claude Code** and **OpenAI Codex CLI**, follow these critical rules:
+- **Detailed Reference Guide**: Refer to [docs/agent_cli_config_guide.md](docs/agent_cli_config_guide.md) for full architecture and protocol breakdown.
+- **Claude Code Precedence Alert**: `~/.claude/settings.json` has an internal `env` mapping that **overrides** shell `process.env`. When 127 LLM Gateway is active, `services/fileService.js` must ensure `settings.env.ANTHROPIC_BASE_URL` is purged so that traffic is not hijacked to external endpoints with virtual keys.
+- **Codex CLI Configuration Rule**: Codex CLI defaults to reading `base_url` from `~/.codex/config.toml` and **ignores** `OPENAI_BASE_URL` from the environment. Use `ensureCodexConfig()` from `services/fileService.js` to ensure `deck_gateway` is written to `config.toml` pointing to `http://127.0.0.1/v1`.
+- **Sensitive Key Separation**: Never write plaintext `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` into `settings.json` or `config.toml`. All real keys belong in `data/llm_gateway.json` and are dynamically managed by the backend.
+
+

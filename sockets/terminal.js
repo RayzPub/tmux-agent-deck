@@ -136,7 +136,7 @@ const initSocket = (io) => {
         if (keys.claude) {
           // User explicitly configured custom Claude Key
           ptyEnv.ANTHROPIC_API_KEY = keys.claude;
-          ptyEnv.ANTHROPIC_AUTH_TOKEN = keys.claude;
+          delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
           if (keys.claudeBaseUrl) {
             ptyEnv.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
           } else {
