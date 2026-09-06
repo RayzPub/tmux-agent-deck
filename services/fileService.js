@@ -55,20 +55,27 @@ const getSystemDefaultKeys = () => {
   const keys = {};
 
   // 1. Anthropic / Claude
-  const sysClaudeSettings = path.join(sysHome, '.claude', 'settings.json');
-  if (fs.existsSync(sysClaudeSettings)) {
+  // Primary source: system .api_keys or process.env (not settings.json)
+  const sysApiKeysFile = path.join(sysHome, '.api_keys');
+  if (fs.existsSync(sysApiKeysFile)) {
     try {
-      const data = JSON.parse(fs.readFileSync(sysClaudeSettings, 'utf8'));
-      if (data.env && data.env.ANTHROPIC_AUTH_TOKEN) {
-        keys.claude = data.env.ANTHROPIC_AUTH_TOKEN;
-      }
-      if (data.env && data.env.ANTHROPIC_BASE_URL) {
-        keys.claudeBaseUrl = data.env.ANTHROPIC_BASE_URL;
-      }
-      if (data.env && data.env.ANTHROPIC_MODEL) {
-        keys.claudeModel = data.env.ANTHROPIC_MODEL;
-      }
+      const content = fs.readFileSync(sysApiKeysFile, 'utf8');
+      const mKey = content.match(/export ANTHROPIC_API_KEY=['"]?([^'"\n\r]+)['"]?/);
+      if (mKey && mKey[1]) keys.claude = mKey[1];
+      const mUrl = content.match(/export ANTHROPIC_BASE_URL=['"]?([^'"\n\r]+)['"]?/);
+      if (mUrl && mUrl[1]) keys.claudeBaseUrl = mUrl[1];
+      const mModel = content.match(/export ANTHROPIC_MODEL=['"]?([^'"\n\r]+)['"]?/);
+      if (mModel && mModel[1]) keys.claudeModel = mModel[1];
     } catch (e) {}
+  }
+  if (!keys.claude && process.env.ANTHROPIC_API_KEY) {
+    keys.claude = process.env.ANTHROPIC_API_KEY;
+  }
+  if (!keys.claudeBaseUrl && process.env.ANTHROPIC_BASE_URL) {
+    keys.claudeBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  }
+  if (!keys.claudeModel && process.env.ANTHROPIC_MODEL) {
+    keys.claudeModel = process.env.ANTHROPIC_MODEL;
   }
 
   // 2. OpenAI / Codex
