@@ -573,31 +573,56 @@ router.post('/sessions', requireAuth, async (req, res) => {
   ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
   let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
 
-  // Inject system default fallback keys dynamically, then source user's private .api_keys
-  if (MULTI_USER_ENABLED && req.user && req.user.username) {
-    const { getSystemDefaultKeys } = require('../services/fileService');
-    const defaultKeys = getSystemDefaultKeys();
-    const shellescapeVal = (val) => "'" + String(val).replace(/'/g, "'\\''") + "'";
-    
-    let fallbackExports = [];
-    const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
-    if (defaultCodexKey) {
-      fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(defaultCodexKey)}`);
-    }
-    if (defaultKeys.codexBaseUrl) {
-      fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
-      fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
-    }
-    if (defaultKeys.codexModel) {
-      fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
-      fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
-    }
-    
-    if (fallbackExports.length > 0) {
-      envPrefix += ` && ${fallbackExports.join(' && ')}`;
-    }
-    envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
+  // Inject system default fallback keys & LLM gateway dynamically, then source user's private .api_keys
+  const { getSystemDefaultKeys } = require('../services/fileService');
+  const defaultKeys = getSystemDefaultKeys();
+  const shellescapeVal = (val) => "'" + String(val).replace(/'/g, "'\\''") + "'";
+  
+  let fallbackExports = [];
+  const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
+  if (defaultCodexKey) {
+    fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(defaultCodexKey)}`);
   }
+  if (defaultKeys.codexBaseUrl) {
+    fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
+    fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
+  }
+  if (defaultKeys.codexModel) {
+    fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+    fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+  }
+
+  // 127 LLM Gateway baseline injection (fallback for Claude & general shells)
+  try {
+    const llmGatewayService = require('../services/llmGatewayService');
+    const gwConfig = llmGatewayService.loadConfig();
+    if (gwConfig && gwConfig.enabled && gwConfig.injectToTerminal) {
+      const { PORT } = require('../config');
+      const localPort = PORT || 3000;
+      const vKey = gwConfig.virtualKey || 'sk-deck-local';
+      const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
+      const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
+      const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
+
+      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl)}`);
+      fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
+      fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultAnthropicModel)}`);
+      fallbackExports.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
+
+      if (!defaultCodexKey) {
+        fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1')}`);
+        fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1')}`);
+        fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(vKey)}`);
+        fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultOpenAiModel)}`);
+        fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultOpenAiModel)}`);
+      }
+    }
+  } catch (gwErr) {}
+  
+  if (fallbackExports.length > 0) {
+    envPrefix += ` && ${fallbackExports.join(' && ')}`;
+  }
+  envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
 
   const getAgentPath = (agentName) => {
     const localPath = path.join(path.dirname(process.execPath), agentName);

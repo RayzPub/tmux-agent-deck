@@ -100,16 +100,17 @@ const initSocket = (io) => {
           const { PORT } = require('../config');
           const localPort = PORT || 3000;
           const vKey = gwConfig.virtualKey || 'sk-deck-local';
+          const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
 
-          ptyEnv.ANTHROPIC_BASE_URL = `http://127.0.0.1:${localPort}`;
+          ptyEnv.ANTHROPIC_BASE_URL = gwUrl;
           ptyEnv.ANTHROPIC_API_KEY = vKey;
           delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
           ptyEnv.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
           const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
           ptyEnv.ANTHROPIC_MODEL = defaultAnthropicModel;
 
-          ptyEnv.OPENAI_BASE_URL = `http://127.0.0.1:${localPort}/v1`;
-          ptyEnv.OPENAI_API_BASE = `http://127.0.0.1:${localPort}/v1`;
+          ptyEnv.OPENAI_BASE_URL = `${gwUrl}/v1`;
+          ptyEnv.OPENAI_API_BASE = `${gwUrl}/v1`;
           ptyEnv.OPENAI_API_KEY = vKey;
           const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
           ptyEnv.OPENAI_MODEL = defaultOpenAiModel;

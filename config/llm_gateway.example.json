@@ -9,7 +9,7 @@
       "name": "腾讯云 LKEAP",
       "enabled": true,
       "keys": [
-        "your-tencent-api-key"
+        "YOUR_TENCENT_LKEAP_KEY_HERE"
       ],
       "endpoints": {
         "anthropic": "https://api.lkeap.cloud.tencent.com/plan/anthropic",
@@ -28,7 +28,7 @@
       "name": "Moonshot Kimi",
       "enabled": true,
       "keys": [
-        "your-kimi-api-key"
+        "YOUR_KIMI_KEY_HERE"
       ],
       "endpoints": {
         "anthropic": "https://api.kimi.com/coding",
@@ -46,6 +46,8 @@
   },
   "defaults": {
     "anthropic": "tencent",
-    "openai": "tencent"
+    "openai": "tencent",
+    "anthropicModel": "glm-5.3-flash",
+    "openaiModel": "glm-5.3-flash"
   }
 }

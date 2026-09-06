@@ -163,6 +163,13 @@ const ensureClaudeSettings = (targetHome) => {
     changed = true;
   }
 
+  // Keep settings.json clean of hardcoded localhost/gateway URLs:
+  // Gateway endpoints and API keys are strictly managed via runtime environment variables
+  if (settings.env.ANTHROPIC_BASE_URL && (settings.env.ANTHROPIC_BASE_URL.includes('127.0.0.1') || settings.env.ANTHROPIC_BASE_URL.includes('localhost'))) {
+    delete settings.env.ANTHROPIC_BASE_URL;
+    changed = true;
+  }
+
   if (changed) {
     try {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');

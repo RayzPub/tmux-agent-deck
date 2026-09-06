@@ -34,8 +34,8 @@ const DEFAULT_CONFIG = {
         openai: 'https://api.lkeap.cloud.tencent.com/plan/v3'
       },
       models: {
-        anthropic: ['claude-*'],
-        openai: ['glm-5', 'deepseek-*', 'gpt-*']
+        anthropic: ['glm-5.3-flash', 'claude-*'],
+        openai: ['glm-5.3-flash', 'glm-5', 'deepseek-*', 'gpt-*']
       }
     },
     kimi: {
@@ -48,13 +48,15 @@ const DEFAULT_CONFIG = {
       },
       models: {
         anthropic: ['k3-256k', 'k3', 'kimi*'],
-        openai: ['moonshot-*', 'kimi*']
+        openai: ['k3-256k', 'moonshot-*', 'kimi*']
       }
     }
   },
   defaults: {
     anthropic: 'tencent',
-    openai: 'tencent'
+    openai: 'tencent',
+    anthropicModel: 'glm-5.3-flash',
+    openaiModel: 'glm-5.3-flash'
   }
 };
 
@@ -66,7 +68,7 @@ function loadConfig() {
     if (fs.existsSync(CONFIG_FILE)) {
       const content = fs.readFileSync(CONFIG_FILE, 'utf8');
       const parsed = JSON.parse(content);
-      return {
+      const merged = {
         ...DEFAULT_CONFIG,
         ...parsed,
         providers: {
@@ -78,14 +80,34 @@ function loadConfig() {
           ...(parsed.defaults || {})
         }
       };
+
+      // Support fallback from environment variables if key pools are empty
+      const envTencentKey = process.env.LLM_GATEWAY_TENCENT_KEY || process.env.TENCENT_API_KEY;
+      if (envTencentKey && (!merged.providers?.tencent?.keys || merged.providers.tencent.keys.length === 0)) {
+        if (!merged.providers.tencent) merged.providers.tencent = { ...DEFAULT_CONFIG.providers.tencent };
+        merged.providers.tencent.keys = [envTencentKey];
+      }
+      const envKimiKey = process.env.LLM_GATEWAY_KIMI_KEY || process.env.KIMI_API_KEY;
+      if (envKimiKey && (!merged.providers?.kimi?.keys || merged.providers.kimi.keys.length === 0)) {
+        if (!merged.providers.kimi) merged.providers.kimi = { ...DEFAULT_CONFIG.providers.kimi };
+        merged.providers.kimi.keys = [envKimiKey];
+      }
+
+      return merged;
     }
   } catch (err) {
     console.error('⚠️ [LLM-Gateway] Failed to read config file, using defaults:', err.message);
   }
 
   // Create default config file if it doesn't exist
-  saveConfig(DEFAULT_CONFIG);
-  return { ...DEFAULT_CONFIG };
+  const initialConfig = { ...DEFAULT_CONFIG };
+  const envTencentKey = process.env.LLM_GATEWAY_TENCENT_KEY || process.env.TENCENT_API_KEY;
+  if (envTencentKey) initialConfig.providers.tencent.keys = [envTencentKey];
+  const envKimiKey = process.env.LLM_GATEWAY_KIMI_KEY || process.env.KIMI_API_KEY;
+  if (envKimiKey) initialConfig.providers.kimi.keys = [envKimiKey];
+
+  saveConfig(initialConfig);
+  return initialConfig;
 }
 
 /**
