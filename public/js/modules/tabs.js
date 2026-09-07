@@ -1,8 +1,9 @@
 import { state } from './state.js';
-import { attachSession, removeSessionFromCache, fitTerminalFor, isTouchDevice } from './terminal.js';
+import { attachSession, removeSessionFromCache } from './terminal.js';
 import { loadEditorFile } from './editor.js';
 import { loadGitDiff } from './diff.js';
 import { renderHelpDoc } from './helpDoc.js';
+import { renderProjectOverview } from './projectOverview.js';
 
 export function saveTabsState() {
   try {
@@ -38,7 +39,8 @@ export function switchMainPanel(panelType) {
     terminal: document.getElementById('terminalPanel'),
     editor: document.getElementById('editorPanel'),
     'git-diff': document.getElementById('diffPanel'),
-    doc: document.getElementById('docPanel')
+    doc: document.getElementById('docPanel'),
+    project: document.getElementById('projectPanel')
   };
 
   const targetKey = panels[panelType] ? panelType : 'welcome';
@@ -74,6 +76,13 @@ export function renderTabs() {
     return;
   }
 
+  // Ensure project tab is always the first tab (index 0) on the leftmost side
+  const projectIdx = state.tabs.findIndex(t => t.type === 'project');
+  if (projectIdx > 0) {
+    const [projectTab] = state.tabs.splice(projectIdx, 1);
+    state.tabs.unshift(projectTab);
+  }
+
   workspaceTabs.classList.remove('hidden');
   workspaceTabs.innerHTML = '';
 
@@ -85,10 +94,30 @@ export function renderTabs() {
 
     const icon = tab.type === 'terminal' 
       ? 'terminal' 
-      : (tab.type === 'git-diff' ? 'git-compare' : (tab.type === 'doc' ? 'book-open' : 'file-code'));
+      : (tab.type === 'git-diff' ? 'git-compare' : (tab.type === 'doc' ? 'book-open' : (tab.type === 'project' ? 'activity' : 'file-code')));
+
+    let statusPillHtml = '';
+    if (tab.type === 'project') {
+      const wsStatus = state.workspaceStatus || 'idle';
+      const statusMap = {
+        busy: { label: '执行中', cls: 'status-busy' },
+        waiting: { label: '待确认', cls: 'status-waiting' },
+        idle: { label: '空闲', cls: 'status-idle' },
+        empty: { label: '就绪', cls: 'status-empty' }
+      };
+      const cur = statusMap[wsStatus] || statusMap.idle;
+      statusPillHtml = `
+        <span class="project-tab-status-badge ${cur.cls}" title="智能体当前状态: ${cur.label}">
+          <span class="pulse-dot"></span>
+          <span class="tab-status-label">${cur.label}</span>
+        </span>
+      `;
+    }
+
     tabEl.innerHTML = `
       <i data-lucide="${icon}"></i>
       <span>${tab.name}</span>
+      ${statusPillHtml}
       <i data-lucide="x" class="close-tab-btn" title="Close Tab"></i>
     `;
 
@@ -115,8 +144,13 @@ export function activateTab(tabId) {
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
 
+  if (tab.type === 'terminal') {
+    attachSession(tab.id);
+    return;
+  }
+
   state.activeTabId = tabId;
-  state.currentSession = tab.type === 'terminal' ? tab.id : null;
+  state.currentSession = null;
   renderTabs();
 
   const activeSessionNameText = document.getElementById('activeSessionName');
@@ -126,42 +160,11 @@ export function activateTab(tabId) {
   // Enforce mutual exclusivity of main workspace panels
   switchMainPanel(tab.type);
 
-  if (tab.type === 'terminal') {
-    const targetSession = tab.id;
-    let cached = state.sessionCache.get(targetSession);
-    if (!cached) {
-      attachSession(targetSession);
-      return;
-    }
+  for (const cached of state.sessionCache.values()) {
+    if (cached.container) cached.container.classList.add('hidden');
+  }
 
-    for (const [name, cachedSession] of state.sessionCache.entries()) {
-      if (name === targetSession) {
-        if (cachedSession.container) cachedSession.container.classList.remove('hidden');
-      } else {
-        if (cachedSession.container) cachedSession.container.classList.add('hidden');
-      }
-    }
-
-    state.currentSession = targetSession;
-    if (activeSessionNameText) activeSessionNameText.textContent = targetSession;
-
-    if (typeof window.applySessionViewMode === 'function') {
-      window.applySessionViewMode(targetSession);
-    }
-
-    setTimeout(() => {
-      fitTerminalFor(targetSession);
-      const cachedSession = state.sessionCache.get(targetSession);
-      if (!isTouchDevice() && cachedSession && cachedSession.term) {
-        cachedSession.term.focus();
-      }
-    }, 50);
-  } else if (tab.type === 'editor') {
-    state.currentSession = null;
-
-    for (const cached of state.sessionCache.values()) {
-      if (cached.container) cached.container.classList.add('hidden');
-    }
+  if (tab.type === 'editor') {
 
     if (activeFilePath) activeFilePath.textContent = tab.path;
     const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
@@ -195,6 +198,17 @@ export function activateTab(tabId) {
       currentPathLabel.textContent = '// 新手使用指南与帮助文档';
     }
     renderHelpDoc();
+  } else if (tab.type === 'project') {
+    state.currentSession = null;
+
+    for (const cached of state.sessionCache.values()) {
+      if (cached.container) cached.container.classList.add('hidden');
+    }
+
+    if (currentPathLabel) {
+      currentPathLabel.textContent = '// 项目推进总览 (Project HUD)';
+    }
+    renderProjectOverview();
   }
 }
 
@@ -227,6 +241,31 @@ export function closeTab(tabId) {
   }
 }
 
+export function updateProjectTabStatus(status) {
+  state.workspaceStatus = status;
+  const projectTab = document.querySelector('.workspace-tab.project-tab');
+  if (!projectTab) return;
+
+  const badge = projectTab.querySelector('.project-tab-status-badge');
+  if (!badge) {
+    renderTabs();
+    return;
+  }
+
+  const statusMap = {
+    busy: { label: '执行中', cls: 'status-busy' },
+    waiting: { label: '待确认', cls: 'status-waiting' },
+    idle: { label: '空闲', cls: 'status-idle' },
+    empty: { label: '就绪', cls: 'status-empty' }
+  };
+  const cur = statusMap[status] || statusMap.idle;
+
+  badge.className = `project-tab-status-badge ${cur.cls}`;
+  badge.title = `智能体当前状态: ${cur.label}`;
+  const labelEl = badge.querySelector('.tab-status-label');
+  if (labelEl) labelEl.textContent = cur.label;
+}
+
 export function restoreTabsState() {
   try {
     const savedTabsRaw = localStorage.getItem('deckTabs');
@@ -247,6 +286,13 @@ export function restoreTabsState() {
             state.tabs.push(tab);
           }
         });
+
+        // Ensure project tab is always at index 0
+        const pIdx = state.tabs.findIndex(t => t.type === 'project');
+        if (pIdx > 0) {
+          const [pTab] = state.tabs.splice(pIdx, 1);
+          state.tabs.unshift(pTab);
+        }
         
         if (state.tabs.length > 0) {
           let targetActiveTabId = savedActiveTabId;

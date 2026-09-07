@@ -11,6 +11,7 @@ import { initQrCode } from './modules/qrcode.js';
 import { initImBot } from './modules/imBot.js';
 import { initChatMode, applySessionViewMode } from './modules/chatMode.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
+import { initProjectOverviewEvents, openProjectTab } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
 
@@ -1292,6 +1293,8 @@ loadWorkspaces().then(async () => {
   initShareModal();
   window.openHelpDocTab = openHelpDocTab;
   initHelpDocEvents();
+  window.openProjectTab = openProjectTab;
+  initProjectOverviewEvents();
 
   // Control Dropdown settings panel
   const deckControlToggleBtn = document.getElementById('deckControlToggleBtn');

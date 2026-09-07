@@ -130,6 +130,12 @@
             <i data-lucide="x" style="width: 16px; height: 16px; color: var(--neon-pink);"></i>
           </button>
         </div>
+        <!-- Project Progress HUD Entry Button -->
+        <button id="openProjectOverviewBtn" class="project-overview-entry-btn" title="查看当前工作区项目推进总览">
+          <i data-lucide="activity" class="entry-btn-icon"></i>
+          <span class="entry-btn-text">项目推进总览</span>
+          <span class="entry-btn-indicator"><span class="pulse-dot"></span></span>
+        </button>
       </div>
 
       <!-- Sidebar Navigation Tabs -->
@@ -199,6 +205,21 @@
       <div class="workspace-tabs hidden" id="workspaceTabs">
         <!-- Tabs will be rendered here dynamically -->
       </div>
+
+      <!-- Project Overview Panel (Project Progress HUD) -->
+      <section class="project-panel hidden" id="projectPanel">
+        <div class="tech-corner top-left"></div>
+        <div class="tech-corner top-right"></div>
+        <div class="tech-corner bottom-left"></div>
+        <div class="tech-corner bottom-right"></div>
+
+        <div class="project-panel-container" id="projectPanelContainer">
+          <div class="loading-placeholder">
+            <div class="cyber-spinner"></div>
+            <span>正在加载项目推进数据...</span>
+          </div>
+        </div>
+      </section>
 
       <!-- Welcome Panel (when no session is attached) -->
       <section class="welcome-panel" id="welcomePanel">

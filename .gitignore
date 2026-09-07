@@ -134,6 +134,7 @@ vapid.json
 .agents/
 .claude/
 .codex/
+.deck/
 
 # IM Bot Bindings Data
 im_bindings.json

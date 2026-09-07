@@ -42,6 +42,7 @@ function checkNeedsBuild() {
     path.join(PROJECT_ROOT, 'public', 'js', 'app.js'),
     path.join(PROJECT_ROOT, 'public', 'js', 'modules'),
     path.join(PROJECT_ROOT, 'public', 'css', 'style.css'),
+    path.join(PROJECT_ROOT, 'public', 'css', 'project-overview.css'),
     path.join(PROJECT_ROOT, 'public', 'css', 'invite-modal.css'),
     path.join(PROJECT_ROOT, 'public', 'css', 'chat-mode.css'),
     path.join(PROJECT_ROOT, 'public', 'index.html'),

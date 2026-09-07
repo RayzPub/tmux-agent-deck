@@ -222,10 +222,10 @@ export function attachSession(sessionName) {
     state.tabs.push(tab);
   }
 
-  if (state.currentSession && state.currentSession !== sessionName) {
-    const prevCached = state.sessionCache.get(state.currentSession);
-    if (prevCached && prevCached.container) {
-      prevCached.container.classList.add('hidden');
+  // Hide all other session containers in cache
+  for (const [name, cachedSession] of state.sessionCache.entries()) {
+    if (name !== sessionName && cachedSession.container) {
+      cachedSession.container.classList.add('hidden');
     }
   }
 
@@ -759,11 +759,21 @@ export function attachSession(sessionName) {
     });
   } else {
     cached.container.classList.remove('hidden');
+    for (const [name, cachedSession] of state.sessionCache.entries()) {
+      if (name !== sessionName && cachedSession.container) {
+        cachedSession.container.classList.add('hidden');
+      }
+    }
     setTimeout(() => {
       if (!isTouchDevice() && cached.term) {
         cached.term.focus();
       }
       fitTerminalFor(sessionName);
+      if (cached.term && typeof cached.term.refresh === 'function') {
+        try {
+          cached.term.refresh(0, cached.term.rows - 1);
+        } catch (e) {}
+      }
     }, 50);
   }
 

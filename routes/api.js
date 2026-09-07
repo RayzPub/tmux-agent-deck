@@ -15,6 +15,7 @@ const db = require('../services/dbService');
 const iconService = require('../services/iconService');
 const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('../services/agentChatService');
 const llmGatewayService = require('../services/llmGatewayService');
+const projectService = require('../services/projectService');
 
 // Shell escape utility for safe command interpolation
 const shellescape = (s) => {
@@ -915,6 +916,88 @@ router.delete('/workspaces/:name', requireAuth, (req, res) => {
   }
   writeWorkspaces(filtered, req.user.username);
   res.json({ success: true });
+});
+
+// API: Get workspace project progression data
+router.get('/workspaces/:name/project-progress', requireAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    const progress = await projectService.getProjectProgress(name, req.user.username);
+    res.json(progress);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch project progress' });
+  }
+});
+
+// API: Update workspace project mission
+router.post('/workspaces/:name/project-mission', requireAuth, (req, res) => {
+  try {
+    const { name } = req.params;
+    const { mission } = req.body;
+    const workspaces = readWorkspaces(req.user.username);
+    const matchedWs = workspaces.find(w => 
+      (w.name && w.name.toLowerCase() === name.toLowerCase()) ||
+      (w.path && (w.path === name || resolveWorkspacePath(w.path, req.user.username) === path.resolve(name)))
+    );
+    let wsPath;
+    if (matchedWs) {
+      wsPath = resolveWorkspacePath(matchedWs.path, req.user.username);
+    } else {
+      const candidate = resolveWorkspacePath(name, req.user.username);
+      if (candidate && fs.existsSync(candidate)) {
+        wsPath = candidate;
+      } else {
+        return res.status(404).json({ error: `Workspace "${name}" not found` });
+      }
+    }
+    const updated = projectService.writeProjectMetadata(wsPath, mission);
+    res.json({ success: true, mission: updated.mission, updatedAt: updated.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update project mission' });
+  }
+});
+
+// API: Update workspace project tasks list (Roadmap / Kanban)
+router.post('/workspaces/:name/project-tasks', requireAuth, (req, res) => {
+  try {
+    const { name } = req.params;
+    const { tasks, mission } = req.body;
+    const workspaces = readWorkspaces(req.user.username);
+    const matchedWs = workspaces.find(w => 
+      (w.name && w.name.toLowerCase() === name.toLowerCase()) ||
+      (w.path && (w.path === name || resolveWorkspacePath(w.path, req.user.username) === path.resolve(name)))
+    );
+    let wsPath;
+    if (matchedWs) {
+      wsPath = resolveWorkspacePath(matchedWs.path, req.user.username);
+    } else {
+      const candidate = resolveWorkspacePath(name, req.user.username);
+      if (candidate && fs.existsSync(candidate)) {
+        wsPath = candidate;
+      } else {
+        return res.status(404).json({ error: `Workspace "${name}" not found` });
+      }
+    }
+    const updated = projectService.writeProjectTasks(wsPath, tasks, mission !== undefined ? mission : null);
+    res.json({ success: true, tasks: updated.tasks, mission: updated.mission, updatedAt: updated.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update project tasks' });
+  }
+});
+
+// API: Dispatch task / prompt directly to an agent session in this workspace
+router.post('/workspaces/:name/dispatch-task', requireAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { sessionName, promptText, clearHistory } = req.body;
+    if (!sessionName || !promptText) {
+      return res.status(400).json({ error: 'Session name and promptText are required' });
+    }
+    const result = await projectService.dispatchTask(name, sessionName, promptText, req.user.username, { clearHistory: !!clearHistory });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to dispatch task' });
+  }
 });
 
 // List subdirectories only (for workspace directory picker)
