@@ -699,7 +699,7 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
   if (decomposeBtn) {
     decomposeBtn.addEventListener('click', () => {
       const missionText = currentMission ? currentMission.trim() : '';
-      const promptTemplate = `请阅读当前工作区的代码结构与目标「${missionText || '推进项目核心能力'}」，将目标拆解为 3~5 个子任务，并严格按照规范写入工作区的 \`.deck/tasks.json\` 文件中。\n格式参考：\n{\n  "mission": "${missionText || '项目目标'}",\n  "tasks": [\n    { "id": "t-1", "title": "任务简述", "description": "具体说明与修改文件", "status": "todo", "priority": "high", "assignee": "" }\n  ]\n}`;
+      const promptTemplate = `请阅读当前工作区的代码结构、参考工作区中的 \`.deck/deck_task_spec.md\` 规范以及目标「${missionText || '推进项目核心能力'}」，将目标拆解为 3~5 个子任务，并严格按照规范写入工作区的 \`.deck/tasks.json\` 文件中。\n格式参考：\n{\n  "mission": "${missionText || '项目目标'}",\n  "tasks": [\n    { "id": "t-1", "title": "任务简述", "description": "具体说明与修改文件", "status": "todo", "priority": "high", "assignee": "" }\n  ]\n}`;
       
       if (taskInput) {
         taskInput.value = promptTemplate;

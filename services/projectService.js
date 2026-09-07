@@ -4,7 +4,43 @@ const { execTmux, getRunUser } = require('./tmuxService');
 const { readWorkspaces, resolveWorkspacePath, safeResolve, getUserHomeDir, getHomeDir } = require('./fileService');
 const { execCommand } = require('./gitService');
 const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('./agentChatService');
-const { MULTI_USER_ENABLED } = require('../config');
+const { MULTI_USER_ENABLED, PROJECT_ROOT } = require('../config');
+
+/**
+ * Ensure .deck/deck_task_spec.md exists in the workspace .deck folder
+ */
+function ensureDeckSpecFile(workspacePath) {
+  try {
+    const deckDir = safeResolve(workspacePath, '.deck');
+    if (!fs.existsSync(deckDir)) {
+      fs.mkdirSync(deckDir, { recursive: true });
+      const runUser = getRunUser();
+      if (runUser && process.getuid && process.getuid() === 0) {
+        try {
+          const { execSync } = require('child_process');
+          execSync(`chown -R ${runUser}:${runUser} "${deckDir}"`);
+        } catch (e) {}
+      }
+    }
+
+    const targetSpecFile = safeResolve(deckDir, 'deck_task_spec.md');
+    if (!fs.existsSync(targetSpecFile)) {
+      const templateSpecFile = path.join(PROJECT_ROOT, 'docs', 'deck_task_spec.md');
+      if (fs.existsSync(templateSpecFile)) {
+        fs.copyFileSync(templateSpecFile, targetSpecFile);
+        const runUser = getRunUser();
+        if (runUser && process.getuid && process.getuid() === 0) {
+          try {
+            const { execSync } = require('child_process');
+            execSync(`chown ${runUser}:${runUser} "${targetSpecFile}"`);
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (err) {
+    // Non-critical, ignore
+  }
+}
 
 /**
  * Execute Git command asynchronously with Promise
@@ -28,6 +64,9 @@ function readProjectMetadata(workspacePath) {
   let mission = '';
   let updatedAt = null;
   let tasks = [];
+
+  // Automatically ensure .deck/deck_task_spec.md exists in this workspace
+  ensureDeckSpecFile(workspacePath);
 
   try {
     const deckDir = safeResolve(workspacePath, '.deck');
