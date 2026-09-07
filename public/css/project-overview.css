@@ -993,8 +993,8 @@ body.light-minimalist .dispatch-textarea {
 }
 
 body.light-minimalist .dispatch-textarea:focus {
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+  border-color: #0f172a;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
 }
 
 .dispatch-submit-btn {
@@ -1028,15 +1028,38 @@ body.light-minimalist .dispatch-textarea:focus {
 }
 
 body.light-minimalist .dispatch-submit-btn {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: #0f172a;
+  border: 1px solid #0f172a;
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 body.light-minimalist .dispatch-submit-btn:hover {
-  background: #4338ca;
-  border-color: #4338ca;
+  background: #1e293b;
+  border-color: #1e293b;
   color: #ffffff;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+}
+
+body.light-minimalist .dispatch-submit-btn:active {
+  background: #334155;
+  border-color: #334155;
+  transform: translateY(0);
+}
+
+body.light-minimalist .dispatch-submit-btn.busy-warn {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #b45309;
+  box-shadow: 0 1px 2px rgba(245, 158, 11, 0.08);
+}
+
+body.light-minimalist .dispatch-submit-btn.busy-warn:hover {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+  box-shadow: 0 3px 8px rgba(245, 158, 11, 0.15);
 }
 
 .dispatch-feedback-bar {
@@ -1232,24 +1255,43 @@ body.light-minimalist .roadmap-count-pill {
 }
 
 body.light-minimalist .roadmap-action-btn.secondary {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
   color: #334155;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 body.light-minimalist .roadmap-action-btn.secondary:hover {
-  background: #e2e8f0;
+  background: #f8fafc;
+  border-color: #94a3b8;
   color: #0f172a;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+body.light-minimalist .roadmap-action-btn.secondary:active {
+  background: #f1f5f9;
+  transform: translateY(0);
 }
 
 body.light-minimalist .roadmap-action-btn.primary {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: #0f172a;
+  border: 1px solid #0f172a;
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 body.light-minimalist .roadmap-action-btn.primary:hover {
-  background: #4338ca;
+  background: #1e293b;
+  border-color: #1e293b;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+}
+
+body.light-minimalist .roadmap-action-btn.primary:active {
+  background: #334155;
+  border-color: #334155;
+  transform: translateY(0);
 }
 
 .roadmap-progress-bar-bg {
@@ -1478,9 +1520,9 @@ body.light-minimalist .task-btn-delete {
 }
 
 body.light-minimalist .task-btn-dispatch:hover {
-  background: #eef2ff;
-  border-color: #4f46e5;
-  color: #4f46e5;
+  background: #f1f5f9;
+  border-color: #0f172a;
+  color: #0f172a;
 }
 
 body.light-minimalist .task-btn-delete:hover {
