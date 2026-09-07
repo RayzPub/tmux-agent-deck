@@ -1,9 +1,12 @@
 import { state } from './state.js';
 import { activateTab, renderTabs, updateProjectTabStatus } from './tabs.js';
 import { attachSession } from './terminal.js';
+import { renderDagCanvas, getSelectedTaskId, setSelectedTaskId } from './projectDagCanvas.js';
+import { openAgyDrawer, closeAgyDrawer, updateDrawerSelectedTask } from './projectAgyDrawer.js';
 
 let isEditingMission = false;
 let autoStatusInterval = null;
+let roadmapViewMode = localStorage.getItem('deck_roadmap_view_mode') || 'dag';
 
 function closeSidebarOnMobile() {
   const sidebar = document.querySelector('.sidebar');
@@ -204,10 +207,16 @@ function buildOverviewDOM(container, data, queryIdentifier) {
             ${mission ? escapeHtml(mission) : '点击右侧按钮设定当前项目的核心推进目标...'}
           </div>
         </div>
-        <button id="editMissionBtn" class="mission-edit-btn" title="编辑目标">
-          <i data-lucide="edit-3" style="width: 12px; height: 12px;"></i>
-          <span>设定</span>
-        </button>
+        <div class="mission-actions">
+          <button id="decomposeMissionBtn" class="mission-decompose-btn" title="呼叫 AGY 结合当前核心推进目标，自动生成任务拆解草稿">
+            <i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>
+            <span>让 AGY 拆解</span>
+          </button>
+          <button id="editMissionBtn" class="mission-edit-btn" title="编辑目标">
+            <i data-lucide="edit-3" style="width: 12px; height: 12px;"></i>
+            <span>设定</span>
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -227,13 +236,23 @@ function buildOverviewDOM(container, data, queryIdentifier) {
             <i data-lucide="kanban" style="width: 15px; height: 15px;"></i>
             <span>目标拆解与推进大盘 (ROADMAP & TASKS)</span>
             <span class="roadmap-count-pill">${doneTasks}/${totalTasks} 完成 (${progressPercent}%)</span>
+            <div class="roadmap-view-switcher">
+              <button class="roadmap-switch-btn ${roadmapViewMode === 'dag' ? 'active' : ''}" data-view="dag" title="切换到 DAG 拓扑画布模式">
+                <i data-lucide="network" style="width: 12px; height: 12px;"></i>
+                <span>DAG 画布</span>
+              </button>
+              <button class="roadmap-switch-btn ${roadmapViewMode === 'list' ? 'active' : ''}" data-view="list" title="切换到清单列表模式">
+                <i data-lucide="list" style="width: 12px; height: 12px;"></i>
+                <span>列表</span>
+              </button>
+            </div>
           </div>
           <div class="roadmap-actions">
-            <button id="decomposeWithAgentBtn" class="roadmap-action-btn secondary" title="生成标准拆解指令并填入派发栏">
-              <i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>
-              <span>让 Agent 拆解任务</span>
+            <button id="openAgyDrawerBtn" class="roadmap-action-btn primary" title="唤出 AGY 协同工位终端，自由对话或执行指令">
+              <i data-lucide="bot" style="width: 13px; height: 13px;"></i>
+              <span>🤖 AGY 协同工位</span>
             </button>
-            <button id="openNewTaskModalBtn" class="roadmap-action-btn primary" title="手动添加子任务">
+            <button id="openNewTaskModalBtn" class="roadmap-action-btn secondary" title="手动添加子任务">
               <i data-lucide="plus" style="width: 12px; height: 12px;"></i>
               <span>新建任务</span>
             </button>
@@ -244,18 +263,56 @@ function buildOverviewDOM(container, data, queryIdentifier) {
           <div class="roadmap-progress-bar-fill" style="width: ${progressPercent}%;"></div>
         </div>
       </div>
-
-      <div class="roadmap-tasks-list" id="roadmapTasksList">
   `;
 
   if (tasks.length === 0) {
     html += `
-      <div class="roadmap-empty-state">
-        <i data-lucide="list-checks" style="width: 28px; height: 28px;"></i>
-        <span>尚未拆解子任务。点击右上角【让 Agent 拆解任务】或手动添加任务。</span>
+      <div class="roadmap-onboarding-card">
+        <div class="onboarding-header">
+          <i data-lucide="compass" style="width: 18px; height: 18px; color: var(--neon-cyan, #00f0ff);"></i>
+          <span>首次使用指引：人机协同推进 3 步法</span>
+        </div>
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <span class="step-num">1</span>
+            <div class="step-info">
+              <span class="step-title">设定目标 (MISSION)</span>
+              <span class="step-desc">上方设定本次迭代核心目标</span>
+            </div>
+          </div>
+          <div class="onboarding-arrow"><i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i></div>
+          <div class="onboarding-step">
+            <span class="step-num">2</span>
+            <div class="step-info">
+              <span class="step-title">唤起 AGY 拆解</span>
+              <span class="step-desc">自动注入指令，生成 DAG 依赖图</span>
+            </div>
+          </div>
+          <div class="onboarding-arrow"><i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i></div>
+          <div class="onboarding-step">
+            <span class="step-num">3</span>
+            <div class="step-info">
+              <span class="step-title">审阅推进与细化</span>
+              <span class="step-desc">派发工位执行，卡片可就地细化</span>
+            </div>
+          </div>
+        </div>
+        <button id="onboardingLaunchAgyBtn" class="roadmap-action-btn primary large" style="margin-top: 14px; padding: 6px 16px; font-size: 12px;">
+          <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i>
+          <span>立即开始：唤起 AGY 拆解当前目标</span>
+        </button>
       </div>
+    </div>
+    `;
+  } else if (roadmapViewMode === 'dag') {
+    html += `
+      <div class="roadmap-dag-wrapper" id="roadmapDagWrapper"></div>
+    </div>
     `;
   } else {
+    html += `
+      <div class="roadmap-tasks-list" id="roadmapTasksList">
+    `;
     tasks.forEach(task => {
       const isDone = task.status === 'done';
       const isInProgress = task.status === 'in_progress';
@@ -632,7 +689,138 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
   }
 
   // --- Roadmap & Tasks Interactive Handlers ---
-  // 1. Task checkbox toggle (complete / uncomplete)
+  // View Switcher (DAG vs List)
+  const switchBtns = container.querySelectorAll('.roadmap-switch-btn');
+  switchBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const view = btn.getAttribute('data-view');
+      if (view && view !== roadmapViewMode) {
+        roadmapViewMode = view;
+        localStorage.setItem('deck_roadmap_view_mode', view);
+        renderProjectOverview();
+      }
+    });
+  });
+
+  // Open AGY Drawer button (Pure Free Dialogue Mode)
+  const openAgyBtn = container.querySelector('#openAgyDrawerBtn');
+  if (openAgyBtn) {
+    openAgyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAgyDrawer({
+        workspaceIdentifier,
+        mission: currentMission,
+        tasks: currentTasks,
+        sessions,
+        selectedTask: null,
+        stageDecompose: false,
+        stageRefine: false,
+        onRefreshBoard: () => renderProjectOverview()
+      });
+    });
+  }
+
+  // Decompose Mission button beside Mission Goal (Stages Mission Decompose Prompt in Draft Tray)
+  const decomposeMissionBtn = container.querySelector('#decomposeMissionBtn');
+  if (decomposeMissionBtn) {
+    decomposeMissionBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAgyDrawer({
+        workspaceIdentifier,
+        mission: currentMission,
+        tasks: currentTasks,
+        sessions,
+        selectedTask: null,
+        stageDecompose: true,
+        stageRefine: false,
+        onRefreshBoard: () => renderProjectOverview()
+      });
+    });
+  }
+
+  // Onboarding launch AGY button in empty state
+  const onboardingBtn = container.querySelector('#onboardingLaunchAgyBtn');
+  if (onboardingBtn) {
+    onboardingBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAgyDrawer({
+        workspaceIdentifier,
+        mission: currentMission,
+        tasks: currentTasks,
+        sessions,
+        selectedTask: null,
+        stageDecompose: true,
+        stageRefine: false,
+        onRefreshBoard: () => renderProjectOverview()
+      });
+    });
+  }
+
+  // Render DAG Canvas if in dag view mode
+  if (roadmapViewMode === 'dag') {
+    const dagWrapper = container.querySelector('#roadmapDagWrapper');
+    if (dagWrapper) {
+      renderDagCanvas(dagWrapper, {
+        tasks: currentTasks,
+        mission: currentMission,
+        onToggleTask: async (taskId) => {
+          const taskObj = currentTasks.find(t => String(t.id) === String(taskId));
+          if (!taskObj) return;
+          taskObj.status = taskObj.status === 'done' ? 'todo' : 'done';
+          taskObj.updatedAt = new Date().toISOString();
+          try {
+            await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tasks: currentTasks, mission: currentMission })
+            });
+            renderProjectOverview();
+          } catch (err) {
+            console.error('Failed to update task status:', err);
+          }
+        },
+        onRefineTask: (task) => {
+          updateDrawerSelectedTask(task);
+          openAgyDrawer({
+            workspaceIdentifier,
+            mission: currentMission,
+            tasks: currentTasks,
+            sessions,
+            selectedTask: task,
+            autoFillRefine: true,
+            onRefreshBoard: () => renderProjectOverview()
+          });
+        },
+        onDispatchTask: (task) => {
+          if (taskInput) {
+            taskInput.value = task.description ? `【任务】${task.title}\n详细说明: ${task.description}` : `【任务】${task.title}`;
+            taskInput.focus();
+            taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        },
+        onDeleteTask: async (taskId) => {
+          if (!confirm('确定删除此任务项？')) return;
+          const updatedTasks = currentTasks.filter(t => String(t.id) !== String(taskId));
+          try {
+            await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tasks: updatedTasks, mission: currentMission })
+            });
+            renderProjectOverview();
+          } catch (err) {
+            console.error('Failed to delete task:', err);
+          }
+        },
+        onSelectTask: (task) => {
+          updateDrawerSelectedTask(task);
+        }
+      });
+    }
+  }
+
+  // 1. Task checkbox toggle (complete / uncomplete) for List View
   const checkBtns = container.querySelectorAll('.task-check-btn');
   checkBtns.forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -694,31 +882,15 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
     });
   });
 
-  // 4. Decompose with Agent button (生成标准提示词到派发栏)
-  const decomposeBtn = container.querySelector('#decomposeWithAgentBtn');
-  if (decomposeBtn) {
-    decomposeBtn.addEventListener('click', () => {
-      const missionText = currentMission ? currentMission.trim() : '';
-      const promptTemplate = `请阅读当前工作区的代码结构、参考工作区中的 \`.deck/deck_task_spec.md\` 规范以及目标「${missionText || '推进项目核心能力'}」，将目标拆解为 3~5 个子任务，并严格按照规范写入工作区的 \`.deck/tasks.json\` 文件中。\n格式参考：\n{\n  "mission": "${missionText || '项目目标'}",\n  "tasks": [\n    { "id": "t-1", "title": "任务简述", "description": "具体说明与修改文件", "status": "todo", "priority": "high", "assignee": "" }\n  ]\n}`;
-      
-      if (taskInput) {
-        taskInput.value = promptTemplate;
-        taskInput.focus();
-        taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        if (hintText) {
-          hintText.textContent = '💡 拆解指令已生成并填入输入框，可直接指派给 Agent 执行拆解。';
-          feedbackBar.className = 'dispatch-feedback-bar ready';
-        }
-      }
-    });
-  }
-
-  // 5. Open new task prompt/dialog
+  // Open new task prompt/dialog
   const newTaskBtn = container.querySelector('#openNewTaskModalBtn');
   if (newTaskBtn) {
     newTaskBtn.addEventListener('click', async () => {
       const title = prompt('请输入新子任务的名称:');
       if (!title || !title.trim()) return;
+
+      const depInput = prompt('前置依赖任务ID（可选，例如 t-1，若无请直接留空点确定）:');
+      const dependsOn = (depInput && depInput.trim()) ? [depInput.trim()] : [];
 
       const newTask = {
         id: `t-${Date.now().toString(36)}`,
@@ -727,6 +899,7 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
         status: 'todo',
         priority: 'medium',
         assignee: (sessions && sessions.length > 0) ? sessions[0].name : '',
+        dependsOn,
         updatedAt: new Date().toISOString()
       };
 

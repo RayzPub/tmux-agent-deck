@@ -22,29 +22,32 @@
   "tasks": [
     {
       "id": "t-1",
-      "title": "简明任务名称（30字以内）",
+      "title": "设计后端数据协议与路由扩展",
       "description": "详细实现说明、涉及文件或注意事项",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "assignee": "claude",
+      "dependsOn": [],
       "updatedAt": "2026-09-07T12:00:00.000Z"
     },
     {
       "id": "t-2",
-      "title": "完善派发上下文清理开关",
-      "description": "在前端派发框增设勾选框，后端根据 agentType 发送重置指令",
+      "title": "实现 DAG 拓扑画布与连线渲染",
+      "description": "前端计算拓扑层级并绘制贝塞尔连线与状态卡片",
       "status": "in_progress",
-      "priority": "medium",
-      "assignee": "agy3",
+      "priority": "high",
+      "assignee": "agy1",
+      "dependsOn": ["t-1"],
       "updatedAt": "2026-09-07T12:10:00.000Z"
     },
     {
       "id": "t-3",
       "title": "编写端到端自动化测试验证路由",
       "description": "测试手机端收起和侧边栏遮罩交互",
-      "status": "done",
+      "status": "todo",
       "priority": "low",
       "assignee": "codex",
+      "dependsOn": ["t-2"],
       "updatedAt": "2026-09-07T12:30:00.000Z"
     }
   ]
@@ -62,7 +65,8 @@
 | `task.description`| String | 否 | 任务详细说明、相关文件路径或验收指标。 |
 | `task.status` | Enum | 是 | 任务状态：`todo` (待办), `in_progress` (推进中), `done` (已完成)。 |
 | `task.priority` | Enum | 否 | 优先级：`high`, `medium`, `low` (默认 `medium`)。 |
-| `task.assignee` | String | 否 | 指派的工位会话名称（如 `agy3`, `claude`）或空（未认领）。 |
+| `task.assignee` | String | 否 | 指派的工位会话名称（如 `agy1`, `claude`）或空（未认领）。 |
+| `task.dependsOn`| Array<String> | 否 | 前置依赖的任务 ID 数组（如 `["t-1"]`），用于构建 DAG 拓扑图谱。 |
 
 ---
 
@@ -74,7 +78,7 @@
 请阅读当前项目工作区的目录结构、Git 最近提交历史以及当前目标：
 「{{MISSION}}」
 
-请围绕此目标，分析代码现状并拆解出 3~6 个切实可行的子任务。
+请围绕此目标，分析代码现状并拆解出 3~6 个切实可行的子任务，并构建合理的 DAG 任务依赖网络（通过 dependsOn 标注前置任务）。
 请严格遵循 Deck Task 规范，将拆解结果直接写入或更新到 `.deck/tasks.json` 文件中。
 格式示例：
 {
@@ -83,11 +87,21 @@
   "tasks": [
     {
       "id": "t-1",
-      "title": "任务简述",
+      "title": "任务简述（无前置依赖项）",
       "description": "具体修改点与涉及文件",
       "status": "todo",
       "priority": "high",
-      "assignee": ""
+      "assignee": "",
+      "dependsOn": []
+    },
+    {
+      "id": "t-2",
+      "title": "依赖 t-1 的后续任务",
+      "description": "具体修改点与涉及文件",
+      "status": "todo",
+      "priority": "medium",
+      "assignee": "",
+      "dependsOn": ["t-1"]
     }
   ]
 }
