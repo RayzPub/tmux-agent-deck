@@ -379,11 +379,56 @@ body.light-minimalist .mission-edit-btn:hover {
   background: #f1f5f9;
 }
 
+.mission-reset-btn {
+  background: rgba(255, 0, 127, 0.08);
+  border: 1px solid rgba(255, 0, 127, 0.25);
+  color: #ff3388;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mission-reset-btn:hover {
+  background: rgba(255, 0, 127, 0.18);
+  border-color: #ff007f;
+  color: #ff66aa;
+  box-shadow: 0 0 8px rgba(255, 0, 127, 0.2);
+  transform: translateY(-1px);
+}
+
+body.light-minimalist .mission-reset-btn {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+}
+
+body.light-minimalist .mission-reset-btn:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+  box-shadow: 0 1px 3px rgba(220, 38, 38, 0.1);
+  transform: translateY(-1px);
+}
+
 /* Mission inline edit input */
 .mission-edit-wrapper {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
+}
+
+.mission-input-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
 }
 
 .mission-input {
@@ -402,6 +447,47 @@ body.light-minimalist .mission-input {
   background: #ffffff;
   border-color: #3b82f6;
   color: #0f172a;
+}
+
+.mission-edit-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 2px;
+}
+
+.mission-clear-tasks-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-muted, #94a3b8);
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.mission-clear-tasks-toggle:hover {
+  color: #e2e8f0;
+}
+
+.mission-clear-tasks-toggle input[type="checkbox"] {
+  accent-color: var(--neon-cyan, #00f0ff);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+body.light-minimalist .mission-clear-tasks-toggle {
+  color: #64748b;
+}
+
+body.light-minimalist .mission-clear-tasks-toggle:hover {
+  color: #0f172a;
+}
+
+body.light-minimalist .mission-clear-tasks-toggle input[type="checkbox"] {
+  accent-color: #4f46e5;
 }
 
 /* 4. Section Titles */
@@ -1349,6 +1435,19 @@ body.light-minimalist .roadmap-count-pill {
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
 }
 
+.roadmap-action-btn.danger {
+  background: rgba(255, 0, 127, 0.12);
+  border: 1px solid rgba(255, 0, 127, 0.35);
+  color: #ff3388;
+}
+
+.roadmap-action-btn.danger:hover {
+  background: rgba(255, 0, 127, 0.25);
+  border-color: #ff007f;
+  color: #ff66aa;
+  box-shadow: 0 0 8px rgba(255, 0, 127, 0.25);
+}
+
 body.light-minimalist .roadmap-action-btn.secondary {
   background: #ffffff;
   border: 1px solid #cbd5e1;
@@ -1386,6 +1485,26 @@ body.light-minimalist .roadmap-action-btn.primary:hover {
 body.light-minimalist .roadmap-action-btn.primary:active {
   background: #334155;
   border-color: #334155;
+  transform: translateY(0);
+}
+
+body.light-minimalist .roadmap-action-btn.danger {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  box-shadow: 0 1px 2px rgba(220, 38, 38, 0.05);
+}
+
+body.light-minimalist .roadmap-action-btn.danger:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+  box-shadow: 0 2px 5px rgba(220, 38, 38, 0.1);
+  transform: translateY(-1px);
+}
+
+body.light-minimalist .roadmap-action-btn.danger:active {
+  background: #fecaca;
   transform: translateY(0);
 }
 
@@ -2833,11 +2952,14 @@ body.light-minimalist .staging-send-btn:hover {
   }
 
   .mission-decompose-btn,
-  .mission-edit-btn {
+  .mission-edit-btn,
+  .mission-reset-btn {
     flex: 1;
+    min-width: 0;
     justify-content: center;
-    padding: 6px 10px;
+    padding: 6px 8px;
     font-size: 11px;
+    white-space: nowrap;
   }
 
   /* Roadmap Card & Header */
@@ -3133,9 +3255,11 @@ body.light-minimalist .staging-send-btn:hover {
   }
 
   .mission-decompose-btn,
-  .mission-edit-btn {
-    font-size: 10.5px;
-    padding: 5px 6px;
+  .mission-edit-btn,
+  .mission-reset-btn {
+    font-size: 10px;
+    padding: 5px 4px;
+    gap: 4px;
   }
 
   .roadmap-title {
@@ -3153,6 +3277,11 @@ body.light-minimalist .staging-send-btn:hover {
   }
 
   .mission-edit-wrapper {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .mission-input-row {
     flex-wrap: wrap;
     gap: 6px;
   }

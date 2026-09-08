@@ -185,6 +185,12 @@ export function initChatMode() {
             class="chat-textarea" 
             id="chatComposerTextarea" 
             rows="1"
+            placeholder="输入消息或口述指令..."
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            enterkeyhint="send"
           ></textarea>
           <div class="chat-composer-actions">
             <button class="chat-icon-btn" id="chatInterruptBtn" title="停止执行 (Ctrl+C)">

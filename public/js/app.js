@@ -14,6 +14,7 @@ import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 import { initProjectOverviewEvents, openProjectTab } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
+import { initMobileInput } from './modules/mobileInput.js';
 
 // Expose immediately for terminal and tab operations
 window.applySessionViewMode = applySessionViewMode;
@@ -927,43 +928,8 @@ logoutBtn.addEventListener('click', async () => {
   }
 });
 
-// Mobile Input send
-const mobileCommandInput = document.getElementById('mobileCommandInput');
-const mobileSendBtn = document.getElementById('mobileSendBtn');
-
-if (mobileCommandInput && mobileSendBtn) {
-  let lastSendCommandTime = 0;
-  const sendMobileCommand = () => {
-    const now = Date.now();
-    if (now - lastSendCommandTime < 350) return;
-    lastSendCommandTime = now;
-
-    const text = mobileCommandInput.value;
-    stopVoiceInput();
-
-    if (state.currentSession) {
-      const cached = state.sessionCache.get(state.currentSession);
-      if (cached && cached.socket) {
-        const cleanText = text.trim();
-        if (cleanText) {
-          cached.socket.emit('terminal-input', cleanText + '\r');
-          mobileCommandInput.value = '';
-          mobileCommandInput.blur();
-        } else {
-          cached.socket.emit('terminal-input', '\r');
-          mobileCommandInput.value = '';
-        }
-      }
-    }
-  };
-
-  mobileSendBtn.addEventListener('click', sendMobileCommand);
-  mobileCommandInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      sendMobileCommand();
-    }
-  });
-}
+// Initialize Mobile Command Input & VisualViewport Linkage
+initMobileInput();
 
 // Initialize Mobile Keyboard Helper Bar
 initMobileKeyboard(mobileKeyboardBar);

@@ -99,7 +99,7 @@ function readProjectMetadata(workspacePath) {
 /**
  * Write .deck/project.json mission file safely
  */
-function writeProjectMetadata(workspacePath, missionText) {
+function writeProjectMetadata(workspacePath, missionText, options = {}) {
   const deckDir = safeResolve(workspacePath, '.deck');
   if (!fs.existsSync(deckDir)) {
     fs.mkdirSync(deckDir, { recursive: true });
@@ -128,7 +128,25 @@ function writeProjectMetadata(workspacePath, missionText) {
       const tasksData = JSON.parse(raw);
       tasksData.mission = payload.mission;
       tasksData.updatedAt = now;
+      if (options && options.clearTasks) {
+        tasksData.tasks = [];
+      }
       fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2), 'utf8');
+    } catch (e) {}
+  } else if (options && options.clearTasks) {
+    try {
+      fs.writeFileSync(tasksFile, JSON.stringify({
+        mission: payload.mission,
+        updatedAt: now,
+        tasks: []
+      }, null, 2), 'utf8');
+      const runUser = getRunUser();
+      if (runUser && process.getuid && process.getuid() === 0) {
+        try {
+          const { execSync } = require('child_process');
+          execSync(`chown ${runUser}:${runUser} "${tasksFile}"`);
+        } catch (e) {}
+      }
     } catch (e) {}
   }
 
@@ -474,6 +492,7 @@ async function dispatchTask(workspaceIdentifier, sessionName, promptText, userna
 
 module.exports = {
   getProjectProgress,
+  readProjectMetadata,
   writeProjectMetadata,
   writeProjectTasks,
   dispatchTask

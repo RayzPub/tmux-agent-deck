@@ -209,13 +209,19 @@ function buildOverviewDOM(container, data, queryIdentifier) {
           </div>
         </div>
         <div class="mission-actions">
+          ${(mission || tasks.length > 0) ? `
+            <button id="resetMissionBtn" class="mission-reset-btn" title="重置当前目标并清空大盘所有旧任务">
+              <i data-lucide="rotate-ccw" style="width: 12px; height: 12px;"></i>
+              <span>重置目标</span>
+            </button>
+          ` : ''}
           <button id="decomposeMissionBtn" class="mission-decompose-btn" title="呼叫 AGY 结合当前核心推进目标，自动生成任务拆解草稿">
             <i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>
             <span>让 AGY 拆解</span>
           </button>
-          <button id="editMissionBtn" class="mission-edit-btn" title="编辑目标">
+          <button id="editMissionBtn" class="mission-edit-btn" title="设定或修改推进目标">
             <i data-lucide="edit-3" style="width: 12px; height: 12px;"></i>
-            <span>设定</span>
+            <span>${mission ? '修改' : '设定'}</span>
           </button>
         </div>
       </div>
@@ -257,7 +263,7 @@ function buildOverviewDOM(container, data, queryIdentifier) {
               <button id="openDispatchBtn" class="roadmap-action-btn primary" title="选择智能体工位，自由编辑并发送指令到终端">
                 <i data-lucide="send" style="width: 13px; height: 13px;"></i>
                 <span class="btn-text-full">🚀 发送到终端</span>
-                <span class="btn-text-short">🚀 发送到终端</span>
+                <span class="btn-text-short">🚀 发送</span>
               </button>
               <button id="openNewTaskModalBtn" class="roadmap-action-btn secondary" title="手动添加子任务">
                 <i data-lucide="plus" style="width: 12px; height: 12px;"></i>
@@ -753,6 +759,39 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
     });
   }
 
+  // Reset mission & clear tasks button
+  const resetMissionBtn = container.querySelector('#resetMissionBtn');
+  if (resetMissionBtn) {
+    resetMissionBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const taskCount = currentTasks.length;
+      const confirmMsg = taskCount > 0
+        ? `确定要重置当前推进目标并清空大盘全部旧任务 (${taskCount} 项) 吗？\n重置后可立即设定最新目标。`
+        : '确定要清空并重置当前推进目标吗？';
+
+      if (!confirm(confirmMsg)) return;
+
+      resetMissionBtn.disabled = true;
+      try {
+        await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-mission`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mission: '', clearTasks: true })
+        });
+        await renderProjectOverview();
+        // 自动激活编辑框，方便用户立即输入最新目标
+        const editBtn = document.querySelector('#editMissionBtn');
+        if (editBtn) {
+          editBtn.click();
+        }
+      } catch (err) {
+        console.error('Failed to reset mission and tasks:', err);
+        alert('重置失败: ' + err.message);
+        resetMissionBtn.disabled = false;
+      }
+    });
+  }
+
   // Mission Edit Button
   const editMissionBtn = container.querySelector('#editMissionBtn');
   const missionBox = container.querySelector('#projectMissionBox');
@@ -761,15 +800,28 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
       if (isEditingMission) return;
       isEditingMission = true;
 
+      const hasTasks = currentTasks && currentTasks.length > 0;
+
       missionBox.innerHTML = `
         <div class="mission-edit-wrapper">
-          <input type="text" id="projectMissionInput" class="mission-input" placeholder="输入当前工作区的推进目标（例如：重构后端鉴权并联调前端）" value="${escapeHtml(currentMission || '')}">
-          <button id="saveMissionBtn" class="cyber-btn-outline" style="height: 32px; padding: 0 10px;">
-            <i data-lucide="check"></i> 保存
-          </button>
-          <button id="cancelMissionBtn" class="cyber-btn-outline" style="height: 32px; padding: 0 10px;">
-            <i data-lucide="x"></i> 取消
-          </button>
+          <div class="mission-input-row">
+            <input type="text" id="projectMissionInput" class="mission-input" placeholder="输入当前工作区的推进目标（例如：重构后端鉴权并联调前端）" value="${escapeHtml(currentMission || '')}">
+            <button id="saveMissionBtn" class="cyber-btn-outline" style="height: 32px; padding: 0 10px;">
+              <i data-lucide="check"></i> 保存
+            </button>
+            <button id="cancelMissionBtn" class="cyber-btn-outline" style="height: 32px; padding: 0 10px;">
+              <i data-lucide="x"></i> 取消
+            </button>
+          </div>
+          ${hasTasks ? `
+            <div class="mission-edit-options">
+              <label class="mission-clear-tasks-toggle" title="勾选后，保存新目标将同步清空大盘已有的旧任务，便于围绕新目标重新拆解">
+                <input type="checkbox" id="missionClearOldTasksCheck" checked>
+                <span class="mission-checkbox-custom"></span>
+                <span>设定新目标时同步清空现有旧任务 (${currentTasks.length} 项)</span>
+              </label>
+            </div>
+          ` : ''}
         </div>
       `;
 
@@ -778,6 +830,7 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
       const input = missionBox.querySelector('#projectMissionInput');
       const saveBtn = missionBox.querySelector('#saveMissionBtn');
       const cancelBtn = missionBox.querySelector('#cancelMissionBtn');
+      const clearTasksCheck = missionBox.querySelector('#missionClearOldTasksCheck');
 
       if (input) {
         input.focus();
@@ -789,12 +842,13 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
 
       saveBtn.addEventListener('click', async () => {
         const val = input.value.trim();
+        const shouldClearTasks = clearTasksCheck ? clearTasksCheck.checked : false;
         saveBtn.disabled = true;
         try {
           await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-mission`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: val })
+            body: JSON.stringify({ mission: val, clearTasks: shouldClearTasks })
           });
         } catch (e) {
           console.error('Failed to update project mission:', e);

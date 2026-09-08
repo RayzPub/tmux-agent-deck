@@ -933,7 +933,7 @@ router.get('/workspaces/:name/project-progress', requireAuth, async (req, res) =
 router.post('/workspaces/:name/project-mission', requireAuth, (req, res) => {
   try {
     const { name } = req.params;
-    const { mission } = req.body;
+    const { mission, clearTasks } = req.body;
     const workspaces = readWorkspaces(req.user.username);
     const matchedWs = workspaces.find(w => 
       (w.name && w.name.toLowerCase() === name.toLowerCase()) ||
@@ -950,8 +950,8 @@ router.post('/workspaces/:name/project-mission', requireAuth, (req, res) => {
         return res.status(404).json({ error: `Workspace "${name}" not found` });
       }
     }
-    const updated = projectService.writeProjectMetadata(wsPath, mission);
-    res.json({ success: true, mission: updated.mission, updatedAt: updated.updatedAt });
+    const updated = projectService.writeProjectMetadata(wsPath, mission, { clearTasks: !!clearTasks });
+    res.json({ success: true, mission: updated.mission, updatedAt: updated.updatedAt, tasksCleared: !!clearTasks });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to update project mission' });
   }

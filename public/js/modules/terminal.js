@@ -836,6 +836,15 @@ export function initMobileKeyboard(mobileKeyboardBar) {
     console.log('[MobileKeyboard] activeSession:', activeSession, 'currentSession:', state.currentSession);
 
     if (key === 'keyboard-toggle') {
+      const mobileInput = document.getElementById('mobileCommandInput');
+      if (mobileInput) {
+        if (document.activeElement === mobileInput) {
+          mobileInput.blur();
+        } else {
+          mobileInput.focus();
+        }
+        return;
+      }
       if (activeSession && activeSession.term) {
         activeSession.term.focus();
       }

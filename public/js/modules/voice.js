@@ -30,7 +30,7 @@ export function initVoiceInput() {
     isListening = false;
     wantsListening = false;
     mobileMicBtn.classList.remove('listening');
-    mobileCommandInput.placeholder = 'Type or dictate command...';
+    mobileCommandInput.placeholder = '请输入或口述命令...';
   };
   
   recognition.onresult = (event) => {
@@ -42,6 +42,9 @@ export function initVoiceInput() {
       .join('');
     
     mobileCommandInput.value = transcript;
+    // Dispatch input event so auto-resize and visualViewport linkage are triggered
+    mobileCommandInput.dispatchEvent(new Event('input', { bubbles: true }));
+    mobileCommandInput.scrollTop = mobileCommandInput.scrollHeight;
   };
   
   recognition.onerror = (event) => {

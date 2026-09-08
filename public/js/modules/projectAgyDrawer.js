@@ -53,7 +53,7 @@ export function openAgyDrawer(options = {}) {
     mode = 'decompose';
     title = '🎯 全局目标拆解 · 发送到终端';
     subtitle = '呼叫智能体结合当前推进目标，自动生成任务拓扑写入 .deck/tasks.json';
-    defaultPrompt = `请阅读当前工作区的目录结构、Git 最近提交历史以及当前推进目标「${missionText}」，围绕此目标分析代码现状并拆解出 3~6 个切实可行的子任务，构建合理的 DAG 任务依赖拓扑（通过 dependsOn 标注前置任务），严格遵循 .deck/deck_task_spec.md 规范直接更新写入到工作区的 .deck/tasks.json 文件中（已有任务请合理保留或更新，拆解完成后给出简要说明）。`;
+    defaultPrompt = `请阅读当前工作区的目录结构、Git 最近提交历史以及当前推进目标「${missionText}」，围绕此目标分析代码现状并拆解出 3~6 个切实可行的子任务，构建合理的 DAG 任务依赖拓扑（通过 dependsOn 标注前置任务），严格遵循 .deck/deck_task_spec.md 规范直接更新写入到工作区的 .deck/tasks.json 文件中（注意：这是围绕当前新目标「${missionText}」的全新拆解，请清空/覆盖已过期的旧任务列表，生成与新目标匹配的全新任务 DAG 拓扑，拆解完成后给出简要说明）。`;
   } else if ((stageRefine || autoFillRefine) && currentTask) {
     mode = 'refine';
     title = `🔍 细化任务 [${currentTask.id}: ${currentTask.title}] · 发送到终端`;
@@ -77,6 +77,7 @@ export function openAgyDrawer(options = {}) {
   openDispatchModal({
     workspaceIdentifier,
     sessions,
+    tasks,
     defaultPrompt,
     title,
     subtitle,

@@ -19,6 +19,7 @@ export function openDispatchModal(options = {}) {
   const {
     workspaceIdentifier,
     sessions = [],
+    tasks = [],
     defaultPrompt = '',
     title = '发送任务到终端工位',
     subtitle = '选择目标工位，微调指令后直接派发执行并切换到终端',
@@ -112,7 +113,7 @@ export function openDispatchModal(options = {}) {
           <textarea id="stagingModalPromptText" class="staging-modal-textarea" rows="7" placeholder="在此输入要发送给智能体终端的具体任务指令（支持换行与鼠标多选）...">${escapeHtml(defaultPrompt)}</textarea>
         </div>
 
-        <!-- Options: Clear Context -->
+        <!-- Options: Clear Context & Clear Stale Tasks -->
         <div class="staging-options-row">
           <label class="staging-checkbox-label" title="开启后派发前将主动清理会话历史（Claude/AGY 执行 /clear，Codex 执行 /new）">
             <input type="checkbox" id="stagingModalClearCheck" ${defaultClearHistory ? 'checked' : ''}>
@@ -120,6 +121,13 @@ export function openDispatchModal(options = {}) {
             <span class="staging-checkbox-text">派发前清理上下文</span>
             <span class="staging-clean-hint" id="stagingModalCleanCmdHint">(执行 /clear)</span>
           </label>
+          ${(mode === 'decompose' && tasks && tasks.length > 0) ? `
+            <label class="staging-checkbox-label" title="开启后派发前将自动清空大盘现有的旧任务，避免与新目标拆解出的任务混淆">
+              <input type="checkbox" id="stagingModalClearTasksCheck" checked>
+              <span class="staging-checkbox-custom"></span>
+              <span class="staging-checkbox-text">派发前清空大盘旧任务 (${tasks.length} 项)</span>
+            </label>
+          ` : ''}
         </div>
 
         <!-- Feedback & Status Bar -->
@@ -294,11 +302,26 @@ export function openDispatchModal(options = {}) {
       return;
     }
 
+    const clearTasksCheck = overlay.querySelector('#stagingModalClearTasksCheck');
+    const shouldClearTasks = clearTasksCheck ? clearTasksCheck.checked : false;
+
     dispatchBtn.disabled = true;
     const textSpan = dispatchBtn.querySelector('.btn-text');
     if (textSpan) textSpan.textContent = '正在发送...';
 
     try {
+      if (shouldClearTasks && workspaceIdentifier) {
+        try {
+          await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: [] })
+          });
+        } catch (clearErr) {
+          console.error('Failed to clear old tasks prior to dispatch:', clearErr);
+        }
+      }
+
       if (workspaceIdentifier) {
         const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/dispatch-task`, {
           method: 'POST',
