@@ -3,6 +3,7 @@ import { activateTab, renderTabs, updateProjectTabStatus } from './tabs.js';
 import { attachSession } from './terminal.js';
 import { renderDagCanvas, getSelectedTaskId, setSelectedTaskId } from './projectDagCanvas.js';
 import { openAgyDrawer, closeAgyDrawer, updateDrawerSelectedTask } from './projectAgyDrawer.js';
+import { openDispatchModal } from './promptStaging.js';
 
 let isEditingMission = false;
 let autoStatusInterval = null;
@@ -234,8 +235,14 @@ function buildOverviewDOM(container, data, queryIdentifier) {
         <div class="roadmap-title-row">
           <div class="roadmap-title">
             <i data-lucide="kanban" style="width: 15px; height: 15px;"></i>
-            <span>目标拆解与推进大盘 (ROADMAP & TASKS)</span>
+            <span class="roadmap-title-text">
+              <span class="title-main">推进大盘</span>
+              <span class="title-sub">(ROADMAP & TASKS)</span>
+            </span>
             <span class="roadmap-count-pill">${doneTasks}/${totalTasks} 完成 (${progressPercent}%)</span>
+          </div>
+
+          <div class="roadmap-controls-bar">
             <div class="roadmap-view-switcher">
               <button class="roadmap-switch-btn ${roadmapViewMode === 'dag' ? 'active' : ''}" data-view="dag" title="切换到 DAG 拓扑画布模式">
                 <i data-lucide="network" style="width: 12px; height: 12px;"></i>
@@ -246,16 +253,17 @@ function buildOverviewDOM(container, data, queryIdentifier) {
                 <span>列表</span>
               </button>
             </div>
-          </div>
-          <div class="roadmap-actions">
-            <button id="openAgyDrawerBtn" class="roadmap-action-btn primary" title="唤出 AGY 协同工位终端，自由对话或执行指令">
-              <i data-lucide="bot" style="width: 13px; height: 13px;"></i>
-              <span>🤖 AGY 协同工位</span>
-            </button>
-            <button id="openNewTaskModalBtn" class="roadmap-action-btn secondary" title="手动添加子任务">
-              <i data-lucide="plus" style="width: 12px; height: 12px;"></i>
-              <span>新建任务</span>
-            </button>
+            <div class="roadmap-actions">
+              <button id="openDispatchBtn" class="roadmap-action-btn primary" title="选择智能体工位，自由编辑并发送指令到终端">
+                <i data-lucide="send" style="width: 13px; height: 13px;"></i>
+                <span class="btn-text-full">🚀 发送到终端</span>
+                <span class="btn-text-short">🚀 发送到终端</span>
+              </button>
+              <button id="openNewTaskModalBtn" class="roadmap-action-btn secondary" title="手动添加子任务">
+                <i data-lucide="plus" style="width: 12px; height: 12px;"></i>
+                <span>新建任务</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -349,65 +357,6 @@ function buildOverviewDOM(container, data, queryIdentifier) {
   }
 
   html += `
-      </div>
-    </div>
-  `;
-
-  // 3. Task Dispatch Card (任务派发中枢)
-  const defaultTarget = (sessions && sessions.length > 0) ? sessions[0].name : '__new__';
-  const firstSession = (sessions && sessions.length > 0) ? sessions[0] : null;
-  const firstSessionStatus = firstSession ? firstSession.status : 'empty';
-
-  let initialHint = '💡 当前无可用会话，派发后将自动引导创建新智能体会话。';
-  if (firstSession) {
-    if (firstSessionStatus === 'busy') {
-      initialHint = `⚠️ 提示：选中的 Agent [${escapeHtml(firstSession.name)}] 当前正在执行中，派发指令可能会打断当前任务或进入排队。`;
-    } else if (firstSessionStatus === 'waiting') {
-      initialHint = `🟡 提示：选中的 Agent [${escapeHtml(firstSession.name)}] 当前正在等待用户确认或授权。`;
-    } else {
-      initialHint = `🟢 选中的 Agent [${escapeHtml(firstSession.name)}] 当前空闲就绪，派发后将立即开始执行。`;
-    }
-  }
-
-  html += `
-    <div class="project-dispatch-card" id="projectDispatchCard">
-      <div class="dispatch-header">
-        <div class="dispatch-title">
-          <i data-lucide="send" style="width: 14px; height: 14px;"></i>
-          <span>派发任务给智能体 (DISPATCH TASK)</span>
-        </div>
-        <div class="dispatch-target-row">
-          <label for="dispatchTargetSelect" class="dispatch-target-label">指派工位:</label>
-          <select id="dispatchTargetSelect" class="dispatch-select">
-            ${sessions.map(s => {
-              const statusIcon = s.status === 'busy' ? '🟠' : (s.status === 'waiting' ? '🟡' : '🟢');
-              const agentMeta = getAgentInfo(s.agentType, s.agentModel);
-              return `<option value="${escapeHtml(s.name)}" data-agent-type="${escapeHtml(s.agentType || '')}" data-status="${s.status}">${statusIcon} ${escapeHtml(s.name)} [${escapeHtml(agentMeta.label)}] · ${escapeHtml(s.statusLabel || '空闲')}</option>`;
-            }).join('')}
-            <option value="__new__">➕ 启动新会话并指派...</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="dispatch-input-row">
-        <textarea id="dispatchTaskInput" class="dispatch-textarea" placeholder="输入给该 Agent 的具体指令或任务（例如：检查路由并添加手机端收起逻辑，支持按 Ctrl+Enter 派发）..." rows="2"></textarea>
-        <button id="dispatchSubmitBtn" class="dispatch-submit-btn ${firstSessionStatus === 'busy' ? 'busy-warn' : ''}" title="派发任务指令 (Ctrl+Enter)">
-          <i data-lucide="play" style="width: 14px; height: 14px;"></i>
-          <span class="submit-btn-text">${firstSessionStatus === 'busy' ? '⚠️ 确认插队派发' : '立即派发'}</span>
-        </button>
-      </div>
-
-      <div class="dispatch-options-row">
-        <label class="dispatch-checkbox-label" title="开启后派发任务前将主动清理当前对话上下文（Claude/Agy 执行 /clear，Codex 执行 /new）">
-          <input type="checkbox" id="dispatchClearHistoryCheck">
-          <span class="checkbox-custom"></span>
-          <span class="checkbox-text">派发前清理上下文</span>
-          <span class="checkbox-agent-hint" id="dispatchCleanCmdHint">(执行 /clear)</span>
-        </label>
-      </div>
-
-      <div class="dispatch-feedback-bar ${firstSessionStatus === 'busy' ? 'warning' : 'ready'}" id="dispatchFeedbackBar">
-        <span id="dispatchStatusHintText">${initialHint}</span>
       </div>
     </div>
   `;
@@ -560,134 +509,6 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
     });
   });
 
-  // Task Dispatcher bindings
-  const targetSelect = container.querySelector('#dispatchTargetSelect');
-  const taskInput = container.querySelector('#dispatchTaskInput');
-  const submitBtn = container.querySelector('#dispatchSubmitBtn');
-  const feedbackBar = container.querySelector('#dispatchFeedbackBar');
-  const hintText = container.querySelector('#dispatchStatusHintText');
-  const clearHistoryCheck = container.querySelector('#dispatchClearHistoryCheck');
-  const cleanCmdHint = container.querySelector('#dispatchCleanCmdHint');
-
-  // Update clear command hint based on selected agent type
-  const updateCleanHint = () => {
-    if (!cleanCmdHint || !targetSelect) return;
-    const selectedOpt = targetSelect.options[targetSelect.selectedIndex];
-    const agentType = selectedOpt ? (selectedOpt.getAttribute('data-agent-type') || '').toLowerCase() : '';
-    if (agentType === 'codex') {
-      cleanCmdHint.textContent = '(执行 /new)';
-    } else if (agentType === 'claude' || agentType === 'agy' || agentType === 'antigravity') {
-      cleanCmdHint.textContent = '(执行 /clear)';
-    } else {
-      cleanCmdHint.textContent = '(执行 clear)';
-    }
-  };
-
-  if (targetSelect && taskInput && submitBtn) {
-    updateCleanHint();
-
-    // Dynamic change of selected agent
-    targetSelect.addEventListener('change', () => {
-      updateCleanHint();
-      const selectedOpt = targetSelect.options[targetSelect.selectedIndex];
-      const status = selectedOpt ? selectedOpt.getAttribute('data-status') : 'idle';
-      const val = targetSelect.value;
-      const submitTextEl = submitBtn.querySelector('.submit-btn-text');
-
-      if (val === '__new__') {
-        hintText.textContent = '💡 点击派发后，将自动弹出新建会话窗口并将指令填入启动项。';
-        feedbackBar.className = 'dispatch-feedback-bar ready';
-        submitBtn.classList.remove('busy-warn');
-        if (submitTextEl) submitTextEl.textContent = '➕ 新建并执行';
-      } else if (status === 'busy') {
-        hintText.textContent = `⚠️ 提示：选中的 Agent [${escapeHtml(val)}] 当前正在执行中，派发指令可能会打断当前任务或进入排队。`;
-        feedbackBar.className = 'dispatch-feedback-bar warning';
-        submitBtn.classList.add('busy-warn');
-        if (submitTextEl) submitTextEl.textContent = '⚠️ 确认插队派发';
-      } else if (status === 'waiting') {
-        hintText.textContent = `🟡 提示：选中的 Agent [${escapeHtml(val)}] 当前正在等待用户授权或确认。`;
-        feedbackBar.className = 'dispatch-feedback-bar warning';
-        submitBtn.classList.remove('busy-warn');
-        if (submitTextEl) submitTextEl.textContent = '📥 发送确认/指令';
-      } else {
-        hintText.textContent = `🟢 选中的 Agent [${escapeHtml(val)}] 当前空闲就绪，派发后将立即开始执行。`;
-        feedbackBar.className = 'dispatch-feedback-bar ready';
-        submitBtn.classList.remove('busy-warn');
-        if (submitTextEl) submitTextEl.textContent = '立即派发';
-      }
-    });
-
-    // Execute dispatch function
-    const executeDispatch = async () => {
-      const promptText = taskInput.value.trim();
-      const targetSession = targetSelect.value;
-      const clearHistory = clearHistoryCheck ? clearHistoryCheck.checked : false;
-
-      if (!promptText) {
-        taskInput.focus();
-        hintText.textContent = '❌ 请先输入要派发给 Agent 的具体任务内容！';
-        feedbackBar.className = 'dispatch-feedback-bar warning';
-        return;
-      }
-
-      if (targetSession === '__new__') {
-        const newSessionBtn = document.getElementById('newSessionBtn');
-        if (newSessionBtn) newSessionBtn.click();
-        return;
-      }
-
-      submitBtn.disabled = true;
-      const originalText = submitBtn.querySelector('.submit-btn-text')?.textContent || '派发';
-      if (submitBtn.querySelector('.submit-btn-text')) {
-        submitBtn.querySelector('.submit-btn-text').textContent = '正在派发...';
-      }
-
-      try {
-        const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/dispatch-task`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionName: targetSession, promptText, clearHistory })
-        });
-
-        const resData = await res.json();
-        if (!res.ok) {
-          throw new Error(resData.error || '派发失败');
-        }
-
-        taskInput.value = '';
-        const cleanNotice = clearHistory ? '（已执行会话清理）' : '';
-        hintText.innerHTML = `✅ 任务已成功派发给 <strong>${escapeHtml(targetSession)}</strong>${cleanNotice}！已开始执行。`;
-        feedbackBar.className = 'dispatch-feedback-bar success';
-
-        // Update tab badge to busy immediately
-        updateProjectTabStatus('busy');
-
-        // Refresh overview cards after a brief moment
-        setTimeout(() => {
-          renderProjectOverview();
-        }, 800);
-      } catch (err) {
-        hintText.textContent = `❌ 派发失败: ${err.message}`;
-        feedbackBar.className = 'dispatch-feedback-bar warning';
-      } finally {
-        submitBtn.disabled = false;
-        if (submitBtn.querySelector('.submit-btn-text')) {
-          submitBtn.querySelector('.submit-btn-text').textContent = originalText;
-        }
-      }
-    };
-
-    submitBtn.addEventListener('click', executeDispatch);
-
-    // Support Ctrl+Enter / Cmd+Enter keyboard shortcut
-    taskInput.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        executeDispatch();
-      }
-    });
-  }
-
   // --- Roadmap & Tasks Interactive Handlers ---
   // View Switcher (DAG vs List)
   const switchBtns = container.querySelectorAll('.roadmap-switch-btn');
@@ -703,20 +524,19 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
     });
   });
 
-  // Open AGY Drawer button (Pure Free Dialogue Mode)
-  const openAgyBtn = container.querySelector('#openAgyDrawerBtn');
-  if (openAgyBtn) {
-    openAgyBtn.addEventListener('click', (e) => {
+  // Open "发送到终端" button in Roadmap Actions bar
+  const openDispatchBtn = container.querySelector('#openDispatchBtn');
+  if (openDispatchBtn) {
+    openDispatchBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openAgyDrawer({
+      openDispatchModal({
         workspaceIdentifier,
-        mission: currentMission,
-        tasks: currentTasks,
         sessions,
-        selectedTask: null,
-        stageDecompose: false,
-        stageRefine: false,
-        onRefreshBoard: () => renderProjectOverview()
+        defaultPrompt: '',
+        title: '🚀 发送任务到终端',
+        subtitle: '选择目标工位，输入指令后直接派发执行并切换到终端',
+        mode: 'free',
+        onSuccess: () => renderProjectOverview()
       });
     });
   }
@@ -793,11 +613,17 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
           });
         },
         onDispatchTask: (task) => {
-          if (taskInput) {
-            taskInput.value = task.description ? `【任务】${task.title}\n详细说明: ${task.description}` : `【任务】${task.title}`;
-            taskInput.focus();
-            taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          updateDrawerSelectedTask(task);
+          openDispatchModal({
+            workspaceIdentifier,
+            sessions,
+            defaultPrompt: task.description ? `【任务】${task.title}\n详细说明: ${task.description}` : `【任务】${task.title}`,
+            title: `⚡ 派发任务 [${task.id}] · 发送到终端`,
+            subtitle: '选择目标工位，微调指令后直接派发执行并切换到终端',
+            mode: 'dispatch',
+            selectedTask: task,
+            onSuccess: () => renderProjectOverview()
+          });
         },
         onDeleteTask: async (taskId) => {
           if (!confirm('确定删除此任务项？')) return;
@@ -845,18 +671,28 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
     });
   });
 
-  // 2. Task quick dispatch to input
+  // 2. Task quick dispatch to modal
   const dispatchBtns = container.querySelectorAll('.task-btn-dispatch');
   dispatchBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const title = btn.getAttribute('data-title') || '';
-      const desc = btn.getAttribute('data-desc') || '';
-      if (taskInput) {
-        taskInput.value = desc ? `【任务】${title}\n详细说明: ${desc}` : `【任务】${title}`;
-        taskInput.focus();
-        taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+      const taskId = btn.getAttribute('data-task-id');
+      const taskObj = currentTasks.find(t => String(t.id) === String(taskId)) || {
+        id: taskId,
+        title: btn.getAttribute('data-title') || '',
+        description: btn.getAttribute('data-desc') || ''
+      };
+      updateDrawerSelectedTask(taskObj);
+      openDispatchModal({
+        workspaceIdentifier,
+        sessions,
+        defaultPrompt: taskObj.description ? `【任务】${taskObj.title}\n详细说明: ${taskObj.description}` : `【任务】${taskObj.title}`,
+        title: `⚡ 派发任务 [${taskObj.id}] · 发送到终端`,
+        subtitle: '选择目标工位，微调指令后直接派发执行并切换到终端',
+        mode: 'dispatch',
+        selectedTask: taskObj,
+        onSuccess: () => renderProjectOverview()
+      });
     });
   });
 

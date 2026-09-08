@@ -31,6 +31,7 @@ const reloadBtn = document.getElementById('reloadBtn');
 const welcomePanel = document.getElementById('welcomePanel');
 const terminalPanel = document.getElementById('terminalPanel');
 const activeSessionNameText = document.getElementById('activeSessionName');
+const returnToProjectBtn = document.getElementById('returnToProjectBtn');
 const fitTerminalBtn = document.getElementById('fitTerminalBtn');
 const copyTerminalBtn = document.getElementById('copyTerminalBtn');
 const pasteTerminalBtn = document.getElementById('pasteTerminalBtn');
@@ -349,6 +350,11 @@ function closeSidebarOnMobile() {
 }
 
 // Bind UI actions
+if (returnToProjectBtn) {
+  returnToProjectBtn.addEventListener('click', () => {
+    openProjectTab();
+  });
+}
 fitTerminalBtn.addEventListener('click', fitTerminal);
 if (copyTerminalBtn) {
   copyTerminalBtn.addEventListener('click', async () => {
@@ -459,7 +465,10 @@ if (terminalWorkspace) {
           e.target.closest('#markdownPreview') || 
           e.target.closest('#diffPanel .editor-container-wrapper') || 
           e.target.closest('#docPanel .editor-container-wrapper') || 
-          e.target.closest('#workspaceTabs')) {
+          e.target.closest('#workspaceTabs') ||
+          e.target.closest('#projectPanel') ||
+          e.target.closest('#projectPanelContainer') ||
+          e.target.closest('#projectAgyDrawer')) {
         return;
       }
       e.preventDefault();

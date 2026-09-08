@@ -217,10 +217,10 @@ export function renderDagCanvas(container, options = {}) {
         </div>
 
         <div class="dag-legend-row">
-          <span class="dag-legend-item done"><span class="legend-dot"></span>已完成</span>
-          <span class="dag-legend-item in-progress"><span class="legend-dot"></span>推进中</span>
-          <span class="dag-legend-item todo"><span class="legend-dot"></span>就绪待办</span>
-          <span class="dag-legend-item blocked"><span class="legend-dot"></span>前置等待</span>
+          <span class="dag-legend-item done"><span class="legend-dot"></span><span class="legend-text">已完成</span></span>
+          <span class="dag-legend-item in-progress"><span class="legend-dot"></span><span class="legend-text">推进中</span></span>
+          <span class="dag-legend-item todo"><span class="legend-dot"></span><span class="legend-text">就绪</span></span>
+          <span class="dag-legend-item blocked"><span class="legend-dot"></span><span class="legend-text">等待</span></span>
         </div>
       </div>
 
@@ -343,6 +343,23 @@ export function renderDagCanvas(container, options = {}) {
     onDeleteTask,
     onSelectTask
   });
+
+  // Auto-fit on mobile devices or initial render
+  const isMobile = window.innerWidth <= 768;
+  const viewport = container.querySelector('#dagViewport');
+  if (viewport && (isMobile || (canvasState.panX === 20 && canvasState.panY === 20 && canvasState.zoom === 1.0))) {
+    requestAnimationFrame(() => {
+      fitCanvas(viewport, layout);
+      const transformLayer = container.querySelector('#dagTransformLayer');
+      const zoomDisplay = container.querySelector('#dagZoomDisplay');
+      if (transformLayer) {
+        transformLayer.style.transform = `translate(${canvasState.panX}px, ${canvasState.panY}px) scale(${canvasState.zoom})`;
+      }
+      if (zoomDisplay) {
+        zoomDisplay.textContent = `${Math.round(canvasState.zoom * 100)}%`;
+      }
+    });
+  }
 }
 
 /**
@@ -377,7 +394,7 @@ function setupCanvasInteractions(container, layout, callbacks) {
   if (zoomOutBtn) {
     zoomOutBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      canvasState.zoom = Math.max(0.4, Math.round((canvasState.zoom - 0.15) * 100) / 100);
+      canvasState.zoom = Math.max(0.35, Math.round((canvasState.zoom - 0.15) * 100) / 100);
       updateTransform();
     });
   }
@@ -395,7 +412,7 @@ function setupCanvasInteractions(container, layout, callbacks) {
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
-      const newZoom = Math.min(2.0, Math.max(0.4, canvasState.zoom * zoomFactor));
+      const newZoom = Math.min(2.0, Math.max(0.35, canvasState.zoom * zoomFactor));
       
       const rect = viewport.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -436,10 +453,103 @@ function setupCanvasInteractions(container, layout, callbacks) {
     }
   });
 
+  // Touch panning & pinch-to-zoom on mobile
+  const touchState = {
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    initialPanX: 0,
+    initialPanY: 0,
+    isPinching: false,
+    initialPinchDistance: 0,
+    initialPinchZoom: 1.0,
+    pinchCenterX: 0,
+    pinchCenterY: 0,
+    hasMoved: false
+  };
+
+  viewport.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.dag-canvas-toolbar') || e.target.closest('button')) {
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      touchState.isDragging = true;
+      touchState.isPinching = false;
+      touchState.hasMoved = false;
+      touchState.startX = e.touches[0].clientX;
+      touchState.startY = e.touches[0].clientY;
+      touchState.initialPanX = canvasState.panX;
+      touchState.initialPanY = canvasState.panY;
+    } else if (e.touches.length === 2) {
+      touchState.isDragging = false;
+      touchState.isPinching = true;
+      touchState.hasMoved = true;
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      touchState.initialPinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      touchState.initialPinchZoom = canvasState.zoom;
+      const rect = viewport.getBoundingClientRect();
+      touchState.pinchCenterX = (t1.clientX + t2.clientX) / 2 - rect.left;
+      touchState.pinchCenterY = (t1.clientY + t2.clientY) / 2 - rect.top;
+      touchState.initialPanX = canvasState.panX;
+      touchState.initialPanY = canvasState.panY;
+    }
+  }, { passive: false });
+
+  viewport.addEventListener('touchmove', (e) => {
+    if (touchState.isPinching && e.touches.length === 2) {
+      if (e.cancelable) e.preventDefault();
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      if (touchState.initialPinchDistance > 0) {
+        const factor = dist / touchState.initialPinchDistance;
+        const newZoom = Math.min(2.0, Math.max(0.3, touchState.initialPinchZoom * factor));
+        
+        canvasState.panX = touchState.pinchCenterX - (touchState.pinchCenterX - touchState.initialPanX) * (newZoom / touchState.initialPinchZoom);
+        canvasState.panY = touchState.pinchCenterY - (touchState.pinchCenterY - touchState.initialPanY) * (newZoom / touchState.initialPinchZoom);
+        canvasState.zoom = Math.round(newZoom * 100) / 100;
+        updateTransform();
+      }
+      return;
+    }
+
+    if (touchState.isDragging && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - touchState.startX;
+      const dy = e.touches[0].clientY - touchState.startY;
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+        touchState.hasMoved = true;
+      }
+      if (touchState.hasMoved) {
+        if (e.cancelable) e.preventDefault();
+        canvasState.panX = touchState.initialPanX + dx;
+        canvasState.panY = touchState.initialPanY + dy;
+        updateTransform();
+      }
+    }
+  }, { passive: false });
+
+  const endTouch = (e) => {
+    if (touchState.isPinching && e.touches.length < 2) {
+      touchState.isPinching = false;
+    }
+    if (touchState.isDragging && e.touches.length === 0) {
+      touchState.isDragging = false;
+    }
+  };
+
+  viewport.addEventListener('touchend', endTouch);
+  viewport.addEventListener('touchcancel', endTouch);
+
   // Node selection & actions
   const nodeCards = container.querySelectorAll('.dag-node-card');
   nodeCards.forEach(card => {
     card.addEventListener('click', (e) => {
+      if (touchState.hasMoved) {
+        // Drag in progress, suppress card tap selection
+        return;
+      }
       e.stopPropagation();
       const taskId = card.getAttribute('data-task-id');
       canvasState.selectedTaskId = taskId;
@@ -513,18 +623,18 @@ function setupCanvasInteractions(container, layout, callbacks) {
  */
 function fitCanvas(viewport, layout) {
   if (!viewport) return;
-  const vw = viewport.clientWidth || 800;
-  const vh = viewport.clientHeight || 450;
-  const lw = layout.width + 80;
-  const lh = layout.height + 80;
+  const vw = viewport.clientWidth || (window.innerWidth <= 768 ? Math.max(300, window.innerWidth - 30) : 800);
+  const vh = viewport.clientHeight || (window.innerWidth <= 768 ? 360 : 450);
+  const lw = layout.width + 40;
+  const lh = layout.height + 40;
 
   const scaleX = vw / lw;
   const scaleY = vh / lh;
-  const targetScale = Math.min(1.2, Math.max(0.45, Math.min(scaleX, scaleY)));
+  const targetScale = Math.min(1.2, Math.max(0.3, Math.min(scaleX, scaleY)));
 
   canvasState.zoom = Math.round(targetScale * 100) / 100;
-  canvasState.panX = Math.max(20, (vw - layout.width * canvasState.zoom) / 2);
-  canvasState.panY = Math.max(20, (vh - layout.height * canvasState.zoom) / 2);
+  canvasState.panX = Math.max(10, Math.round((vw - layout.width * canvasState.zoom) / 2));
+  canvasState.panY = Math.max(10, Math.round((vh - layout.height * canvasState.zoom) / 2));
 }
 
 /**
