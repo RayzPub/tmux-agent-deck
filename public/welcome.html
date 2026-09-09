@@ -2,9 +2,19 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>CCNOW · AI 智能体后台控制中心</title>
   <meta name="description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+  <link rel="canonical" href="https://ccnow.cloud/welcome">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ccnow.cloud/welcome">
+  <meta property="og:title" content="CCNOW · AI 智能体后台控制中心">
+  <meta property="og:description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+  <meta property="og:image" content="https://ccnow.cloud/docs/images/dashboard_preview.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CCNOW · AI 智能体后台控制中心">
+  <meta name="twitter:description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+  <meta name="twitter:image" content="https://ccnow.cloud/docs/images/dashboard_preview.webp">
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
@@ -13,6 +23,10 @@
 
   <!-- Preload LCP Image -->
   <link rel="preload" href="/docs/images/dashboard_preview.webp" as="image" type="image/webp" fetchpriority="high">
+  <link rel="preload" href="/docs/images/workspace_preview.webp" as="image" type="image/webp">
+  <link rel="preload" href="/docs/images/agent_preview.webp" as="image" type="image/webp">
+  <link rel="preload" href="/docs/images/editor_diff_preview.webp" as="image" type="image/webp">
+  <link rel="preload" href="/docs/images/mobile_preview.webp" as="image" type="image/webp">
 
   <!-- Favicons / PWA Metadata -->
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.png">
@@ -33,7 +47,8 @@
       --green: #39ff14;
       --amber: #ffb020;
       --text: #e8ecf4;
-      --muted: #8b93a7;
+      --muted: #c2c8d8;
+      --muted-soft: #a8b0c2;
       --font-ui: 'Outfit', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
       --font-mono: 'Fira Code', 'JetBrains Mono', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Consolas, monospace;
       --font-display: 'Orbitron', 'Outfit', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -359,19 +374,42 @@
       background: rgba(0,240,255,.08); box-shadow: 0 0 18px rgba(0,240,255,.18);
     }
     .tab-panel { display: none; }
-    .tab-panel.active { display: block; animation: fadeUp .45s both; }
+    .tab-panel.active { display: block; animation: fadeUp .28s both; }
+    .tabs-stage { min-height: 320px; }
     .panel-grid {
       display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(26px, 5vw, 56px); align-items: center;
+      min-height: 320px;
     }
+    #tab-mobile .panel-grid { grid-template-columns: minmax(180px, 320px) 1fr; }
     @media (max-width: 900px) { .panel-grid { grid-template-columns: 1fr; } }
     .panel-shot {
       position: relative; border: 1px solid var(--line); border-radius: var(--radius);
       overflow: hidden; background: var(--bg-2);
       box-shadow: 0 20px 50px rgba(0,0,0,.5);
-      min-height: 220px;
+      min-height: 280px;
+      aspect-ratio: 16 / 10;
+      align-self: stretch;
     }
-    .panel-shot img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s; }
+    .panel-shot img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+      transition: transform .5s, opacity .25s ease;
+      background: var(--bg-2);
+    }
     .panel-shot:hover img { transform: scale(1.025); }
+    #tab-mobile .panel-shot {
+      aspect-ratio: 9 / 16;
+      max-height: min(640px, 72vh);
+      max-width: 320px;
+      margin-inline: auto;
+      width: 100%;
+    }
+    #tab-mobile .panel-shot img { object-fit: contain; background: #000; }
+    .panel-info {
+      position: relative; z-index: 1;
+      color: var(--text);
+      min-width: 0;
+    }
+    .panel-info > p, .panel-info li { color: var(--muted); }
     .panel-shot::after {
       content: ''; position: absolute; inset: 0; pointer-events: none;
       background: linear-gradient(160deg, rgba(0,240,255,.08), transparent 40%);
@@ -397,8 +435,15 @@
     }
     .install-body { padding: 22px 24px; font-family: var(--font-mono); font-size: clamp(.74rem, 2.6vw, .88rem); position: relative; }
     .install-comment { color: var(--muted); display: block; margin-bottom: 14px; font-size: .82em; }
-    .install-line { display: flex; gap: 10px; align-items: baseline; word-break: break-all; }
-    .install-line .c-prompt { flex: none; }
+    .install-line { display: flex; gap: 10px; align-items: flex-start; }
+    .install-line .c-prompt { flex: none; line-height: 1.55; }
+    #installCode {
+      flex: 1; min-width: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.55;
+    }
     .copy-btn {
       position: absolute; top: 14px; right: 14px;
       display: inline-flex; align-items: center; gap: 7px;
@@ -433,7 +478,7 @@
     }
     .faq-q svg { width: 16px; height: 16px; color: var(--cyan); flex: none; transition: transform .3s; }
     .faq-item.open .faq-q svg { transform: rotate(180deg); }
-    .faq-a { max-height: 0; overflow: hidden; transition: max-height .35s ease; }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height .2s ease; }
     .faq-a p { padding: 0 22px 20px; color: var(--muted); font-size: .88rem; font-weight: 300; }
 
     /* ============ CTA ============ */
@@ -781,25 +826,25 @@
       </div>
       <div class="faq reveal">
         <div class="faq-item">
-          <button class="faq-q">关闭浏览器后，AI 任务会中断吗？
+          <button type="button" class="faq-q" aria-expanded="false">关闭浏览器后，AI 任务会中断吗？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div class="faq-a"><p>不会。所有 AI 会话都运行在服务器端的 Tmux 会话中，网页只是一个"遥控器"。关闭页面、断网甚至电脑休眠，AI 都会继续执行任务；重新打开网页即可瞬间恢复到离开时的现场。</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q">手机上可以使用吗？体验如何？
+          <button type="button" class="faq-q" aria-expanded="false">手机上可以使用吗？体验如何？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div class="faq-a"><p>可以。界面针对手机和平板做了完整自适应，支持 PWA"添加到主屏幕"，像原生 App 一样全屏运行。配合微信/Telegram 机器人，您甚至不用打开网页就能审批操作、查看终端截图。</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q">多人共用一台服务器安全吗？
+          <button type="button" class="faq-q" aria-expanded="false">多人共用一台服务器安全吗？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div class="faq-a"><p>安全。系统提供多用户沙盒机制：每个普通用户拥有独立的文件目录与虚拟运行环境，Shell 历史和配置完全隔离，无法越权访问其他用户或服务器敏感目录。注册采用管理员邀请码机制，杜绝未授权访问。</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q">支持哪些 AI 编程助手？
+          <button type="button" class="faq-q" aria-expanded="false">支持哪些 AI 编程助手？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div class="faq-a"><p>内置 Agy、Claude Code 等常用 AI 编程助手环境，无需复杂配置即可一键启动。由于本质是 Tmux 终端托管，任何命令行 AI 工具都可以在其中运行。</p></div>
@@ -971,12 +1016,21 @@
 
     /* ---------- Showcase tabs ---------- */
     const tabBtns = document.querySelectorAll('.tab-btn');
-    tabBtns.forEach(btn => btn.addEventListener('click', () => {
-      tabBtns.forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(btn.dataset.tab).classList.add('active');
-    }));
+    tabBtns.forEach(btn => {
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', btn.classList.contains('active') ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        const panel = document.getElementById(btn.dataset.tab);
+        if (panel) panel.classList.add('active');
+      });
+    });
 
     /* ---------- Copy install command ---------- */
     const copyBtn = document.getElementById('copyBtn');
@@ -1004,10 +1058,15 @@
         document.querySelectorAll('.faq-item.open').forEach(o => {
           o.classList.remove('open');
           o.querySelector('.faq-a').style.maxHeight = null;
+          const b = o.querySelector('.faq-q');
+          if (b) b.setAttribute('aria-expanded', 'false');
         });
         if (!open) {
           item.classList.add('open');
           a.style.maxHeight = a.scrollHeight + 'px';
+          q.setAttribute('aria-expanded', 'true');
+        } else {
+          q.setAttribute('aria-expanded', 'false');
         }
       });
     });
