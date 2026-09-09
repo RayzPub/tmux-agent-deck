@@ -373,8 +373,9 @@
       color: var(--cyan); border-color: var(--cyan);
       background: rgba(0,240,255,.08); box-shadow: 0 0 18px rgba(0,240,255,.18);
     }
+    @keyframes tabSoftIn { from { opacity: .88; } to { opacity: 1; } }
     .tab-panel { display: none; }
-    .tab-panel.active { display: block; animation: fadeUp .28s both; }
+    .tab-panel.active { display: block; animation: tabSoftIn .18s ease-out both; }
     .tabs-stage { min-height: 320px; }
     .panel-grid {
       display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(26px, 5vw, 56px); align-items: center;
@@ -435,15 +436,17 @@
     }
     .install-body { padding: 22px 24px; font-family: var(--font-mono); font-size: clamp(.74rem, 2.6vw, .88rem); position: relative; }
     .install-comment { color: var(--muted); display: block; margin-bottom: 14px; font-size: .82em; }
-    .install-line { display: flex; gap: 10px; align-items: flex-start; }
+    .install-line { display: flex; gap: 10px; align-items: baseline; overflow-x: auto; }
     .install-line .c-prompt { flex: none; line-height: 1.55; }
     #installCode {
       flex: 1; min-width: 0;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      white-space: nowrap;
+      overflow-x: auto;
       line-height: 1.55;
+      scrollbar-width: thin;
     }
+    #installCode::-webkit-scrollbar { height: 6px; }
+    #installCode::-webkit-scrollbar-thumb { background: rgba(0,240,255,.25); border-radius: 4px; }
     .copy-btn {
       position: absolute; top: 14px; right: 14px;
       display: inline-flex; align-items: center; gap: 7px;
