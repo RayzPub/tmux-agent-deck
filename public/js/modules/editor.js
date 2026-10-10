@@ -22,6 +22,12 @@ export function getLanguageFromExtension(path) {
   }
 }
 
+export function isImageFile(path) {
+  if (!path) return false;
+  const ext = path.split('.').pop().toLowerCase();
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext);
+}
+
 let editorLoadingPath = null;
 export async function loadEditorFile(path) {
   if (editorLoadingPath === path) return;
@@ -29,6 +35,60 @@ export async function loadEditorFile(path) {
   
   const editorStatusMsg = document.getElementById('editorStatusMsg');
   const editorTextarea = document.getElementById('editorTextarea');
+  const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+  const imagePreviewImg = document.getElementById('imagePreviewImg');
+  const imagePreviewInfo = document.getElementById('imagePreviewInfo');
+  const imagePreviewExternalBtn = document.getElementById('imagePreviewExternalBtn');
+  const saveFileBtn = document.getElementById('saveFileBtn');
+  const previewSplitBtnGroup = document.getElementById('previewSplitBtnGroup');
+  const markdownPreview = document.getElementById('markdownPreview');
+  const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+
+  if (isImageFile(path)) {
+    if (state.editorInstance) {
+      state.editorInstance.setValue('');
+      state.editorInstance.updateOptions({ readOnly: true });
+    } else if (editorTextarea) {
+      editorTextarea.textContent = '';
+    }
+    if (editorTextarea) editorTextarea.classList.add('hidden');
+    if (markdownPreview) markdownPreview.classList.add('hidden');
+    if (htmlPreviewFrame) htmlPreviewFrame.classList.add('hidden');
+    if (saveFileBtn) saveFileBtn.classList.add('hidden');
+    if (previewSplitBtnGroup) previewSplitBtnGroup.classList.add('hidden');
+
+    if (imagePreviewContainer) {
+      imagePreviewContainer.classList.remove('hidden');
+      const imgUrl = buildHtmlPreviewUrl(path, true);
+      const directUrl = buildHtmlPreviewUrl(path, false);
+      if (imagePreviewImg) {
+        imagePreviewImg.src = imgUrl;
+        imagePreviewImg.onload = () => {
+          if (imagePreviewInfo) {
+            imagePreviewInfo.textContent = `${imagePreviewImg.naturalWidth} × ${imagePreviewImg.naturalHeight} 像素`;
+          }
+        };
+        imagePreviewImg.onerror = () => {
+          if (imagePreviewInfo) {
+            imagePreviewInfo.textContent = '图片预览加载失败';
+          }
+        };
+      }
+      if (imagePreviewExternalBtn) {
+        imagePreviewExternalBtn.href = directUrl;
+      }
+    }
+    state.editorDisabled = true;
+    editorStatusMsg.textContent = '';
+    editorLoadingPath = null;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  // Hide image preview container when loading code/text files
+  if (imagePreviewContainer) {
+    imagePreviewContainer.classList.add('hidden');
+  }
 
   if (state.editorInstance) {
     state.editorInstance.setValue('');
@@ -216,6 +276,16 @@ export function updatePreviewUI(path) {
   const editorTextarea = document.getElementById('editorTextarea');
   const saveFileBtn = document.getElementById('saveFileBtn');
   if (!previewSplitBtnGroup) return;
+
+  if (path && isImageFile(path)) {
+    previewSplitBtnGroup.classList.add('hidden');
+    if (previewDropdownMenu) previewDropdownMenu.classList.add('hidden');
+    if (markdownPreview) markdownPreview.classList.add('hidden');
+    if (htmlPreviewFrame) htmlPreviewFrame.classList.add('hidden');
+    if (editorTextarea) editorTextarea.classList.add('hidden');
+    if (saveFileBtn) saveFileBtn.classList.add('hidden');
+    return;
+  }
 
   const lang = path ? getLanguageFromExtension(path) : null;
   const isMd = lang === 'markdown';

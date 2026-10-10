@@ -13,6 +13,7 @@ export const state = {
   gitStatusMap: new Map(),
   gitDirStatusMap: new Map(),
   expandedFolders: new Set(),
+  selectedFolder: '',
   sessionListCache: [],
   activeTargetInput: null,
   pickerCurrentPath: '',

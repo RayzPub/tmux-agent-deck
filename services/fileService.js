@@ -1305,5 +1305,6 @@ module.exports = {
   ensureClaudeTrust,
   ensureInputrc,
   ensureBashrc,
-  initClaudeConfig
+  initClaudeConfig,
+  chownToSudoUser
 };

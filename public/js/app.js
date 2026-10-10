@@ -2,7 +2,7 @@ import { state } from './modules/state.js';
 import { initTheme, toggleTheme } from './modules/theme.js';
 import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
 import { saveEditorFile, updateMarkdownPreview, updatePreviewUI, buildHtmlPreviewUrl } from './modules/editor.js';
-import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath } from './modules/explorer.js';
+import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath, triggerUpload, uploadFiles, initFileTreeDropZone } from './modules/explorer.js';
 import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard, showTipToast } from './modules/terminal.js';
 import { getNextAvailableSessionName } from './modules/sessionUtils.js';
 import { initPushNotifications, togglePushSubscription } from './modules/push.js';
@@ -648,6 +648,22 @@ tabFilesBtn.addEventListener('click', () => {
 });
 
 // File Explorer events
+const uploadFilesBtn = document.getElementById('uploadFilesBtn');
+const fileUploadInput = document.getElementById('fileUploadInput');
+if (uploadFilesBtn) {
+  uploadFilesBtn.addEventListener('click', () => {
+    triggerUpload(state.selectedFolder || '');
+  });
+}
+if (fileUploadInput) {
+  fileUploadInput.addEventListener('change', () => {
+    if (fileUploadInput.files && fileUploadInput.files.length > 0) {
+      uploadFiles(fileUploadInput.files, state.selectedFolder || '');
+    }
+  });
+}
+initFileTreeDropZone();
+
 refreshFilesBtn.addEventListener('click', refreshFileTree);
 collapseAllBtn.addEventListener('click', () => {
   if (state.showOnlyGitChanges) {

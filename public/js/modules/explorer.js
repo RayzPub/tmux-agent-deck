@@ -350,6 +350,7 @@ export async function loadDirectory(dirPath, containerEl) {
         </div>
         <span class="file-node-name" title="${file.name}">${file.name}</span>
         ${sizeText ? `<span class="file-node-size">${sizeText}</span>` : ''}
+        ${file.isDir ? `<button class="folder-action-btn folder-upload-btn" title="上传文件到此目录" data-path="${file.path}"><i data-lucide="upload"></i></button>` : ''}
       `;
 
       nodeEl.appendChild(rowEl);
@@ -366,11 +367,39 @@ export async function loadDirectory(dirPath, containerEl) {
         if (isExpanded) {
           loadDirectory(file.path, childrenEl);
         }
+
+        // Drag and drop onto folder row directly
+        rowEl.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          rowEl.classList.add('drag-target');
+        });
+        rowEl.addEventListener('dragleave', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          rowEl.classList.remove('drag-target');
+        });
+        rowEl.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          rowEl.classList.remove('drag-target');
+          const droppedFiles = e.dataTransfer?.files;
+          if (droppedFiles && droppedFiles.length > 0) {
+            uploadFiles(droppedFiles, file.path);
+          }
+        });
       }
 
       rowEl.addEventListener('click', (e) => {
         e.stopPropagation();
         
+        const uploadBtn = e.target.closest('.folder-upload-btn');
+        if (uploadBtn) {
+          const dirPath = uploadBtn.getAttribute('data-path') || file.path;
+          triggerUpload(dirPath);
+          return;
+        }
+
         const diffBtn = e.target.closest('.git-diff-inline-btn');
         if (diffBtn) {
           const filePath = diffBtn.getAttribute('data-path');
@@ -379,6 +408,11 @@ export async function loadDirectory(dirPath, containerEl) {
         }
 
         if (file.isDir) {
+          state.selectedFolder = file.path;
+          const currentPathLabel = document.getElementById('currentPathLabel');
+          if (currentPathLabel) {
+            currentPathLabel.textContent = `${getWorkspacePrefix()}/${file.path}`;
+          }
           toggleFolder(file.path, childrenEl, rowEl.querySelector('.file-node-icon i'));
         } else {
           document.querySelectorAll('.file-node-row').forEach(r => r.classList.remove('active'));
@@ -422,6 +456,7 @@ export function toggleFolder(path, childrenEl, iconEl) {
 
 export async function refreshFileTree() {
   state.expandedFolders.clear();
+  state.selectedFolder = '';
   await updateGitStatus();
   const fileTreeContainer = document.getElementById('fileTreeContainer');
   const currentPathLabel = document.getElementById('currentPathLabel');
@@ -429,4 +464,155 @@ export async function refreshFileTree() {
   if (currentPathLabel) {
     currentPathLabel.textContent = getWorkspacePrefix() + '/';
   }
+}
+
+export function triggerUpload(targetDir = '') {
+  state.selectedFolder = targetDir;
+  const currentPathLabel = document.getElementById('currentPathLabel');
+  if (currentPathLabel) {
+    currentPathLabel.textContent = targetDir ? `${getWorkspacePrefix()}/${targetDir}` : `${getWorkspacePrefix()}/`;
+  }
+  const fileInput = document.getElementById('fileUploadInput');
+  if (fileInput) {
+    fileInput.value = '';
+    fileInput.click();
+  }
+}
+
+export async function uploadFiles(files, targetDir = '') {
+  if (!files || files.length === 0) return;
+  const toast = document.getElementById('uploadProgressToast');
+  const toastText = document.getElementById('uploadToastText');
+  const dir = targetDir != null ? targetDir : (state.selectedFolder || '');
+
+  if (toast && toastText) {
+    toast.className = 'upload-progress-toast';
+    toastText.textContent = `正在上传 ${files.length} 个文件...`;
+  }
+
+  const formData = new FormData();
+  formData.append('workspacePath', state.currentWorkspacePath || '');
+  formData.append('targetDir', dir);
+  for (let i = 0; i < files.length; i++) {
+    formData.append('files', files[i]);
+  }
+
+  try {
+    const response = await fetch('/api/files/upload', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (response.status === 401) {
+      window.location.href = '/login';
+      return;
+    }
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      if (toast && toastText) {
+        toast.className = 'upload-progress-toast success';
+        toastText.textContent = data.message || `上传成功 (${data.files ? data.files.length : files.length} 个文件)`;
+        setTimeout(() => {
+          toast.classList.add('hidden');
+        }, 3000);
+      }
+      refreshFileTree();
+    } else {
+      if (toast && toastText) {
+        toast.className = 'upload-progress-toast error';
+        toastText.textContent = `上传失败: ${data.error || '未知错误'}`;
+        setTimeout(() => {
+          toast.classList.add('hidden');
+        }, 4000);
+      }
+    }
+  } catch (err) {
+    console.error('File upload error:', err);
+    if (toast && toastText) {
+      toast.className = 'upload-progress-toast error';
+      toastText.textContent = `网络错误: ${err.message}`;
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 4000);
+    }
+  }
+}
+
+let dropZoneInitialized = false;
+export function initFileTreeDropZone() {
+  if (dropZoneInitialized) return;
+  dropZoneInitialized = true;
+
+  const container = document.getElementById('fileTreeContainer');
+  const dropOverlay = document.getElementById('fileDropOverlay');
+  if (!container) return;
+
+  let dragCounter = 0;
+
+  container.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    if (dropOverlay) dropOverlay.classList.remove('hidden');
+  });
+
+  container.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  container.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      if (dropOverlay) dropOverlay.classList.add('hidden');
+    }
+  });
+
+  container.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    if (dropOverlay) dropOverlay.classList.add('hidden');
+    const droppedFiles = e.dataTransfer?.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      uploadFiles(droppedFiles, state.selectedFolder || '');
+    }
+  });
+
+  // Global paste handler when file browser is active
+  document.addEventListener('paste', (e) => {
+    const filesContent = document.getElementById('filesContent');
+    if (!filesContent || filesContent.classList.contains('hidden')) return;
+
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.classList.contains('xterm-helper-textarea') || activeEl.closest('.monaco-editor'))) {
+      return;
+    }
+
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+
+    if (clipboard.files && clipboard.files.length > 0) {
+      e.preventDefault();
+      uploadFiles(clipboard.files, state.selectedFolder || '');
+      return;
+    }
+
+    const items = clipboard.items;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.startsWith('image/')) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            e.preventDefault();
+            const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+            const ext = blob.type.split('/')[1] || 'png';
+            const pastedFile = new File([blob], `pasted_image_${dateStr}.${ext}`, { type: blob.type });
+            uploadFiles([pastedFile], state.selectedFolder || '');
+            return;
+          }
+        }
+      }
+    }
+  });
 }

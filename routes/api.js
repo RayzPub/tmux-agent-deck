@@ -4,11 +4,21 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const multer = require('multer');
 
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc, chownToSudoUser } = require('../services/fileService');
+
+// Multer memory storage configuration for file upload (supports up to 20 files, 50MB each)
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024,
+    files: 20
+  }
+});
 const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
@@ -1152,10 +1162,76 @@ router.post('/files/save', requireAuth, (req, res) => {
     }
     
     fs.writeFileSync(targetPath, content || '', 'utf8');
+    chownToSudoUser(targetPath);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Upload files (supports images, markdown, text, code, etc.)
+router.post('/files/upload', requireAuth, (req, res) => {
+  fileUpload.array('files', 20)(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: '上传失败：单次最多同时上传 20 个文件' });
+      }
+      return res.status(400).json({ error: `上传失败: ${err.message}` });
+    }
+
+    try {
+      const workspacePath = req.body.workspacePath || '';
+      const targetDirRel = req.body.targetDir || '';
+      const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
+      
+      const targetDir = safeResolve(workspacePath, targetDirRel, req.user.username);
+      if (!fs.existsSync(targetDir)) {
+        return res.status(404).json({ error: '目标目录不存在' });
+      }
+      const dirStat = fs.statSync(targetDir);
+      if (!dirStat.isDirectory()) {
+        return res.status(400).json({ error: '目标路径不是目录' });
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: '未选择任何待上传文件' });
+      }
+
+      const uploadedFiles = [];
+      for (const file of req.files) {
+        // Sanitize file name to prevent directory traversal
+        const originalName = file.originalname || 'uploaded_file';
+        const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim();
+        if (!cleanName || cleanName === '.' || cleanName === '..') {
+          continue;
+        }
+
+        const relativeFilePath = path.join(targetDirRel, cleanName);
+        const destPath = safeResolve(workspacePath, relativeFilePath, req.user.username);
+
+        fs.writeFileSync(destPath, file.buffer);
+        chownToSudoUser(destPath);
+
+        uploadedFiles.push({
+          name: cleanName,
+          path: path.relative(rootDir, destPath),
+          size: file.size
+        });
+      }
+
+      res.json({
+        success: true,
+        message: `成功上传 ${uploadedFiles.length} 个文件`,
+        files: uploadedFiles
+      });
+    } catch (uploadErr) {
+      console.error('[API] File upload error:', uploadErr);
+      res.status(500).json({ error: uploadErr.message });
+    }
+  });
 });
 
 // Store temporary share links in memory

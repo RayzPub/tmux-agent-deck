@@ -177,6 +177,10 @@
         <!-- No redundant panel header -->
 
         <div class="file-explorer-actions">
+          <button id="uploadFilesBtn" class="cyber-btn-outline" title="上传文件 (支持图片、MD文档、文本、代码等)">
+            <i data-lucide="upload"></i>
+          </button>
+          <input type="file" id="fileUploadInput" multiple style="display: none;" />
           <button id="refreshFilesBtn" class="cyber-btn-outline" title="刷新文件列表">
             <i data-lucide="refresh-cw"></i>
           </button>
@@ -190,11 +194,22 @@
         </div>
 
         <div class="file-tree-container" id="fileTreeContainer">
+          <div class="drop-zone-overlay hidden" id="fileDropOverlay">
+            <div class="drop-zone-content">
+              <i data-lucide="upload-cloud"></i>
+              <span>拖放文件到此处上传</span>
+            </div>
+          </div>
           <!-- Dynamic file tree will load here -->
           <div class="loading-placeholder">
             <div class="cyber-spinner"></div>
             <span>正在扫描文件...</span>
           </div>
+        </div>
+
+        <div class="upload-progress-toast hidden" id="uploadProgressToast">
+          <div class="upload-toast-spinner cyber-spinner"></div>
+          <span class="upload-toast-text" id="uploadToastText">正在上传文件...</span>
         </div>
       </div>
     </aside>
@@ -359,6 +374,18 @@
           <div id="editorTextarea" class="editor-textarea"></div>
           <div id="markdownPreview" class="markdown-preview hidden"></div>
           <iframe id="htmlPreviewFrame" class="html-preview-frame hidden" title="HTML 预览"></iframe>
+          <div id="imagePreviewContainer" class="image-preview-container hidden">
+            <div class="image-preview-body">
+              <img id="imagePreviewImg" src="" alt="预览图片" />
+            </div>
+            <div class="image-preview-toolbar">
+              <span id="imagePreviewInfo" class="image-preview-meta"></span>
+              <a id="imagePreviewExternalBtn" class="cyber-btn-outline" target="_blank" title="在新标签页中打开原图">
+                <i data-lucide="external-link"></i>
+                <span>查看原图</span>
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 

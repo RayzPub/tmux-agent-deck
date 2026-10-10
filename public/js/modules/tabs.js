@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { attachSession, removeSessionFromCache } from './terminal.js';
-import { loadEditorFile } from './editor.js';
+import { loadEditorFile, isImageFile } from './editor.js';
 import { loadGitDiff } from './diff.js';
 import { renderHelpDoc } from './helpDoc.js';
 import { renderProjectOverview } from './projectOverview.js';
@@ -92,9 +92,10 @@ export function renderTabs() {
     tabEl.className = `workspace-tab ${tab.type}-tab ${isActive ? 'active' : ''}`;
     tabEl.setAttribute('data-id', tab.id);
 
+    const isImage = tab.type === 'editor' && isImageFile(tab.path);
     const icon = tab.type === 'terminal' 
       ? 'terminal' 
-      : (tab.type === 'git-diff' ? 'git-compare' : (tab.type === 'doc' ? 'book-open' : (tab.type === 'project' ? 'activity' : 'file-code')));
+      : (tab.type === 'git-diff' ? 'git-compare' : (tab.type === 'doc' ? 'book-open' : (tab.type === 'project' ? 'activity' : (isImage ? 'image' : 'file-code'))));
 
     let statusPillHtml = '';
     if (tab.type === 'project') {
