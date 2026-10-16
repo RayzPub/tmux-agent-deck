@@ -790,6 +790,12 @@ body {
   opacity: 0.8;
 }
 
+.session-workspace span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .session-meta {
   display: flex;
   justify-content: space-between;

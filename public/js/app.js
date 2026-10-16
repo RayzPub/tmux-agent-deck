@@ -278,10 +278,9 @@ export function renderSessions(sessions) {
           <span class="session-status-dot ${session.attached ? 'attached' : 'detached'}" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}"></span>
           <div class="session-name" title="${session.name}">${session.name}</div>
         </div>
-        <div class="session-workspace" title="${session.path || '默认工作区'}">
+        <div class="session-workspace" title="${session.path || '默认工作区'}${session.agentModel ? ` (模型: ${session.agentModel})` : ''}">
           <i data-lucide="folder"></i>
           <span>${workspaceText}</span>
-          ${session.agentModel ? `<span class="session-model-badge" title="模型: ${session.agentModel}">${session.agentModel}</span>` : ''}
         </div>
       </div>
       <div class="session-meta">
