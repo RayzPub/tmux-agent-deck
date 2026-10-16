@@ -41,6 +41,8 @@ const initSocket = (io) => {
     console.log('Client connected to terminal socket:', socket.id);
     let ptyProcess = null;
     let isReinitializing = false;
+    let lastCols = null;
+    let lastRows = null;
 
     socket.isFocused = false;
     socket.activeSession = null;
@@ -62,6 +64,8 @@ const initSocket = (io) => {
           console.error('Error killing existing PTY:', err);
         }
         ptyProcess = null;
+        lastCols = null;
+        lastRows = null;
       }
 
       if (!sessionName || !/^[a-zA-Z0-9_-]+$/.test(sessionName)) {
@@ -216,8 +220,8 @@ const initSocket = (io) => {
         if (kimiModel) ptyEnv.KIMI_MODEL = kimiModel;
       }
 
-      let lastCols = cols || 80;
-      let lastRows = rows || 24;
+      lastCols = cols || 80;
+      lastRows = rows || 24;
 
       try {
         ptyProcess = pty.spawn(shell, args, {
@@ -240,6 +244,8 @@ const initSocket = (io) => {
           console.log(`PTY process exited with code ${exitCode}, signal ${signal}`);
           socket.emit('terminal-exit');
           ptyProcess = null;
+          lastCols = null;
+          lastRows = null;
         });
       } catch (err) {
         console.error('Error spawning PTY:', err);
@@ -309,6 +315,8 @@ const initSocket = (io) => {
         }
         ptyProcess = null;
       }
+      lastCols = null;
+      lastRows = null;
     });
   });
 };
