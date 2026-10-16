@@ -9,7 +9,7 @@ const multer = require('multer');
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc, chownToSudoUser } = require('../services/fileService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, syncAllUserKeysFiles, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc, chownToSudoUser } = require('../services/fileService');
 
 // Multer memory storage configuration for file upload (supports up to 20 files, 50MB each)
 const fileUpload = multer({
@@ -214,7 +214,8 @@ const maskKey = (key) => {
 // API: Get user API keys (Authenticated users)
 router.get('/user/keys', requireAuth, (req, res) => {
   const users = db.getUsers();
-  const userObj = users[req.user.username.toLowerCase()];
+  const usernameKey = (req.user && req.user.username ? req.user.username : 'admin').toLowerCase();
+  const userObj = users[usernameKey] || (!MULTI_USER_ENABLED ? {} : null);
   if (!userObj) {
     return res.status(404).json({ error: 'User not found' });
   }
@@ -237,7 +238,15 @@ router.get('/user/keys', requireAuth, (req, res) => {
 router.post('/user/keys', requireAuth, (req, res) => {
   const { agy, claude, codex, kimi, claudeBaseUrl, codexBaseUrl, kimiBaseUrl, claudeModel, codexModel, kimiModel } = req.body;
   const users = db.getUsers();
-  const usernameKey = req.user.username.toLowerCase();
+  const usernameKey = (req.user && req.user.username ? req.user.username : 'admin').toLowerCase();
+  if (!users[usernameKey] && !MULTI_USER_ENABLED) {
+    users[usernameKey] = {
+      username: req.user.username || 'admin',
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+      apiKeys: {}
+    };
+  }
   const userObj = users[usernameKey];
   if (!userObj) {
     return res.status(404).json({ error: 'User not found' });
@@ -294,7 +303,7 @@ router.get('/admin/settings', requireAdmin, (req, res) => {
 
 // API: Update admin settings (Admin only)
 router.post('/admin/settings', requireAdmin, (req, res) => {
-  const { enabledAgents, appIcon } = req.body;
+  const { enabledAgents, appIcon, claudeOAuthMode } = req.body;
   const current = db.getSettings();
 
   if (enabledAgents !== undefined) {
@@ -302,6 +311,10 @@ router.post('/admin/settings', requireAdmin, (req, res) => {
       return res.status(400).json({ error: 'enabledAgents must be an array' });
     }
     current.enabledAgents = enabledAgents;
+  }
+
+  if (claudeOAuthMode !== undefined) {
+    current.claudeOAuthMode = !!claudeOAuthMode;
   }
 
   if (appIcon !== undefined) {
@@ -316,6 +329,10 @@ router.post('/admin/settings', requireAdmin, (req, res) => {
     }
   } else {
     db.saveSettings(current);
+  }
+
+  if (claudeOAuthMode !== undefined) {
+    syncAllUserKeysFiles();
   }
 
   res.json({ success: true, settings: current });
@@ -463,23 +480,37 @@ router.get('/llm-models', requireAuth, (req, res) => {
     const llmGatewayService = require('../services/llmGatewayService');
     const config = llmGatewayService.loadConfig();
     const providers = config.providers || {};
+    const globalSettings = db.getSettings();
+    const claudeOAuthMode = !!globalSettings.claudeOAuthMode;
 
     const buildFlatList = (protocol) => {
       const defaultModel = protocol === 'anthropic'
         ? (config.defaults?.anthropicModel || 'glm-5.3-flash')
         : (config.defaults?.openaiModel || 'glm-5.3-flash');
 
-      const list = [
-        {
-          id: 'default',
-          provider: 'default',
-          providerName: '网关默认',
-          model: defaultModel,
-          modelName: `默认 (${defaultModel})`,
-          displayName: `网关默认 · ${defaultModel}`,
-          desc: '跟随系统全局网关默认'
-        }
-      ];
+      const defaultGatewayItem = {
+        id: 'default',
+        provider: (protocol === 'anthropic' && claudeOAuthMode) ? 'gateway_default' : 'default',
+        providerName: '网关默认',
+        model: defaultModel,
+        modelName: `默认 (${defaultModel})`,
+        displayName: `网关默认 · ${defaultModel}`,
+        desc: '跟随系统全局网关默认'
+      };
+
+      const oauthItem = {
+        id: 'oauth',
+        provider: 'oauth',
+        providerName: 'Anthropic 官方',
+        model: '',
+        modelName: 'OAuth 官方直连',
+        displayName: 'Anthropic · OAuth 直连',
+        desc: '使用 Claude OAuth 登录态，不注入 Base URL'
+      };
+
+      const list = protocol === 'anthropic'
+        ? (claudeOAuthMode ? [oauthItem, defaultGatewayItem] : [defaultGatewayItem, oauthItem])
+        : [defaultGatewayItem];
 
       for (const [pId, prov] of Object.entries(providers)) {
         if (!prov || !prov.enabled) continue;
@@ -662,6 +693,9 @@ router.post('/sessions', requireAuth, async (req, res) => {
   ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
   let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
 
+  const isClaudeOAuthGlobal = !!settings.claudeOAuthMode;
+  const isSessionClaudeOAuth = (modelProvider === 'oauth') || (isClaudeOAuthGlobal && (!modelProvider || modelProvider === 'default'));
+
   // Inject system default fallback keys & LLM gateway dynamically, then source user's private .api_keys
   const { getSystemDefaultKeys } = require('../services/fileService');
   const defaultKeys = getSystemDefaultKeys();
@@ -680,14 +714,22 @@ router.post('/sessions', requireAuth, async (req, res) => {
     fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
     fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
   }
-  if (defaultKeys.claude) {
-    fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(defaultKeys.claude)}`);
-  }
-  if (defaultKeys.claudeBaseUrl) {
-    fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(defaultKeys.claudeBaseUrl)}`);
-  }
-  if (defaultKeys.claudeModel) {
-    fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultKeys.claudeModel)}`);
+
+  if (isClaudeOAuthGlobal) {
+    fallbackExports.push(`unset ANTHROPIC_BASE_URL`);
+    fallbackExports.push(`unset ANTHROPIC_API_KEY`);
+    fallbackExports.push(`unset ANTHROPIC_AUTH_TOKEN`);
+    fallbackExports.push(`unset ANTHROPIC_MODEL`);
+  } else {
+    if (defaultKeys.claude) {
+      fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(defaultKeys.claude)}`);
+    }
+    if (defaultKeys.claudeBaseUrl) {
+      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(defaultKeys.claudeBaseUrl)}`);
+    }
+    if (defaultKeys.claudeModel) {
+      fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultKeys.claudeModel)}`);
+    }
   }
 
   // 127 LLM Gateway baseline injection (fallback for Claude & general shells)
@@ -702,10 +744,12 @@ router.post('/sessions', requireAuth, async (req, res) => {
       const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
       const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
 
-      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl)}`);
-      fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
-      fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultAnthropicModel)}`);
-      fallbackExports.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
+      if (!isClaudeOAuthGlobal) {
+        fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl)}`);
+        fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
+        fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultAnthropicModel)}`);
+        fallbackExports.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
+      }
 
       if (!defaultCodexKey) {
         fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1')}`);
@@ -726,24 +770,33 @@ router.post('/sessions', requireAuth, async (req, res) => {
   // When user selects a specific provider/model at session creation, this must override
   // any static configuration from ~/.api_keys.
   let sessionOverrides = [];
-  if (modelProvider && modelProvider !== 'default') {
+  if (isSessionClaudeOAuth) {
+    sessionOverrides.push(`unset ANTHROPIC_BASE_URL`);
+    sessionOverrides.push(`unset ANTHROPIC_API_KEY`);
+    sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
+    sessionOverrides.push(`unset ANTHROPIC_MODEL`);
+  } else if (modelProvider && modelProvider !== 'default') {
     const { PORT } = require('../config');
     const localPort = PORT || 3000;
     const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
     let vKey = 'sk-deck-local';
+    let defaultAnthropicModel = 'glm-5.3-flash';
     try {
       const llmGatewayService = require('../services/llmGatewayService');
       const gwConfig = llmGatewayService.loadConfig();
       if (gwConfig && gwConfig.virtualKey) vKey = gwConfig.virtualKey;
+      if (gwConfig && gwConfig.defaults?.anthropicModel) defaultAnthropicModel = gwConfig.defaults.anthropicModel;
     } catch (e) {}
 
     if (agent === 'claude') {
-      sessionOverrides.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      const targetUrl = modelProvider === 'gateway_default' ? gwUrl : (gwUrl + '/v1/' + modelProvider);
+      sessionOverrides.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(targetUrl)}`);
       sessionOverrides.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
       sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
       sessionOverrides.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
-      if (modelName) {
-        sessionOverrides.push(`export ANTHROPIC_MODEL=${shellescapeVal(modelName)}`);
+      const targetModel = modelName || defaultAnthropicModel;
+      if (targetModel) {
+        sessionOverrides.push(`export ANTHROPIC_MODEL=${shellescapeVal(targetModel)}`);
       }
     } else if (agent === 'codex') {
       sessionOverrides.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
@@ -778,7 +831,10 @@ router.post('/sessions', requireAuth, async (req, res) => {
   } else if (agent === 'claude') {
     const claudePath = getAgentPath('claude');
     agentSessionId = crypto.randomUUID();
-    shellCmd = claudePath ? `unset ANTHROPIC_AUTH_TOKEN && export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 && ${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
+    const claudePreCmd = isSessionClaudeOAuth
+      ? `unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL`
+      : `unset ANTHROPIC_AUTH_TOKEN && export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`;
+    shellCmd = claudePath ? `${claudePreCmd} && ${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
   } else if (agent === 'codex') {
     const codexPath = getAgentPath('codex');
     shellCmd = codexPath ? `${codexPath} -c check_for_update=false -c update_on_startup=false; exec bash` : 'exec bash';

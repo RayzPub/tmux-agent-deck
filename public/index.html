@@ -105,29 +105,29 @@
   <div class="main-container">
     <!-- Sidebar -->
     <aside class="sidebar">
-      <!-- Top Workspace Selector Context (Enlarged & Emphasized Panel) -->
-      <div class="workspace-selector-actions" style="display: flex; flex-direction: column; gap: 10px; border-bottom: 2px solid var(--neon-cyan); box-shadow: 0 4px 20px rgba(0, 240, 255, 0.08); background: linear-gradient(180deg, rgba(16, 20, 38, 0.8) 0%, rgba(10, 12, 22, 0.95) 100%); padding: 16px 16px; margin-bottom: 16px;">
+      <!-- Top Workspace Selector Context -->
+      <div class="workspace-selector-actions">
         <!-- Tech Label Header -->
-        <div class="workspace-tech-header" style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);">
+        <div class="workspace-tech-header">
           // 当前工作区
         </div>
         <!-- Select & Buttons Row -->
-        <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
-          <div class="input-wrapper" style="flex: 1; min-width: 0; position: relative; display: flex; align-items: center;">
-            <i data-lucide="folder-git-2" class="input-icon" style="position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-secondary);"></i>
-            <select id="explorerWorkspaceSelect" class="cyber-select" style="width: 100%; padding: 8px 10px 8px 36px; font-size: 13px; height: 34px; line-height: 1; background: rgba(7, 9, 18, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-bottom: 2px solid var(--text-muted); color: #fff; border-radius: 4px; outline: none; font-family: var(--font-mono); letter-spacing: 1px;">
+        <div class="workspace-selector-row">
+          <div class="input-wrapper workspace-select-wrapper">
+            <i data-lucide="folder-git-2" class="input-icon"></i>
+            <select id="explorerWorkspaceSelect" class="cyber-select">
               <!-- populated dynamically -->
             </select>
           </div>
-          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline" title="创建工作区" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
-            <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
+          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline sidebar-icon-btn" title="创建工作区">
+            <i data-lucide="plus"></i>
           </button>
-          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline" title="删除工作区" style="padding: 6px; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; flex-shrink: 0;">
-            <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline sidebar-icon-btn" title="删除工作区">
+            <i data-lucide="trash-2"></i>
           </button>
           <!-- Mobile close sidebar button (visible on mobile only) -->
-          <button id="closeSidebarBtn" class="close-sidebar-btn cyber-btn-outline" title="关闭侧边栏" style="padding: 6px; display: none; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-color: var(--neon-pink); flex-shrink: 0;">
-            <i data-lucide="x" style="width: 16px; height: 16px; color: var(--neon-pink);"></i>
+          <button id="closeSidebarBtn" class="close-sidebar-btn cyber-btn-outline sidebar-icon-btn" title="关闭侧边栏">
+            <i data-lucide="x"></i>
           </button>
         </div>
         <!-- Project Progress HUD Entry Button -->
@@ -138,17 +138,19 @@
         </button>
       </div>
 
-      <!-- Sidebar Navigation Tabs -->
-      <div class="sidebar-tabs" style="border-top: none;">
-        <button class="sidebar-tab active" id="tabSessionsBtn">
-          <i data-lucide="terminal"></i>
-          <span>智能体会话</span>
-          <span class="session-count" id="sessionCount" style="margin-left: 4px; font-size: 9px; background: rgba(0, 240, 255, 0.15); color: var(--neon-cyan); padding: 1px 6px; border-radius: 10px; font-family: var(--font-mono);">0</span>
-        </button>
-        <button class="sidebar-tab" id="tabFilesBtn">
-          <i data-lucide="folder-tree"></i>
-          <span>文件浏览器</span>
-        </button>
+      <!-- Sidebar Navigation Tabs (CDS Segmented Pill Control) -->
+      <div class="sidebar-tabs-wrapper">
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" id="tabSessionsBtn">
+            <i data-lucide="terminal"></i>
+            <span>智能体会话</span>
+            <span class="session-count" id="sessionCount">0</span>
+          </button>
+          <button class="sidebar-tab" id="tabFilesBtn">
+            <i data-lucide="folder-tree"></i>
+            <span>文件浏览器</span>
+          </button>
+        </div>
       </div>
 
       <!-- SESSIONS PANEL -->
@@ -156,14 +158,14 @@
         <!-- Compatibility hidden close buttons -->
         <button id="closeSidebarBtnFiles" style="display: none;"></button>
 
-        <div class="action-bar" style="padding: 12px 16px 6px 16px;">
-          <button id="newSessionBtn" class="cyber-btn-outline w-full" style="height: 34px; font-size: 11px;">
-            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+        <div class="action-bar">
+          <button id="newSessionBtn" class="cyber-btn-outline w-full sidebar-primary-action-btn">
+            <i data-lucide="plus"></i>
             <span>启动新会话</span>
           </button>
         </div>
 
-        <div class="session-list" id="sessionList" style="padding: 6px 16px 16px 16px;">
+        <div class="session-list" id="sessionList">
           <!-- Sessions will be loaded here dynamically -->
           <div class="loading-placeholder">
             <div class="cyber-spinner"></div>
@@ -909,9 +911,26 @@
               </div>
             </label>
           </div>
+          <div class="admin-oauth-cfg-box">
+            <div class="admin-oauth-cfg-header">
+              // CLAUDE 认证与环境变量注入策略：
+            </div>
+            <label class="admin-oauth-toggle-card" id="claudeOAuthToggleCard" for="agentCfgClaudeOAuth">
+              <input type="checkbox" id="agentCfgClaudeOAuth" style="accent-color: var(--neon-cyan);">
+              <div class="admin-oauth-card-body">
+                <div class="admin-oauth-card-title-row">
+                  <span class="admin-oauth-card-title">Claude OAuth 官方登录直连模式</span>
+                  <span class="admin-oauth-badge" id="claudeOAuthStatusBadge">网关注入模式</span>
+                </div>
+                <div class="admin-oauth-card-desc">
+                  开启后，终端与会话默认<strong>不强制注入</strong> <code>ANTHROPIC_BASE_URL</code> 与 <code>ANTHROPIC_API_KEY</code> 环境变量（并自动清理残留变量），直接使用 <code>claude login</code> 的 OAuth 订阅账号直连官方服务。
+                </div>
+              </div>
+            </label>
+          </div>
           <div style="display: flex; justify-content: flex-end; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
             <button id="saveAgentSettingsBtn" class="cyber-btn" style="height: 30px; padding: 0 16px; font-size: 11px; font-weight: bold;">
-              <span class="btn-text">保存全局准入配置</span>
+              <span class="btn-text">保存全局智能体配置</span>
             </button>
           </div>
         </div>

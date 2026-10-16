@@ -71,24 +71,29 @@ When integrating or modifying execution flows for **Claude Code** and **OpenAI C
 - **Codex CLI Configuration Rule**: Codex CLI defaults to reading `base_url` from `~/.codex/config.toml` and **ignores** `OPENAI_BASE_URL` from the environment. Use `ensureCodexConfig()` from `services/fileService.js` to ensure `deck_gateway` is written to `config.toml` pointing to `http://127.0.0.1/v1`.
 - **Sensitive Key Separation**: Never write plaintext `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` into `settings.json` or `config.toml`. All real keys belong in `data/llm_gateway.json` and are dynamically managed by the backend.
 
-## 5. 前端主题色适配规范 (Theme & Color Adaptation Guidelines)
-系统支持深浅双主题切换，任何前端界面新增或迭代必须严格遵守以下主题色规范：
+## 5. 前端 UI 设计与主题色适配规范 (UI Design & Theme Adaptation Guidelines)
+系统支持深浅双主题切换并遵循四层表面物理架构（4-Tier Surface Architecture），任何前端界面新增或迭代必须严格遵守以下规范：
 
-- **双主题架构机制**：
-  - 默认深色：Cyberpunk 赛博朋克深黑霓虹主题（根作用域）。
-  - 浅色极简：通过 `document.body` 挂载 `.light-minimalist` 类实现（`body.light-minimalist`）。
+- **详细 UI 设计与交互物理规范文档**：完整的设计 Token、四层表面海拔、单边框法则、双环聚焦阴影、流式滚动锁止与响应式容器查询规范请参考 **[docs/ui_design_spec.md](docs/ui_design_spec.md)**。
+- **双主题与四层表面架构机制 (`Surface 0 ~ 3`)**：
+  - 默认深色：Cyberpunk 赛博朋克深黑霓虹主题（根作用域 `:root`，`--surface-0: #060810` ➔ `--surface-1: #0a0d16` ➔ `--surface-2: #101524` ➔ `--surface-3: #171e31`）。
+  - 浅色极简：通过 `document.body` 挂载 `.light-minimalist` 类实现（`body.light-minimalist`，`--surface-0: #f4f5f8` ➔ `--surface-1: #fafbfc` ➔ `--surface-2: #ffffff` ➔ `--surface-3: #ffffff`）。
 - **全要素双态适配要求（强制）**：
-  - 任何新增的 UI 组件（弹窗、选项卡片、输入框、徽章、下拉菜单、交互图表）**必须同步编写 `body.light-minimalist` 浅色适配样式**。
-  - 严禁出现“仅适配深色”导致切换至浅色模式时产生白底白字、未反色的深黑孤岛或对比度过低等视觉残缺。
+  - 任何新增的 UI 组件（弹窗、侧边栏、选项卡片、输入框、徽章、下拉菜单、登录/欢迎页）**必须同步编写 `body.light-minimalist` 浅色适配样式**。
+  - 严禁出现“仅适配深色”或使用内联硬编码深色样式（如 `style="color: #fff"`），导致切换至浅色模式时产生白底白字、未反色的深黑孤岛或对比度过低等视觉残缺。
+- **物理边界与组件核心准则**：
+  - **单边框法则 (Single-Border Rule)**：禁止双重嵌套重边框；Chat 模式下 Assistant 消息无外框直接融入 `--surface-1` 画布，User 消息采用 `18px` 染色胶囊气泡；严禁在按钮上使用锯齿切角（`clip-path: polygon`）。
+  - **双环阴影与圆角阶梯**：统一使用 `0.5px` Retina 极细边与 `--shadow-sm/md/lg`、`--shadow-composer-focus` 双环阴影；分段切换器统一采用 `999px` 满圆角胶囊（`--surface-0` 凹槽 + `--surface-3` 滑块）。
+  - **折叠与滚动工程**：折叠面板（Thinking、Tool、FAQ）统一采用 CSS Grid `0fr -> 1fr` 过渡；动态计数器必须声明 `font-variant-numeric: tabular-nums`；输入框键盘事件必须包含中文输入法守卫（`!e.isComposing && e.keyCode !== 229`）。
 - **深浅色彩映射对照标准**：
   - **容器与卡片底色**：
-    - 深色：`rgba(7, 9, 18, 0.7)` / `#0e121e` / `var(--bg-card)`
+    - 深色：`var(--surface-2)` (`#101524`) / `var(--bg-card)`
     - 浅色：纯白 `#ffffff` / 底白 `#f8fafc`，悬停态反显 `#f1f5f9`
   - **边框与分割线**：
-    - 深色：`rgba(255, 255, 255, 0.08)` / 赛博青微光边框
+    - 深色：`var(--border-hairline)` (`rgba(255, 255, 255, 0.08)`) / 赛博青微光边框
     - 浅色：柔和浅灰 `#cbd5e1` / `#e2e8f0`，悬停或获得焦点时加深为 `#94a3b8`
   - **选中与高亮态 (Checked / Active)**：
-    - 深色：霓虹青 `var(--neon-cyan)` 边框 + 赛博发光阴影 + 青色微底
+    - 深色：霓虹青 `var(--neon-cyan)` 边框 + 赛博双环微光 + 青色微底
     - 浅色：优雅靛蓝 `#4f46e5` 边框 + 柔和浅紫 `#eef2ff` 底色，消除发光滤镜（`box-shadow: 0 0 0 1px #4f46e5`）
   - **文字层级对比度**：
     - 主标题 / 核心文本：深色 `#ffffff` ➔ 浅色 `#0f172a`（高对比度深墨灰）
@@ -98,7 +103,4 @@ When integrating or modifying execution flows for **Claude Code** and **OpenAI C
     - 深色：`rgba(0, 240, 255, 0.1)` 底色 + 霓虹青字色与细边框
     - 浅色：`#eef2ff` 浅底 + `#4f46e5` 靛蓝字色 + `#c7d2fe` 浅紫细边框
 - **静态资源构建提醒**：
-  - 修改 `public/css/` 下的任何样式文件后，必须执行 `npm run build` 生成生产环境 Hash 资源文件，确保 CDN/强缓存机制下能立即加载最新样式。
-
-
-
+  - 修改 `public/` 下的任何前端资源（CSS / JS / HTML）后，必须执行 `npm run build` 生成生产环境 Hash 资源文件，确保 CDN/强缓存机制下能立即加载最新样式（仅修改前端静态资源时切勿重启后端服务）。

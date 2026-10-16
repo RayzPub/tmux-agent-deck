@@ -58,20 +58,9 @@ function getActiveTheme() {
 }
 
 /**
- * Set active icon theme and synchronize standard /images/ files
+ * Copy theme icon files into public/images/
  */
-function setActiveTheme(themeId) {
-  const themes = getThemes();
-  const theme = themes.find(t => t.id === themeId);
-  if (!theme) {
-    throw new Error(`Icon theme "${themeId}" not found.`);
-  }
-
-  const currentSettings = db.getSettings();
-  currentSettings.appIcon = themeId;
-  db.saveSettings(currentSettings);
-
-  // Sync assets to public/images for maximum compatibility
+function syncThemeFiles(themeId) {
   const sourceDir = path.join(ICONS_BASE_DIR, themeId);
   const filesToSync = [
     'favicon.png',
@@ -91,12 +80,45 @@ function setActiveTheme(themeId) {
       fs.copyFileSync(src, dest);
     }
   }
+}
+
+/**
+ * Set active icon theme and synchronize standard /images/ files
+ */
+function setActiveTheme(themeId) {
+  const themes = getThemes();
+  const theme = themes.find(t => t.id === themeId);
+  if (!theme) {
+    throw new Error(`Icon theme "${themeId}" not found.`);
+  }
+
+  const currentSettings = db.getSettings();
+  currentSettings.appIcon = themeId;
+  db.saveSettings(currentSettings);
+
+  // Sync assets to public/images for maximum compatibility
+  syncThemeFiles(themeId);
 
   return { success: true, activeTheme: theme, settings: currentSettings };
+}
+
+/**
+ * Ensure public/images/ has the active theme icons on server startup
+ */
+function initActiveIcon() {
+  try {
+    const activeTheme = getActiveTheme();
+    if (activeTheme && activeTheme.id) {
+      syncThemeFiles(activeTheme.id);
+    }
+  } catch (err) {
+    console.error('Failed to initialize active icon files:', err);
+  }
 }
 
 module.exports = {
   getThemes,
   getActiveTheme,
-  setActiveTheme
+  setActiveTheme,
+  initActiveIcon
 };

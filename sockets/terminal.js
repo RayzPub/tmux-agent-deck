@@ -92,6 +92,10 @@ const initSocket = (io) => {
         SKIP_SUDO_HINT: '1'
       };
 
+      const db = require('../services/dbService');
+      const globalSettings = db.getSettings();
+      const claudeOAuthMode = !!globalSettings.claudeOAuthMode;
+
       // 1. LLM Gateway auto-injection (Platform baseline fallback)
       try {
         const llmGatewayService = require('../services/llmGatewayService');
@@ -102,12 +106,19 @@ const initSocket = (io) => {
           const vKey = gwConfig.virtualKey || 'sk-deck-local';
           const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
 
-          ptyEnv.ANTHROPIC_BASE_URL = gwUrl;
-          ptyEnv.ANTHROPIC_API_KEY = vKey;
-          delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
-          ptyEnv.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
-          const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
-          ptyEnv.ANTHROPIC_MODEL = defaultAnthropicModel;
+          if (claudeOAuthMode) {
+            delete ptyEnv.ANTHROPIC_BASE_URL;
+            delete ptyEnv.ANTHROPIC_API_KEY;
+            delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
+            delete ptyEnv.ANTHROPIC_MODEL;
+          } else {
+            ptyEnv.ANTHROPIC_BASE_URL = gwUrl;
+            ptyEnv.ANTHROPIC_API_KEY = vKey;
+            delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
+            ptyEnv.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
+            const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
+            ptyEnv.ANTHROPIC_MODEL = defaultAnthropicModel;
+          }
 
           ptyEnv.OPENAI_BASE_URL = `${gwUrl}/v1`;
           ptyEnv.OPENAI_API_BASE = `${gwUrl}/v1`;
@@ -121,10 +132,10 @@ const initSocket = (io) => {
       }
 
       // 2. User-specific / Custom Keys (Higher Priority - Overrides Gateway)
-      if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
-        const db = require('../services/dbService');
+      {
         const users = db.getUsers();
-        const userObj = users[socket.user.username.toLowerCase()];
+        const activeUsername = (socket.user && socket.user.username) ? socket.user.username.toLowerCase() : 'admin';
+        const userObj = users[activeUsername];
         const keys = userObj ? (userObj.apiKeys || {}) : {};
 
         // Load system defaults as fallback
@@ -143,15 +154,25 @@ const initSocket = (io) => {
             // Unset gateway's localhost URL so Claude can connect directly to official Anthropic API
             delete ptyEnv.ANTHROPIC_BASE_URL;
           }
-        } else if (!ptyEnv.ANTHROPIC_API_KEY && defaultKeys.claude) {
-          ptyEnv.ANTHROPIC_API_KEY = defaultKeys.claude;
-          if (defaultKeys.claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = defaultKeys.claudeBaseUrl;
-        }
-
-        if (keys.claudeModel) {
-          ptyEnv.ANTHROPIC_MODEL = keys.claudeModel;
-        } else if (!ptyEnv.ANTHROPIC_MODEL && defaultKeys.claudeModel) {
-          ptyEnv.ANTHROPIC_MODEL = defaultKeys.claudeModel;
+          if (keys.claudeModel) {
+            ptyEnv.ANTHROPIC_MODEL = keys.claudeModel;
+          }
+        } else if (claudeOAuthMode) {
+          // OAuth direct mode: ensure no base URL or API key is injected
+          delete ptyEnv.ANTHROPIC_BASE_URL;
+          delete ptyEnv.ANTHROPIC_API_KEY;
+          delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
+          delete ptyEnv.ANTHROPIC_MODEL;
+        } else {
+          if (!ptyEnv.ANTHROPIC_API_KEY && defaultKeys.claude) {
+            ptyEnv.ANTHROPIC_API_KEY = defaultKeys.claude;
+            if (defaultKeys.claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = defaultKeys.claudeBaseUrl;
+          }
+          if (keys.claudeModel) {
+            ptyEnv.ANTHROPIC_MODEL = keys.claudeModel;
+          } else if (!ptyEnv.ANTHROPIC_MODEL && defaultKeys.claudeModel) {
+            ptyEnv.ANTHROPIC_MODEL = defaultKeys.claudeModel;
+          }
         }
 
         // Codex / OpenAI

@@ -38,6 +38,12 @@
     <div class="welcome-grid-overlay"></div>
   </div>
 
+  <!-- Floating Theme Switcher Pill -->
+  <button type="button" id="authThemeToggleBtn" class="auth-theme-toggle-btn" title="切换深浅主题">
+    <i data-lucide="moon" id="authThemeIcon"></i>
+    <span id="authThemeText">赛博朋克</span>
+  </button>
+
   <!-- Login Container -->
   <div class="auth-container">
     <div class="auth-card">
@@ -97,12 +103,13 @@
           <i data-lucide="shield-check" class="btn-icon"></i>
         </button>
 
-        <div class="register-link-container" id="registerLinkContainer" style="margin-top: 15px; text-align: center; display: none;">
-          <a href="/register" class="tech-link" style="color: #00f0ff; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 注册新账号</a>
-        </div>
-
-        <div class="welcome-link-container" style="margin-top: 15px; text-align: center;">
-          <a href="/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase; text-shadow: 0 0 5px rgba(255, 0, 127, 0.3);">// 探索功能特性</a>
+        <div class="auth-links-row">
+          <div class="register-link-container" id="registerLinkContainer" style="display: none;">
+            <a href="/register" class="tech-link tech-link-primary">// 注册新账号</a>
+          </div>
+          <div class="welcome-link-container">
+            <a href="/welcome" class="tech-link tech-link-secondary">// 探索功能特性</a>
+          </div>
         </div>
       </form>
 
@@ -121,6 +128,29 @@
   </div>
 
   <script>
+    // Theme toggle binding for Auth page
+    (function initAuthThemeToggle() {
+      const btn = document.getElementById('authThemeToggleBtn');
+      const textEl = document.getElementById('authThemeText');
+      function syncAuthThemeUI() {
+        const isLight = document.body.classList.contains('light-minimalist');
+        if (textEl) textEl.textContent = isLight ? '浅色极简' : '赛博朋克';
+        const iconEl = btn ? btn.querySelector('i, svg') : null;
+        if (iconEl && window.lucide) {
+          iconEl.setAttribute('data-lucide', isLight ? 'sun' : 'moon');
+          window.lucide.createIcons();
+        }
+      }
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const isLight = document.body.classList.toggle('light-minimalist');
+          localStorage.setItem('theme-style', isLight ? 'light-minimalist' : 'cyberpunk');
+          syncAuthThemeUI();
+        });
+      }
+      syncAuthThemeUI();
+    })();
+
     // Helper: Determine redirect URL.
     // If coming from register page, default to '/welcome'.
     function getRedirectUrl() {

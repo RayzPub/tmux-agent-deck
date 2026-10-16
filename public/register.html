@@ -38,6 +38,12 @@
     <div class="welcome-grid-overlay"></div>
   </div>
 
+  <!-- Floating Theme Switcher Pill -->
+  <button type="button" id="authThemeToggleBtn" class="auth-theme-toggle-btn" title="切换深浅主题">
+    <i data-lucide="moon" id="authThemeIcon"></i>
+    <span id="authThemeText">赛博朋克</span>
+  </button>
+
   <!-- Register Container -->
   <div class="auth-container">
     <div class="auth-card">
@@ -115,8 +121,10 @@
           <i data-lucide="user-plus" class="btn-icon"></i>
         </button>
 
-        <div class="login-link-container" style="margin-top: 15px; text-align: center;">
-          <a href="/login?redirect=/welcome" class="tech-link" style="color: #ff007f; font-family: 'Fira Code', monospace; font-size: 12px; text-decoration: none; text-transform: uppercase;">// 返回登录页面</a>
+        <div class="auth-links-row">
+          <div class="login-link-container">
+            <a href="/login?redirect=/welcome" class="tech-link tech-link-secondary">// 返回登录页面</a>
+          </div>
         </div>
       </form>
 
@@ -130,12 +138,12 @@
         </div>
       </div>
 
-      <div id="successAlert" class="auth-alert hidden" style="border-color: #00ff66;">
-        <div class="alert-border" style="background: #00ff66;"></div>
-        <i data-lucide="check-circle" class="alert-icon" style="color: #00ff66;"></i>
+      <div id="successAlert" class="auth-alert success hidden">
+        <div class="alert-border"></div>
+        <i data-lucide="check-circle" class="alert-icon"></i>
         <div class="alert-content">
-          <span class="alert-title" style="color: #00ff66;">注册成功</span>
-          <span class="alert-message" style="color: #ffffff;">身份创建成功，正在重定向...</span>
+          <span class="alert-title">注册成功</span>
+          <span class="alert-message">身份创建成功，正在重定向...</span>
         </div>
       </div>
 
@@ -143,6 +151,29 @@
   </div>
 
   <script>
+    // Theme toggle binding for Auth page
+    (function initAuthThemeToggle() {
+      const btn = document.getElementById('authThemeToggleBtn');
+      const textEl = document.getElementById('authThemeText');
+      function syncAuthThemeUI() {
+        const isLight = document.body.classList.contains('light-minimalist');
+        if (textEl) textEl.textContent = isLight ? '浅色极简' : '赛博朋克';
+        const iconEl = btn ? btn.querySelector('i, svg') : null;
+        if (iconEl && window.lucide) {
+          iconEl.setAttribute('data-lucide', isLight ? 'sun' : 'moon');
+          window.lucide.createIcons();
+        }
+      }
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const isLight = document.body.classList.toggle('light-minimalist');
+          localStorage.setItem('theme-style', isLight ? 'light-minimalist' : 'cyberpunk');
+          syncAuthThemeUI();
+        });
+      }
+      syncAuthThemeUI();
+    })();
+
     // Initialize Lucide Icons
     lucide.createIcons();
 

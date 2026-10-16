@@ -1,6 +1,7 @@
 /**
- * Cyberpunk TMUX Agent Deck - Clean & Decisive Agent Chat Mode Module
- * Fully isolated, per-session state, optimized for non-programmers & mobile.
+ * Cyberpunk TMUX Agent Deck - CDS Interaction Physics & Dual-Theme Chat Mode Module
+ * Incorporates open-claude-ui Scroll Pinning, 7-Stop Fade Mask, CSS Grid 0fr->1fr Accordions,
+ * Borderless Assistant Prose, 20px Dual-Ring Composer, and Slash Command Engine.
  */
 
 import { state } from './state.js';
@@ -9,8 +10,27 @@ import { stopVoiceInput } from './voice.js';
 
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
+const expandedAccordions = new Set();  // Set of `${sessionName}::${accordionKey}` to persist user toggle across polls
 let currentPollTimer = null;
 let activePollSession = null;
+
+// Scroll Pinning Physics State (open-claude-ui 150ms cooldown + 40px bottom tolerance)
+const SCROLL_COOL_DOWN_MS = 150;
+let lastUserScrollAt = 0;
+let programmaticScroll = false;
+let isScrollPinned = true;
+
+// Slash Commands Registry for Composer Popover
+const SLASH_COMMANDS = [
+  { cmd: '/clear', desc: '清空当前智能体对话上下文' },
+  { cmd: '/compact', desc: '压缩上下文历史并释放 Token 空间' },
+  { cmd: '/status', desc: '查看当前会话与模型状态' },
+  { cmd: '/cost', desc: '查看当前会话 Token 消耗统计' },
+  { cmd: '/help', desc: '显示智能体内置帮助指令' }
+];
+let slashPopoverOpen = false;
+let slashActiveIndex = 0;
+let filteredSlashCommands = [...SLASH_COMMANDS];
 
 /**
  * Helper to safely resolve current active session name
@@ -118,7 +138,7 @@ export function initChatMode() {
     document.head.appendChild(link);
   }
 
-  // 2. Inject floating mode switcher directly into terminalPanel
+  // 2. Inject 999px Segmented Control Switcher directly into terminalPanel
   if (!document.getElementById('deckModeSwitcher')) {
     const switcher = document.createElement('div');
     switcher.id = 'deckModeSwitcher';
@@ -140,25 +160,20 @@ export function initChatMode() {
     const btnTerminal = document.getElementById('modeBtnTerminal');
     const btnChat = document.getElementById('modeBtnChat');
 
-    const handleTerminalClick = (e) => {
+    btnTerminal.addEventListener('click', (e) => {
       e.stopPropagation();
       const currentSess = getCurrentSessionName();
-      console.log('[ChatMode] Clicked Terminal Mode button. Target session:', currentSess);
       setSessionViewMode(currentSess, 'terminal');
-    };
+    });
 
-    const handleChatClick = (e) => {
+    btnChat.addEventListener('click', (e) => {
       e.stopPropagation();
       const currentSess = getCurrentSessionName();
-      console.log('[ChatMode] Clicked Chat Mode button. Target session:', currentSess);
       setSessionViewMode(currentSess, 'chat');
-    };
-
-    btnTerminal.addEventListener('click', handleTerminalClick);
-    btnChat.addEventListener('click', handleChatClick);
+    });
   }
 
-  // 3. Inject Clean Chat Container directly into terminalPanel
+  // 3. Inject CDS Chat Container directly into terminalPanel
   if (!document.getElementById('agentChatContainer')) {
     const chatContainer = document.createElement('div');
     chatContainer.id = 'agentChatContainer';
@@ -171,34 +186,57 @@ export function initChatMode() {
         <span class="agent-status-sub" id="chatStatusText">就绪</span>
       </div>
 
-      <!-- Messages Stream (Native Touch Scrolling) -->
+      <!-- Messages Stream (With 7-Stop Non-Linear Fade Mask & Scroll Pinning) -->
       <div class="agent-chat-messages" id="agentChatMessages">
         <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #64748b; font-size: 11px;">
           <span>载入中...</span>
         </div>
       </div>
 
-      <!-- Clean Decisive Composer -->
+      <!-- Floating Jump-to-Bottom Pill -->
+      <button class="chat-jump-bottom-btn" id="chatJumpBottomBtn" type="button" title="回到底部最新消息">
+        <i data-lucide="arrow-down"></i>
+        <span>回到底部</span>
+      </button>
+
+      <!-- 20px Dual-Ring Composer Engine -->
       <div class="agent-chat-composer">
-        <div class="chat-input-row">
-          <textarea 
-            class="chat-textarea" 
-            id="chatComposerTextarea" 
-            rows="1"
-            placeholder="输入消息或口述指令..."
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            enterkeyhint="send"
-          ></textarea>
-          <div class="chat-composer-actions">
-            <button class="chat-icon-btn" id="chatInterruptBtn" title="停止执行 (Ctrl+C)">
-              <i data-lucide="square" style="width: 14px; height: 14px;"></i>
-            </button>
-            <button class="chat-send-btn" id="chatSendMsgBtn" title="发送 (Enter)">
-              <i data-lucide="arrow-up" style="width: 14px; height: 14px;"></i>
-            </button>
+        <div class="chat-composer-shell">
+          <!-- Slash Command Floating Popover -->
+          <div class="chat-slash-popover hidden" id="chatSlashPopover"></div>
+
+          <div class="chat-input-row">
+            <textarea 
+              class="chat-textarea" 
+              id="chatComposerTextarea" 
+              rows="1"
+              placeholder="输入消息，或输入 / 呼出快捷指令..."
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              enterkeyhint="send"
+            ></textarea>
+            <div class="chat-composer-toolbar">
+              <div class="chat-composer-tools-left">
+                <button class="chat-ghost-pill-btn" id="chatSlashTriggerBtn" type="button" title="快捷指令 (/)">
+                  <i data-lucide="slash"></i>
+                  <span>指令</span>
+                </button>
+                <button class="chat-ghost-pill-btn" id="chatQuickClearBtn" type="button" title="发送 /clear 清空当前对话上下文">
+                  <i data-lucide="eraser"></i>
+                  <span>清空上下文</span>
+                </button>
+              </div>
+              <div class="chat-composer-actions">
+                <button class="chat-icon-btn" id="chatInterruptBtn" type="button" title="停止执行 (Ctrl+C)">
+                  <i data-lucide="square" style="width: 14px; height: 14px;"></i>
+                </button>
+                <button class="chat-send-btn" id="chatSendMsgBtn" type="button" title="发送 (Enter)">
+                  <i data-lucide="arrow-up" style="width: 15px; height: 15px;"></i>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -212,19 +250,97 @@ export function initChatMode() {
     });
 
     terminalPanel.appendChild(chatContainer);
+    bindScrollPinningEvents();
     bindComposerEvents();
+    bindGlobalDecisionShortcuts();
   }
 
   if (window.lucide) {
     window.lucide.createIcons();
   }
 
-  console.log('[ChatMode] Decisive ChatMode initialized.');
-
   const currentSess = getCurrentSessionName();
   if (currentSess) {
     applySessionViewMode(currentSess);
   }
+}
+
+/**
+ * Bind open-claude-ui Scroll Pinning & 7-Stop Non-Linear Fade Mask Sensor
+ */
+function bindScrollPinningEvents() {
+  const msgContainer = document.getElementById('agentChatMessages');
+  const jumpBtn = document.getElementById('chatJumpBottomBtn');
+  if (!msgContainer) return;
+
+  const markUserManualScroll = () => {
+    lastUserScrollAt = performance.now();
+  };
+
+  ['wheel', 'touchmove', 'pointerdown'].forEach(evt => {
+    msgContainer.addEventListener(evt, markUserManualScroll, { passive: true });
+  });
+
+  msgContainer.addEventListener('scroll', () => {
+    updateScrollFadeMask(msgContainer);
+
+    if (programmaticScroll) {
+      programmaticScroll = false;
+      return;
+    }
+
+    const distanceFromBottom = msgContainer.scrollHeight - msgContainer.scrollTop - msgContainer.clientHeight;
+    isScrollPinned = distanceFromBottom <= 45;
+
+    if (jumpBtn) {
+      if (distanceFromBottom > 120) {
+        jumpBtn.classList.add('visible');
+      } else {
+        jumpBtn.classList.remove('visible');
+      }
+    }
+  }, { passive: true });
+
+  if (jumpBtn) {
+    jumpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      scrollToChatBottom(true);
+    });
+  }
+}
+
+/**
+ * Update 7-Stop Non-Linear Alpha Mask CSS Variables on Scroll
+ */
+function updateScrollFadeMask(el) {
+  if (!el) return;
+  const scrollTop = el.scrollTop;
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+
+  const topFade = scrollTop > 4 ? '24px' : '0px';
+  const bottomFade = distanceFromBottom > 4 ? '24px' : '0px';
+
+  el.style.setProperty('--cds-scroll-fade-top', topFade);
+  el.style.setProperty('--cds-scroll-fade-bottom', bottomFade);
+}
+
+/**
+ * Scroll chat stream to bottom respecting programmatic flag
+ */
+export function scrollToChatBottom(smooth = false) {
+  const msgContainer = document.getElementById('agentChatMessages');
+  const jumpBtn = document.getElementById('chatJumpBottomBtn');
+  if (!msgContainer) return;
+
+  programmaticScroll = true;
+  isScrollPinned = true;
+  if (jumpBtn) jumpBtn.classList.remove('visible');
+
+  msgContainer.scrollTo({
+    top: msgContainer.scrollHeight,
+    behavior: smooth ? 'smooth' : 'auto'
+  });
+  updateScrollFadeMask(msgContainer);
 }
 
 /**
@@ -292,7 +408,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     return;
   }
 
-  // Determine target mode: prioritize forceMode -> per-session memory/localStorage -> global preference -> default 'terminal'
   let targetMode = forceMode;
   if (!targetMode) {
     targetMode = sessionViewModes.get(currentSess);
@@ -311,7 +426,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
   }
 
-  // Optimistically switch to chat UI if user preferred chat mode and session is not confirmed unsupported
   const cachedSupport = sessionSupportCache.get(currentSess);
   if (targetMode === 'chat' && cachedSupport !== false) {
     terminalContainer.classList.add('hidden');
@@ -330,17 +444,14 @@ export async function applySessionViewMode(sessionName, forceMode) {
     switcher.style.display = 'none';
   }
 
-  // 1. Verify if this terminal session supports Agent Chat Mode (Claude Code only for now)
   const isSupported = await checkSessionSupport(currentSess);
 
-  // Guard against tab switching mid-fetch: only proceed if currentSess is still active
   const activeSessNow = getCurrentSessionName();
   if (activeSessNow && activeSessNow !== currentSess) {
     return;
   }
 
   if (!isSupported) {
-    // Hide the mode switcher entirely for non-Claude terminals (pure terminal experience)
     if (switcher) switcher.style.display = 'none';
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
@@ -360,12 +471,8 @@ export async function applySessionViewMode(sessionName, forceMode) {
     return;
   }
 
-  // Show mode switcher for supported Claude Code sessions
   if (switcher) switcher.style.display = 'inline-flex';
-
   sessionViewModes.set(currentSess, targetMode);
-
-  console.log('[ChatMode] Applying mode:', targetMode, 'for session:', currentSess);
 
   if (targetMode === 'chat') {
     terminalContainer.classList.add('hidden');
@@ -373,7 +480,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
 
-    // Hide original mobile bottom controls (input bar + helper keyboard) to eliminate double-inputs
     if (mobileControls) {
       mobileControls.classList.add('hidden');
       mobileControls.style.display = 'none';
@@ -382,6 +488,7 @@ export async function applySessionViewMode(sessionName, forceMode) {
       workspaceMain.classList.remove('has-mobile-controls');
     }
 
+    isScrollPinned = true;
     loadAndRenderChatHistory(currentSess, true);
     startChatPolling(currentSess);
   } else {
@@ -390,7 +497,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
 
-    // Restore mobile bottom controls in classic terminal mode
     if (mobileControls) {
       mobileControls.classList.remove('hidden');
       mobileControls.style.display = '';
@@ -409,17 +515,107 @@ export async function applySessionViewMode(sessionName, forceMode) {
 }
 
 /**
- * Bind composer input and buttons
+ * Render and manage the `/` Slash Command Popover with Roving Focus
+ */
+function updateSlashPopover(queryText) {
+  const popover = document.getElementById('chatSlashPopover');
+  if (!popover) return;
+
+  if (queryText === null || !queryText.startsWith('/')) {
+    slashPopoverOpen = false;
+    popover.classList.add('hidden');
+    return;
+  }
+
+  const prefix = queryText.trim().toLowerCase();
+  filteredSlashCommands = SLASH_COMMANDS.filter(item => item.cmd.startsWith(prefix));
+
+  if (filteredSlashCommands.length === 0) {
+    slashPopoverOpen = false;
+    popover.classList.add('hidden');
+    return;
+  }
+
+  slashPopoverOpen = true;
+  if (slashActiveIndex >= filteredSlashCommands.length) {
+    slashActiveIndex = 0;
+  }
+
+  popover.innerHTML = `
+    <div class="chat-slash-popover-title">// 快捷指令 (↑↓ 选择 · Enter 确认)</div>
+    ${filteredSlashCommands.map((item, idx) => `
+      <button type="button" class="chat-slash-item ${idx === slashActiveIndex ? 'active' : ''}" data-cmd="${escapeHtml(item.cmd)}">
+        <span class="chat-slash-cmd">${escapeHtml(item.cmd)}</span>
+        <span class="chat-slash-desc">${escapeHtml(item.desc)}</span>
+      </button>
+    `).join('')}
+  `;
+  popover.classList.remove('hidden');
+
+  popover.querySelectorAll('.chat-slash-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cmd = btn.dataset.cmd;
+      if (cmd) executeOrFillSlashCommand(cmd);
+    });
+  });
+}
+
+function executeOrFillSlashCommand(cmd) {
+  const textarea = document.getElementById('chatComposerTextarea');
+  updateSlashPopover(null);
+  if (!textarea) return;
+  textarea.value = cmd;
+  sendChatMessage(cmd);
+}
+
+/**
+ * Bind composer input, CJK IME Guard, and Slash Command Popover
  */
 function bindComposerEvents() {
   const textarea = document.getElementById('chatComposerTextarea');
   const sendBtn = document.getElementById('chatSendMsgBtn');
   const interruptBtn = document.getElementById('chatInterruptBtn');
+  const slashTriggerBtn = document.getElementById('chatSlashTriggerBtn');
+  const quickClearBtn = document.getElementById('chatQuickClearBtn');
 
   if (textarea) {
     textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        if (e.isComposing || e.keyCode === 229) return;
+      // 1. Strict CJK IME Composition Guard (open-claude-ui 3.3.2)
+      if (e.isComposing || e.keyCode === 229) return;
+
+      // 2. Roving Focus inside Slash Popover if open
+      if (slashPopoverOpen && filteredSlashCommands.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          slashActiveIndex = (slashActiveIndex + 1) % filteredSlashCommands.length;
+          updateSlashPopover(textarea.value);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          slashActiveIndex = (slashActiveIndex - 1 + filteredSlashCommands.length) % filteredSlashCommands.length;
+          updateSlashPopover(textarea.value);
+          return;
+        }
+        if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+          e.preventDefault();
+          const chosen = filteredSlashCommands[slashActiveIndex];
+          if (chosen) {
+            executeOrFillSlashCommand(chosen.cmd);
+            return;
+          }
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          updateSlashPopover(null);
+          return;
+        }
+      }
+
+      // 3. Standard Enter to send
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         sendChatMessage();
       }
@@ -427,7 +623,42 @@ function bindComposerEvents() {
 
     textarea.addEventListener('input', () => {
       textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+      textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+
+      const val = textarea.value;
+      if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
+        updateSlashPopover(val);
+      } else {
+        updateSlashPopover(null);
+      }
+    });
+
+    textarea.addEventListener('blur', () => {
+      setTimeout(() => updateSlashPopover(null), 180);
+    });
+  }
+
+  if (slashTriggerBtn && textarea) {
+    slashTriggerBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (slashPopoverOpen) {
+        updateSlashPopover(null);
+      } else {
+        if (!textarea.value.startsWith('/')) {
+          textarea.value = '/';
+        }
+        slashActiveIndex = 0;
+        updateSlashPopover(textarea.value);
+        textarea.focus();
+      }
+    });
+  }
+
+  if (quickClearBtn) {
+    quickClearBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      sendChatMessage('/clear');
     });
   }
 
@@ -445,11 +676,12 @@ function bindComposerEvents() {
     });
   }
 
-  // Delegate clicks on starter tips within agentChatMessages
+  // Delegate clicks on starter tips, accordions, and code copy buttons within agentChatMessages
   const msgContainer = document.getElementById('agentChatMessages');
-  if (msgContainer && !msgContainer.dataset.starterBound) {
-    msgContainer.dataset.starterBound = 'true';
+  if (msgContainer && !msgContainer.dataset.delegatedBound) {
+    msgContainer.dataset.delegatedBound = 'true';
     msgContainer.addEventListener('click', (e) => {
+      // 1. Starter tips shuffle
       const shuffleBtn = e.target.closest('#btnShuffleStarterTips');
       if (shuffleBtn) {
         e.preventDefault();
@@ -458,23 +690,119 @@ function bindComposerEvents() {
         return;
       }
 
+      // 2. Starter pill click
       const pill = e.target.closest('.chat-starter-pill:not(.shuffle)');
       if (pill && pill.dataset.prompt) {
         e.preventDefault();
         e.stopPropagation();
-        const textarea = document.getElementById('chatComposerTextarea');
-        if (textarea) {
-          textarea.value = pill.dataset.prompt;
-          textarea.style.height = 'auto';
-          textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        const ta = document.getElementById('chatComposerTextarea');
+        if (ta) {
+          ta.value = pill.dataset.prompt;
+          ta.style.height = 'auto';
+          ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
           if (!isTouchDevice()) {
-            textarea.focus();
-            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+            ta.focus();
+            ta.setSelectionRange(ta.value.length, ta.value.length);
           }
+        }
+        return;
+      }
+
+      // 3. CSS Grid 0fr -> 1fr Accordion toggle
+      const accHeader = e.target.closest('.cds-accordion-header');
+      if (accHeader) {
+        const acc = accHeader.closest('.cds-accordion');
+        if (acc) {
+          const isExpanded = acc.classList.toggle('expanded');
+          const key = acc.dataset.accKey;
+          if (key) {
+            if (isExpanded) expandedAccordions.add(key);
+            else expandedAccordions.delete(key);
+          }
+        }
+        return;
+      }
+
+      // 4. Code Block Copy Button (2.5s Checkmark Decay State Machine)
+      const copyBtn = e.target.closest('.chat-code-copy-btn');
+      if (copyBtn) {
+        const wrapper = copyBtn.closest('.chat-code-wrapper');
+        const codeEl = wrapper ? wrapper.querySelector('pre code') : null;
+        if (codeEl) {
+          const rawCode = codeEl.textContent || '';
+          navigator.clipboard?.writeText(rawCode).then(() => {
+            copyBtn.classList.add('copied');
+            const labelSpan = copyBtn.querySelector('span');
+            if (labelSpan) labelSpan.textContent = '✓ 已复制';
+            setTimeout(() => {
+              copyBtn.classList.remove('copied');
+              if (labelSpan) labelSpan.textContent = '复制';
+            }, 2500);
+          }).catch(() => {});
         }
       }
     });
   }
+}
+
+/**
+ * Global keyboard shortcuts for active Decision / Permission Cards on PC
+ */
+function bindGlobalDecisionShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    const chatContainer = document.getElementById('agentChatContainer');
+    if (!chatContainer || chatContainer.classList.contains('hidden')) return;
+
+    // Ignore if user is typing in an input or textarea
+    const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+    if (activeTag === 'textarea' || activeTag === 'input' || activeTag === 'select') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    const permCard = document.getElementById('chatActiveDecisionCard');
+    if (permCard && permCard.style.pointerEvents !== 'none') {
+      const key = e.key.toLowerCase();
+      if (key === 'y' || key === '1') {
+        const btn = document.getElementById('btnApproveAction');
+        if (btn && !btn.disabled) {
+          e.preventDefault();
+          btn.click();
+        }
+      } else if (key === '3') {
+        const btn = document.getElementById('btnAutoModeAction');
+        if (btn && !btn.disabled) {
+          e.preventDefault();
+          btn.click();
+        }
+      } else if (key === 'n' || key === '4' || key === 'escape') {
+        const btn = document.getElementById('btnRejectAction');
+        if (btn && !btn.disabled) {
+          e.preventDefault();
+          btn.click();
+        }
+      }
+      return;
+    }
+
+    const qCard = document.getElementById('chatActiveQuestionCard');
+    if (qCard && qCard.style.pointerEvents !== 'none') {
+      if (e.key === 'Escape') {
+        const btnCancel = document.getElementById('btnCancelQuestion');
+        if (btnCancel) {
+          e.preventDefault();
+          btnCancel.click();
+        }
+      } else if (/^[1-9]$/.test(e.key)) {
+        const totalQ = parseInt(qCard.dataset.totalQ, 10) || 1;
+        if (totalQ === 1) {
+          const optBtn = qCard.querySelector(`.chat-opt-btn[data-num="${e.key}"]`);
+          if (optBtn && !optBtn.disabled) {
+            e.preventDefault();
+            optBtn.click();
+          }
+        }
+      }
+    }
+  });
 }
 
 /**
@@ -506,16 +834,20 @@ export function sendChatMessage(overrideText) {
   if (!text) return;
 
   stopVoiceInput();
+  updateSlashPopover(null);
 
   const currentSess = getCurrentSessionName();
   if (!currentSess) return;
 
-  // 1. Optimistic append
+  // 1. Optimistic append & pin scroll to bottom
+  isScrollPinned = true;
   appendUserMessageToUI(text);
 
   // 2. Clear input
-  textarea.value = '';
-  textarea.style.height = 'auto';
+  if (textarea) {
+    textarea.value = '';
+    textarea.style.height = 'auto';
+  }
 
   // 3. Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
   sendRawToTmux(text + '\r');
@@ -537,11 +869,11 @@ export function sendChatMessage(overrideText) {
 export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = false) {
   if (!sessionName) return;
 
-  // If switching sessions, clear view immediately to prevent cross-session flash
   if (isSessionSwitch) {
+    isScrollPinned = true;
     const cachedData = sessionHistoryCache.get(sessionName);
     if (cachedData) {
-      renderMessages(sessionName, cachedData);
+      renderMessages(sessionName, cachedData, true);
     } else {
       const container = document.getElementById('agentChatMessages');
       if (container) {
@@ -559,7 +891,6 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // Guard: ignore response if user already switched away from this session
     if (getCurrentSessionName() !== sessionName) {
       return;
     }
@@ -570,22 +901,48 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
     }
 
     sessionHistoryCache.set(sessionName, data);
-    renderMessages(sessionName, data);
+    renderMessages(sessionName, data, isSessionSwitch);
   } catch (err) {
     console.warn('[ChatMode] Failed to fetch chat history for', sessionName, err.message);
   }
 }
 
 /**
- * Render message list strictly for a given session
+ * Wrap <pre><code> blocks in Markdown HTML with a CDS Code Sandbox Header & Copy Button
  */
-function renderMessages(sessionName, data) {
+function enhanceMarkdownCodeBlocks(rawHtml) {
+  if (!rawHtml || !rawHtml.includes('<pre>')) return rawHtml;
+  return rawHtml.replace(/<pre><code(?: class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g, (match, lang, codeContent) => {
+    const displayLang = lang ? escapeHtml(lang) : 'code';
+    return `
+      <div class="chat-code-wrapper">
+        <div class="chat-code-header">
+          <span>${displayLang}</span>
+          <button type="button" class="chat-code-copy-btn" title="复制代码">
+            <i data-lucide="copy"></i>
+            <span>复制</span>
+          </button>
+        </div>
+        <pre><code class="${lang ? 'language-' + escapeHtml(lang) : ''}">${codeContent}</code></pre>
+      </div>
+    `;
+  });
+}
+
+/**
+ * Render message list strictly for a given session with Scroll Pinning & Accordion Persistence
+ */
+function renderMessages(sessionName, data, forceScrollBottom = false) {
   const currentSess = getCurrentSessionName();
   if (sessionName && currentSess && currentSess !== sessionName) return;
 
   const container = document.getElementById('agentChatMessages');
   const agentNameEl = document.getElementById('chatAgentName');
   if (!container) return;
+
+  // Capture previous scroll position before DOM update so we never hijack an unpinned reader
+  const prevScrollTop = container.scrollTop;
+  const userRecentlyScrolled = (performance.now() - lastUserScrollAt) <= SCROLL_COOL_DOWN_MS;
 
   const displaySession = sessionName || currentSess || '主会话';
   const agentLabel = (data && data.agentType) ? data.agentType.toUpperCase() : 'TMUX 智能体';
@@ -599,11 +956,11 @@ function renderMessages(sessionName, data) {
     container.innerHTML = `
       <div class="chat-empty-state">
         <div class="chat-empty-icon">
-          <i data-lucide="sparkles" style="width: 26px; height: 26px; color: var(--neon-cyan); opacity: 0.85;"></i>
+          <i data-lucide="sparkles" style="width: 26px; height: 26px; color: var(--accent-primary, var(--neon-cyan)); opacity: 0.85;"></i>
         </div>
         <div class="chat-empty-title">会话「${escapeHtml(displaySession)}」已就绪</div>
         <div class="chat-empty-desc">
-          在下方输入需求，或点击灵感快捷填入并确认发送：
+          在下方输入需求，或点击灵感胶囊快速填入：
         </div>
         <div class="chat-starter-pills" id="chatStarterPills">
           ${renderStarterPillsHtml()}
@@ -612,27 +969,54 @@ function renderMessages(sessionName, data) {
     `;
     updateStatusBadge('就绪', 'ready');
     if (window.lucide) window.lucide.createIcons();
+    updateScrollFadeMask(container);
     return;
   }
 
   let html = '';
   let hasRenderedActiveQuestion = false;
 
-  for (const msg of messages) {
+  messages.forEach((msg, msgIdx) => {
     const isUser = msg.role === 'user';
+    const isLastMsg = msgIdx === messages.length - 1;
     let bodyHtml = '';
 
-    // Thinking process (clean, minimal)
+    // 1. CSS Grid 0fr -> 1fr Thinking Accordion
     if (msg.thinking) {
+      const accKey = `${displaySession}::${msg.id || msgIdx}::thinking`;
+      const isExpanded = expandedAccordions.has(accKey);
+      const isActivelyThinking = isLastMsg && !msg.content && (!msg.tools || msg.tools.length === 0);
+
       bodyHtml += `
-        <details class="chat-accordion">
-          <summary>▶ 思考过程</summary>
-          <div class="chat-accordion-content">${escapeHtml(msg.thinking)}</div>
-        </details>
+        <div class="cds-accordion ${isExpanded || isActivelyThinking ? 'expanded' : ''}" data-acc-key="${escapeHtml(accKey)}">
+          <div class="cds-accordion-header">
+            <div class="cds-accordion-header-left">
+              ${isActivelyThinking ? `
+                <span class="cds-quiet-dots">
+                  <span class="cds-quiet-dot"></span>
+                  <span class="cds-quiet-dot"></span>
+                  <span class="cds-quiet-dot"></span>
+                </span>
+                <span class="cds-shimmer-text cds-accordion-title">正在深入思考...</span>
+              ` : `
+                <i data-lucide="sparkles" style="width: 13px; height: 13px;"></i>
+                <span class="cds-accordion-title">思考过程</span>
+              `}
+            </div>
+            <span class="cds-accordion-chevron">
+              <i data-lucide="chevron-down"></i>
+            </span>
+          </div>
+          <div class="cds-accordion-grid">
+            <div class="cds-accordion-inner">
+              <div class="cds-accordion-content">${escapeHtml(msg.thinking)}</div>
+            </div>
+          </div>
+        </div>
       `;
     }
 
-    // Tool executions
+    // 2. Tool Executions & Question Cards
     let hasAskQuestionTool = false;
     if (msg.tools && msg.tools.length > 0) {
       const askTools = msg.tools.filter(t => t.isAskQuestion || t.name === 'AskUserQuestion');
@@ -655,23 +1039,53 @@ function renderMessages(sessionName, data) {
 
       if (otherTools.length > 0) {
         const toolNames = otherTools.map(t => t.name).join(', ');
+        const accKey = `${displaySession}::${msg.id || msgIdx}::tools`;
+        const isExpanded = expandedAccordions.has(accKey);
+
+        const structuredToolsHtml = otherTools.map(t => {
+          const inputSummary = t.input
+            ? (t.input.command || t.input.file_path || t.input.filePath || t.input.pattern || JSON.stringify(t.input))
+            : '';
+          return `
+            <div class="cds-tool-item">
+              <div class="cds-tool-item-head">
+                <i data-lucide="wrench" style="width: 11px; height: 11px;"></i>
+                <span>${escapeHtml(t.name)}</span>
+              </div>
+              ${inputSummary ? `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+
         bodyHtml += `
-          <details class="chat-accordion">
-            <summary>▶ 工具执行: ${escapeHtml(toolNames)}</summary>
-            <div class="chat-accordion-content">${escapeHtml(JSON.stringify(otherTools, null, 2))}</div>
-          </details>
+          <div class="cds-accordion ${isExpanded ? 'expanded' : ''}" data-acc-key="${escapeHtml(accKey)}">
+            <div class="cds-accordion-header">
+              <div class="cds-accordion-header-left">
+                <i data-lucide="terminal" style="width: 13px; height: 13px;"></i>
+                <span class="cds-accordion-title">已调用 ${otherTools.length} 项工具: ${escapeHtml(toolNames)}</span>
+              </div>
+              <span class="cds-accordion-chevron">
+                <i data-lucide="chevron-down"></i>
+              </span>
+            </div>
+            <div class="cds-accordion-grid">
+              <div class="cds-accordion-inner">
+                <div class="cds-accordion-content">${structuredToolsHtml}</div>
+              </div>
+            </div>
+          </div>
         `;
       }
     }
 
-    // Markdown / Content
+    // 3. Markdown / Assistant Prose Content
     if (msg.content) {
-      // If AskUserQuestion card is already rendered, skip raw text fallback that repeats questions
       const isQuestionFallback = hasAskQuestionTool && msg.content.includes('智能体发起提问');
       if (!isQuestionFallback) {
         if (!isUser && window.marked) {
           try {
-            bodyHtml += `<div>${window.marked.parse(msg.content)}</div>`;
+            const parsedHtml = window.marked.parse(msg.content);
+            bodyHtml += `<div class="chat-prose-body">${enhanceMarkdownCodeBlocks(parsedHtml)}</div>`;
           } catch (e) {
             bodyHtml += `<div>${escapeHtml(msg.content)}</div>`;
           }
@@ -682,7 +1096,7 @@ function renderMessages(sessionName, data) {
     }
 
     html += `
-      <div class="chat-msg-row ${isUser ? 'user' : 'assistant'}" id="${msg.id}">
+      <div class="chat-msg-row ${isUser ? 'user' : 'assistant'}" id="${escapeHtml(msg.id || ('msg-' + msgIdx))}">
         <div class="chat-bubble-wrap">
           <div class="chat-bubble">
             ${bodyHtml}
@@ -690,7 +1104,7 @@ function renderMessages(sessionName, data) {
         </div>
       </div>
     `;
-  }
+  });
 
   // Pending action card (ask_question / permission / yn)
   if (data.pendingAction) {
@@ -719,7 +1133,20 @@ function renderMessages(sessionName, data) {
     window.lucide.createIcons();
   }
 
-  container.scrollTop = container.scrollHeight;
+  // Apply open-claude-ui Scroll Pinning Physics:
+  // Only auto-scroll to bottom if pinned (or forced on session switch) AND user hasn't scrolled in last 150ms
+  if (forceScrollBottom || (isScrollPinned && !userRecentlyScrolled)) {
+    scrollToChatBottom(false);
+  } else {
+    programmaticScroll = true;
+    container.scrollTop = prevScrollTop;
+    updateScrollFadeMask(container);
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const jumpBtn = document.getElementById('chatJumpBottomBtn');
+    if (jumpBtn && distanceFromBottom > 120) {
+      jumpBtn.classList.add('visible');
+    }
+  }
 }
 
 /**
@@ -787,7 +1214,8 @@ function renderQuestionCardHtml(questions, isInteractive = false, toolUseId = ''
         <div class="chat-decision-footer">
           <button class="chat-action-btn reject" id="btnCancelQuestion" title="取消 (Esc)">
             <i data-lucide="x"></i>
-            <span>取消 (Esc)</span>
+            <span>取消</span>
+            <kbd class="chat-kbd">Esc</kbd>
           </button>
           ${questions.length > 1 ? `
             <button class="chat-action-btn approve" id="btnSubmitAllQuestions" disabled title="请完成所有问题选择后提交">
@@ -817,7 +1245,7 @@ function renderQuestionCardHtml(questions, isInteractive = false, toolUseId = ''
 }
 
 /**
- * Render interactive Tool Permission Approval card
+ * Render interactive Tool Permission Approval card (3-Action MCP Decision Array)
  */
 function renderPermissionCard(pending) {
   const toolName = pending.toolName || '工具执行';
@@ -832,7 +1260,7 @@ function renderPermissionCard(pending) {
       <div class="chat-decision-header">
         <div class="chat-decision-header-left">
           <i data-lucide="shield-alert" class="chat-decision-icon warning"></i>
-          <span class="chat-decision-title">⚠️ 智能体请求权限审批</span>
+          <span class="chat-decision-title">智能体请求工具执行授权</span>
         </div>
         <span class="chat-perm-tool-badge">${escapeHtml(toolName)}</span>
       </div>
@@ -859,19 +1287,22 @@ function renderPermissionCard(pending) {
       </div>
 
       <div class="chat-decision-actions">
-        <button class="chat-action-btn approve" id="btnApproveAction" title="允许本次执行 (1 / Yes)">
+        <button class="chat-action-btn approve" id="btnApproveAction" title="允许本次执行 (快捷键 1 或 Y)">
           <i data-lucide="check"></i>
-          <span>批准执行 (Yes)</span>
+          <span>单次批准</span>
+          <kbd class="chat-kbd">Y</kbd>
         </button>
         ${canAutoMode ? `
-          <button class="chat-action-btn auto-mode" id="btnAutoModeAction" title="切换到自动模式，后续无需频繁确认 (3)">
+          <button class="chat-action-btn auto-mode" id="btnAutoModeAction" title="切换到自动模式，后续相同操作免确认 (快捷键 3)">
             <i data-lucide="zap"></i>
-            <span>切换自动模式</span>
+            <span>始终允许</span>
+            <kbd class="chat-kbd">3</kbd>
           </button>
         ` : ''}
-        <button class="chat-action-btn reject" id="btnRejectAction" title="拒绝执行此操作 (4 / No)">
+        <button class="chat-action-btn reject" id="btnRejectAction" title="拒绝执行此操作 (快捷键 4 或 N)">
           <i data-lucide="x"></i>
-          <span>拒绝 (No)</span>
+          <span>拒绝</span>
+          <kbd class="chat-kbd">N</kbd>
         </button>
       </div>
     </div>
@@ -893,11 +1324,13 @@ function renderYnDecisionCard(pending) {
       <div class="chat-decision-actions">
         <button class="chat-action-btn approve" id="btnApproveAction">
           <i data-lucide="check"></i>
-          <span>批准 (y)</span>
+          <span>批准</span>
+          <kbd class="chat-kbd">Y</kbd>
         </button>
         <button class="chat-action-btn reject" id="btnRejectAction">
           <i data-lucide="x"></i>
-          <span>拒绝 (n)</span>
+          <span>拒绝</span>
+          <kbd class="chat-kbd">N</kbd>
         </button>
       </div>
     </div>
@@ -933,7 +1366,6 @@ function bindDecisionCardEvents(pending) {
     }
 
     if (totalQ === 1) {
-      // Single question mode: direct click to answer
       card.querySelectorAll('.chat-opt-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
@@ -957,8 +1389,7 @@ function bindDecisionCardEvents(pending) {
         });
       });
     } else {
-      // Multi-question mode: track selected option per question block
-      const selectedAnswers = new Map(); // qIdx -> num
+      const selectedAnswers = new Map();
 
       card.querySelectorAll('.chat-opt-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -974,7 +1405,6 @@ function bindDecisionCardEvents(pending) {
           btn.classList.add('selected');
           selectedAnswers.set(qIdx, num);
 
-          // Check if all questions are answered
           if (selectedAnswers.size >= totalQ && btnSubmitAll) {
             btnSubmitAll.disabled = false;
           }
@@ -991,7 +1421,6 @@ function bindDecisionCardEvents(pending) {
           card.style.opacity = '0.7';
           card.style.pointerEvents = 'none';
 
-          // Send sequential keypresses to tmux
           const sortedKeys = Array.from({ length: totalQ }, (_, i) => selectedAnswers.get(String(i)) || '1');
           let delay = 0;
           sortedKeys.forEach(key => {
@@ -1001,7 +1430,6 @@ function bindDecisionCardEvents(pending) {
             delay += 250;
           });
 
-          // Confirm submit review screen
           setTimeout(() => {
             sendRawToTmux('1\r');
             updateStatusBadge('已提交回答，执行中...', 'working');
@@ -1125,7 +1553,6 @@ function appendUserMessageToUI(text) {
   const container = document.getElementById('agentChatMessages');
   if (!container) return;
 
-  // Clear empty state placeholder if present
   const emptyState = container.querySelector('.chat-empty-state');
   if (emptyState) {
     container.innerHTML = '';
@@ -1139,7 +1566,7 @@ function appendUserMessageToUI(text) {
     </div>
   `;
   container.appendChild(row);
-  container.scrollTop = container.scrollHeight;
+  scrollToChatBottom(true);
 }
 
 /**

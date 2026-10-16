@@ -274,9 +274,9 @@ export function renderSessions(sessions) {
 
     card.innerHTML = `
       <div class="session-info">
-        <div class="session-name-wrapper" style="display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 140px;">
-          <span class="session-status-dot" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background-color: ${session.attached ? 'var(--neon-green)' : 'rgba(255, 255, 255, 0.25)'}; box-shadow: ${session.attached ? 'var(--glow-green)' : 'none'};"></span>
-          <div class="session-name" title="${session.name}" style="max-width: 120px;">${session.name}</div>
+        <div class="session-name-wrapper">
+          <span class="session-status-dot ${session.attached ? 'attached' : 'detached'}" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}"></span>
+          <div class="session-name" title="${session.name}">${session.name}</div>
         </div>
         <div class="session-workspace" title="${session.path || '默认工作区'}">
           <i data-lucide="folder"></i>
@@ -799,7 +799,7 @@ function renderSessionFlatModels(agent) {
       <div class="model-card-inner">
         <div class="model-provider-tag">${item.providerName}</div>
         <div class="model-card-title">
-          <i data-lucide="${item.provider === 'kimi' ? 'sparkles' : (item.provider === 'tencent' ? 'cloud' : 'cpu')}" style="width: 13px; height: 13px;"></i>
+          <i data-lucide="${item.provider === 'kimi' ? 'sparkles' : (item.provider === 'tencent' ? 'cloud' : (item.provider === 'oauth' ? 'shield-check' : 'cpu'))}" style="width: 13px; height: 13px;"></i>
           <span>${item.modelName}</span>
         </div>
         <div class="model-card-desc" title="${item.desc}">${item.desc}</div>
@@ -1343,7 +1343,30 @@ loadWorkspaces().then(async () => {
   const agentCfgClaude = document.getElementById('agentCfgClaude');
   const agentCfgCodex = document.getElementById('agentCfgCodex');
   const agentCfgKimi = document.getElementById('agentCfgKimi');
+  const agentCfgClaudeOAuth = document.getElementById('agentCfgClaudeOAuth');
+  const claudeOAuthToggleCard = document.getElementById('claudeOAuthToggleCard');
+  const claudeOAuthStatusBadge = document.getElementById('claudeOAuthStatusBadge');
   const saveAgentSettingsBtn = document.getElementById('saveAgentSettingsBtn');
+
+  function updateClaudeOAuthUI(checked) {
+    const isChecked = !!checked;
+    if (agentCfgClaudeOAuth) {
+      agentCfgClaudeOAuth.checked = isChecked;
+    }
+    if (claudeOAuthToggleCard) {
+      claudeOAuthToggleCard.classList.toggle('checked', isChecked);
+    }
+    if (claudeOAuthStatusBadge) {
+      claudeOAuthStatusBadge.textContent = isChecked ? 'OAuth 官方直连' : '网关注入模式';
+      claudeOAuthStatusBadge.classList.toggle('active', isChecked);
+    }
+  }
+
+  if (agentCfgClaudeOAuth) {
+    agentCfgClaudeOAuth.addEventListener('change', () => {
+      updateClaudeOAuthUI(agentCfgClaudeOAuth.checked);
+    });
+  }
 
   async function loadInviteCodes() {
     try {
@@ -1399,16 +1422,21 @@ loadWorkspaces().then(async () => {
       
       const adminTabsHeader = document.getElementById('adminTabsHeader');
       const tabInviteCodesBtn = document.getElementById('tabInviteCodesBtn');
+      const tabAgentsBtn = document.getElementById('tabAgentsBtn');
       const tabLlmGatewayBtn = document.getElementById('tabLlmGatewayBtn');
       const adminAgentCfgSection = document.getElementById('adminAgentCfgSection');
       
       if (adminTabsHeader) adminTabsHeader.classList.remove('hidden');
-      if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
       if (tabLlmGatewayBtn) tabLlmGatewayBtn.classList.remove('hidden');
       if (adminAgentCfgSection) adminAgentCfgSection.classList.remove('hidden');
 
-      // Default to invite codes tab on open
-      if (tabInviteCodesBtn) tabInviteCodesBtn.click();
+      if (state.multiUserEnabled) {
+        if (tabInviteCodesBtn) tabInviteCodesBtn.classList.remove('hidden');
+        if (tabInviteCodesBtn) tabInviteCodesBtn.click();
+      } else {
+        if (tabInviteCodesBtn) tabInviteCodesBtn.classList.add('hidden');
+        if (tabAgentsBtn) tabAgentsBtn.click();
+      }
     });
   }
 
@@ -1555,7 +1583,7 @@ loadWorkspaces().then(async () => {
       tabContentAgents.classList.remove('hidden');
       tabContentInviteCodes.classList.add('hidden');
       if (tabContentAppIcons) tabContentAppIcons.classList.add('hidden');
-      if (state.role === 'admin') {
+      if (state.role === 'admin' || !state.multiUserEnabled) {
         loadAgentSettings();
       }
       loadUserKeys();
@@ -1573,6 +1601,7 @@ loadWorkspaces().then(async () => {
         if (agentCfgClaude) agentCfgClaude.checked = enabled.includes('claude');
         if (agentCfgCodex) agentCfgCodex.checked = enabled.includes('codex');
         if (agentCfgKimi) agentCfgKimi.checked = enabled.includes('kimi');
+        updateClaudeOAuthUI(!!data.claudeOAuthMode);
       }
     } catch (err) {
       console.error('Failed to load admin agent settings:', err);
@@ -1587,18 +1616,22 @@ loadWorkspaces().then(async () => {
       if (agentCfgClaude && agentCfgClaude.checked) enabledAgents.push('claude');
       if (agentCfgCodex && agentCfgCodex.checked) enabledAgents.push('codex');
       if (agentCfgKimi && agentCfgKimi.checked) enabledAgents.push('kimi');
+      const claudeOAuthMode = !!(agentCfgClaudeOAuth && agentCfgClaudeOAuth.checked);
 
       try {
         const res = await fetch('/api/admin/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabledAgents })
+          body: JSON.stringify({ enabledAgents, claudeOAuthMode })
         });
         if (res.ok) {
           const data = await res.json();
           state.enabledAgents = data.settings.enabledAgents;
+          state.claudeOAuthMode = !!data.settings.claudeOAuthMode;
+          updateClaudeOAuthUI(state.claudeOAuthMode);
           applyAgentVisibility();
-          alert('智能体配置保存成功！');
+          await loadLlmModels();
+          alert('全局智能体配置保存成功！');
         } else {
           const data = await res.json();
           alert(data.error || '保存配置失败');
@@ -1617,6 +1650,8 @@ loadWorkspaces().then(async () => {
       if (res.ok) {
         const settings = await res.json();
         state.enabledAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
+        state.claudeOAuthMode = !!settings.claudeOAuthMode;
+        updateClaudeOAuthUI(state.claudeOAuthMode);
         applyAgentVisibility();
         if (settings.appIcon) {
           applyAppIcon(settings.appIcon);
@@ -1736,14 +1771,16 @@ loadWorkspaces().then(async () => {
       // Load global settings for showing/hiding disabled agents
       loadSettings();
 
+      // Always show System Management panel button for admins or in single-user mode
+      if (data.role === 'admin' || !data.multiUserEnabled) {
+        if (adminPanelBtn) {
+          adminPanelBtn.classList.remove('hidden');
+        }
+      }
+
       if (data.multiUserEnabled) {
         if (userKeysBtn) {
           userKeysBtn.classList.remove('hidden');
-        }
-        if (data.role === 'admin') {
-          if (adminPanelBtn) {
-            adminPanelBtn.classList.remove('hidden');
-          }
         }
         // Update DECK CONTROLS to show the current username directly
         if (data.username) {

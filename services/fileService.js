@@ -660,6 +660,20 @@ const getUserHomeDir = (username) => {
       console.warn(`[userHome] Could not copy settings.json: ${e.message}`);
     }
   }
+  // Share Claude OAuth .credentials.json from system home if present and missing in user home
+  const sysClaudeCredsPath = path.join(sysHome, '.claude', '.credentials.json');
+  const userClaudeCredsPath = path.join(userClaudeDir, '.credentials.json');
+  if (fs.existsSync(sysClaudeCredsPath)) {
+    let credsExists = false;
+    try { fs.lstatSync(userClaudeCredsPath); credsExists = true; } catch (e) {}
+    if (!credsExists) {
+      try {
+        fs.symlinkSync(sysClaudeCredsPath, userClaudeCredsPath);
+      } catch (e) {
+        console.warn(`[userHome] Could not symlink .claude/.credentials.json: ${e.message}`);
+      }
+    }
+  }
   ensureClaudeSettings(userHome);
 
   // 1.2 Initialize user's private .codex directory
@@ -1139,10 +1153,11 @@ const ensureBashrcSourcesApiKeys = (userHome) => {
   }
 };
 
-const updateUserKeysFile = (username, keys) => {
-  if (!MULTI_USER_ENABLED || !username) return;
+const updateUserKeysFile = (username, keys = {}) => {
+  const userHome = (MULTI_USER_ENABLED && username)
+    ? path.join(PROJECT_ROOT, 'user_data', username, 'home')
+    : getHomeDir();
 
-  const userHome = path.join(PROJECT_ROOT, 'user_data', username, 'home');
   if (!fs.existsSync(userHome)) {
     try {
       fs.mkdirSync(userHome, { recursive: true });
@@ -1152,6 +1167,13 @@ const updateUserKeysFile = (username, keys) => {
     }
   }
   const keysFilePath = path.join(userHome, '.api_keys');
+
+  let claudeOAuthMode = false;
+  try {
+    const db = require('./dbService');
+    const globalSettings = db.getSettings();
+    claudeOAuthMode = !!globalSettings.claudeOAuthMode;
+  } catch (e) {}
 
   let lines = [];
   const shellescapeVal = (val) => {
@@ -1167,8 +1189,15 @@ const updateUserKeysFile = (username, keys) => {
       lines.push(`unset ANTHROPIC_BASE_URL`);
     }
     lines.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
-  }
-  if (keys.claudeModel) {
+    if (keys.claudeModel) {
+      lines.push(`export ANTHROPIC_MODEL=${shellescapeVal(keys.claudeModel)}`);
+    }
+  } else if (claudeOAuthMode) {
+    lines.push(`unset ANTHROPIC_BASE_URL`);
+    lines.push(`unset ANTHROPIC_API_KEY`);
+    lines.push(`unset ANTHROPIC_AUTH_TOKEN`);
+    lines.push(`unset ANTHROPIC_MODEL`);
+  } else if (keys.claudeModel) {
     lines.push(`export ANTHROPIC_MODEL=${shellescapeVal(keys.claudeModel)}`);
   }
   if (keys.codex) {
@@ -1198,7 +1227,7 @@ const updateUserKeysFile = (username, keys) => {
   }
 
   try {
-    fs.writeFileSync(keysFilePath, lines.join('\n') + '\n', 'utf8');
+    fs.writeFileSync(keysFilePath, lines.length > 0 ? (lines.join('\n') + '\n') : '', 'utf8');
     chownToSudoUser(keysFilePath);
     ensureBashrcSourcesApiKeys(userHome);
   } catch (err) {
@@ -1287,6 +1316,35 @@ max_context_size = 262144
   }
 };
 
+const syncAllUserKeysFiles = () => {
+  try {
+    const db = require('./dbService');
+    const users = db.getUsers();
+    if (!MULTI_USER_ENABLED) {
+      const adminObj = users['admin'] || {};
+      updateUserKeysFile('admin', adminObj.apiKeys || {});
+      return;
+    }
+    const synced = new Set();
+    for (const [uKey, uObj] of Object.entries(users)) {
+      const uname = (uObj && uObj.username) ? uObj.username : uKey;
+      updateUserKeysFile(uname, (uObj && uObj.apiKeys) ? uObj.apiKeys : {});
+      synced.add(uname.toLowerCase());
+    }
+    const userDataDir = path.join(PROJECT_ROOT, 'user_data');
+    if (fs.existsSync(userDataDir)) {
+      const entries = fs.readdirSync(userDataDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && !synced.has(entry.name.toLowerCase())) {
+          updateUserKeysFile(entry.name, {});
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[fileService] syncAllUserKeysFiles failed: ${err.message}`);
+  }
+};
+
 module.exports = {
   PROJECT_ROOT,
   WORKSPACES_FILE,
@@ -1299,6 +1357,7 @@ module.exports = {
   getUserHomeDir,
   getDefaultWorkspacePath,
   updateUserKeysFile,
+  syncAllUserKeysFiles,
   getSystemDefaultKeys,
   ensureClaudeSettings,
   ensureCodexConfig,

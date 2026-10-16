@@ -148,8 +148,9 @@ workspaces/
 # Backup files
 *.bak
 
-# Build distribution output
+# Build distribution output & runtime synced icons
 public/dist/
+public/images/
 
 # Local backups directory
 backups/

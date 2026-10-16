@@ -148,10 +148,13 @@ module.exports = {
   getSettings: () => {
     const current = readJSON(SETTINGS_FILE, {});
     if (!current.enabledAgents) {
-      current.enabledAgents = ['default', 'agy', 'claude', 'codex'];
+      current.enabledAgents = ['default', 'agy', 'claude', 'codex', 'kimi'];
     }
     if (!current.appIcon) {
       current.appIcon = 'shape-diamond';
+    }
+    if (current.claudeOAuthMode === undefined) {
+      current.claudeOAuthMode = false;
     }
     return current;
   },

@@ -14,6 +14,7 @@ const { startMonitoring } = require('./services/monitorService');
 const { initSocket } = require('./sockets/terminal');
 const { runMigration } = require('./services/dbService');
 const { initClaudeConfig } = require('./services/fileService');
+const { initActiveIcon } = require('./services/iconService');
 const apiRoutes = require('./routes/api');
 const llmGatewayRoutes = require('./routes/llmGateway');
 const imBot = require('./im-bot');
@@ -23,6 +24,9 @@ runMigration();
 
 // Initialize Claude Code presets (theme: dark, trust folder bypass)
 initClaudeConfig();
+
+// Ensure public/images/ contains active icon theme files
+initActiveIcon();
 
 // Helper to get HTML file path (prefer public/dist/ if build exists, otherwise public/)
 const getHtmlPath = (filename) => {

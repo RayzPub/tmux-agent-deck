@@ -84,13 +84,24 @@ export function initVisualViewportLinkage() {
       );
     }
 
-    // Agent chat composer linkage if active
+    // Agent chat container linkage: shrink container above virtual keyboard so messages are never occluded
+    const agentChatContainer = document.getElementById('agentChatContainer');
     const agentComposer = document.querySelector('.agent-chat-composer');
     if (agentComposer) {
+      agentComposer.style.transform = '';
+    }
+    if (agentChatContainer && !agentChatContainer.classList.contains('hidden')) {
       if (isKeyboardOpen) {
-        agentComposer.style.transform = `translateY(-${bottomOffset}px)`;
+        agentChatContainer.style.paddingBottom = `${bottomOffset}px`;
       } else {
-        agentComposer.style.transform = '';
+        agentChatContainer.style.paddingBottom = '0px';
+      }
+      const msgStream = document.getElementById('agentChatMessages');
+      if (msgStream && isKeyboardOpen) {
+        const dist = msgStream.scrollHeight - msgStream.scrollTop - msgStream.clientHeight;
+        if (dist <= 180) {
+          msgStream.scrollTop = msgStream.scrollHeight;
+        }
       }
     }
 
