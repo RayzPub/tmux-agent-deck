@@ -144,9 +144,9 @@ if (typeof require !== 'undefined') {
         { token: 'function', foreground: 'ffcc00' }
       ],
       colors: {
-        'editor.background': '#0d1220',
+        'editor.background': '#162033',
         'editor.foreground': '#f2f5fa',
-        'editor.lineHighlightBackground': '#141c30',
+        'editor.lineHighlightBackground': '#1d2a45',
         'editorCursor.foreground': '#00f0ff',
         'editor.selectionBackground': 'rgba(0, 240, 255, 0.2)',
         'editorLineNumber.foreground': '#4e5866',

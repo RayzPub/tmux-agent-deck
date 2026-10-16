@@ -27,8 +27,8 @@ export function updateMetaThemeColor(isLight) {
   const meta = document.getElementById('pwaThemeColor');
   if (meta) {
     // In light mode, make it white (#ffffff) to blend with the light theme header
-    // In dark mode, match surface-0 (#0b0f19) to seamlessly blend PWA titlebar/window frame with the top header
-    meta.setAttribute('content', isLight ? '#ffffff' : '#0b0f19');
+    // In dark mode, match surface-0 (#141a29) to seamlessly blend PWA titlebar/window frame with the top header
+    meta.setAttribute('content', isLight ? '#ffffff' : '#141a29');
   }
 }
 

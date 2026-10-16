@@ -4,8 +4,8 @@
   "description": "Cyberpunk CCNOW Console",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b0f19",
-  "theme_color": "#0b0f19",
+  "background_color": "#141a29",
+  "theme_color": "#141a29",
   "orientation": "any",
   "icons": [
     {

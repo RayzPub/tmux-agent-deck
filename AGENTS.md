@@ -76,7 +76,7 @@ When integrating or modifying execution flows for **Claude Code** and **OpenAI C
 
 - **详细 UI 设计与交互物理规范文档**：完整的设计 Token、四层表面海拔、单边框法则、双环聚焦阴影、流式滚动锁止与响应式容器查询规范请参考 **[docs/ui_design_spec.md](docs/ui_design_spec.md)**。
 - **双主题与四层表面架构机制 (`Surface 0 ~ 3`)**：
-  - 默认深色：Cyberpunk 宇宙暗夜蓝灰赛博主题（根作用域 `:root`，`--surface-0: #0b0f19` ➔ `--surface-1: #111726` ➔ `--surface-2: #172033` ➔ `--surface-3: #1e2942`）。
+  - 默认深色：Cyberpunk 宇宙暗夜蓝灰赛博主题（根作用域 `:root`，`--surface-0: #141a29` ➔ `--surface-1: #1c253b` ➔ `--surface-2: #202a42` ➔ `--surface-3: #283858`）。
   - 浅色极简：通过 `document.body` 挂载 `.light-minimalist` 类实现（`body.light-minimalist`，`--surface-0: #f4f5f8` ➔ `--surface-1: #fafbfc` ➔ `--surface-2: #ffffff` ➔ `--surface-3: #ffffff`）。
 - **全要素双态适配要求（强制）**：
   - 任何新增的 UI 组件（弹窗、侧边栏、选项卡片、输入框、徽章、下拉菜单、登录/欢迎页）**必须同步编写 `body.light-minimalist` 浅色适配样式**。
