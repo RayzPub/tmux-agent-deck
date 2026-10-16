@@ -819,7 +819,7 @@ export function sendRawToTmux(text) {
     }
   }
   if (cached && cached.socket) {
-    cached.socket.emit('terminal-input', text);
+    cached.socket.emit('terminal-input', text, { exitCopyMode: true });
   } else {
     console.warn('[ChatMode] Unable to send to tmux: session socket not found for', currentSess);
   }

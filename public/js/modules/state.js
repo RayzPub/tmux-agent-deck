@@ -26,10 +26,10 @@ export const state = {
   lastSelection: '',
   themeConstants: {
     DARK: {
-      background: '#030307',
+      background: '#0d1220',
       foreground: '#00f0ff',
       cursor: '#ff007f',
-      cursorAccent: '#030307',
+      cursorAccent: '#0d1220',
       selectionBackground: 'rgba(255, 0, 127, 0.3)',
       black: '#000000',
       red: '#ff0055',

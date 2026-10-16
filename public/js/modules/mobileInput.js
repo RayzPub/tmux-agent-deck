@@ -121,21 +121,36 @@ export function initVisualViewportLinkage() {
       }, 50);
     }
 
-    // Fit terminal dynamically to visible region
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      try {
-        fitTerminal();
-      } catch (e) {}
-    }, 120);
+    // Ensure terminal view is pinned to bottom when keyboard toggles
+    if (state.currentSession) {
+      const cached = state.sessionCache.get(state.currentSession);
+      if (cached && cached.term) {
+        cached.term.scrollToBottom();
+      }
+    }
+
+    // Only refit terminal geometry if keyboard is NOT active (preventing TUI reflow while typing)
+    if (!isKeyboardOpen) {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        try {
+          fitTerminal();
+        } catch (e) {}
+      }, 150);
+    }
   };
 
   window.visualViewport.addEventListener('resize', handleViewportChange);
-  window.visualViewport.addEventListener('scroll', handleViewportChange);
 
   // Focus and blur hooks for rapid keyboard transition
   if (mobileInput) {
     mobileInput.addEventListener('focus', () => {
+      if (state.currentSession) {
+        const cached = state.sessionCache.get(state.currentSession);
+        if (cached && cached.socket) {
+          cached.socket.emit('exit-copy-mode');
+        }
+      }
       setTimeout(handleViewportChange, 60);
       setTimeout(handleViewportChange, 260);
     });
@@ -192,14 +207,18 @@ export function initMobileInput() {
       if (state.currentSession) {
         const cached = state.sessionCache.get(state.currentSession);
         if (cached && cached.socket) {
+          // Scroll client terminal to bottom before sending
+          if (cached.term) {
+            cached.term.scrollToBottom();
+          }
           const cleanText = text.trim();
           if (cleanText) {
-            cached.socket.emit('terminal-input', cleanText + '\r');
+            cached.socket.emit('terminal-input', cleanText + '\r', { exitCopyMode: true });
             mobileCommandInput.value = '';
             autoResizeMobileInput(mobileCommandInput);
             mobileCommandInput.blur();
           } else {
-            cached.socket.emit('terminal-input', '\r');
+            cached.socket.emit('terminal-input', '\r', { exitCopyMode: true });
             mobileCommandInput.value = '';
             autoResizeMobileInput(mobileCommandInput);
           }

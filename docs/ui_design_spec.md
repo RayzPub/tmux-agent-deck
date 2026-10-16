@@ -12,10 +12,10 @@
 
 | 表面层级 | CSS Token | 物理定位与适用场景 | 深色赛博 (`:root`) | 浅色极简 (`body.light-minimalist`) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Surface 0** | `--surface-0` | **下沉底槽**：左侧侧拉栏 (`aside.sidebar`)、顶栏、分段胶囊凹槽、内嵌输入框底槽 | `#060810` | `#f4f5f8` / `#f1f5f9` |
-| **Surface 1** | `--surface-1` | **主工作台画布**：主工作区 (`.terminal-workspace`)、Chat 消息流背景、Assistant 散文层 | `#0a0d16` | `#fafbfc` / `#f8fafc` |
-| **Surface 2** | `--surface-2` | **悬浮容器层**：会话卡片 (`.session-card`)、代码块、折叠面板、项目大盘卡片、登录卡片 | `#101524` | `#ffffff` |
-| **Surface 3** | `--surface-3` | **高阶浮层与激活胶囊**：双环输入舱、分段控制器激活滑块、下拉菜单、斜杠指令浮层、弹窗 | `#171e31` | `#ffffff` (配双环阴影) |
+| **Surface 0** | `--surface-0` | **下沉底槽**：左侧侧拉栏 (`aside.sidebar`)、顶栏、PWA 顶窗融合、分段胶囊凹槽、内嵌输入框底槽 | `#0b0f19` | `#f4f5f8` / `#f1f5f9` |
+| **Surface 1** | `--surface-1` | **主工作台画布**：主工作区 (`.terminal-workspace`)、Chat 消息流背景、Assistant 散文层 | `#111726` | `#fafbfc` / `#f8fafc` |
+| **Surface 2** | `--surface-2` | **悬浮容器层**：会话卡片 (`.session-card`)、代码块、折叠面板、项目大盘卡片、登录卡片 | `#172033` / `rgba(22, 30, 49, 0.88)` | `#ffffff` |
+| **Surface 3** | `--surface-3` | **高阶浮层与激活胶囊**：双环输入舱、分段控制器激活滑块、下拉菜单、斜杠指令浮层、弹窗 | `#1e2942` | `#ffffff` (配双环阴影) |
 
 ### 1.2 核心色彩语义映射标准
 

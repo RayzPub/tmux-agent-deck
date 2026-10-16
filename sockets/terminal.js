@@ -2,7 +2,7 @@ const pty = require('node-pty');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
-const { getRunUser, getTmuxCommandForUser } = require('../services/tmuxService');
+const { getRunUser, getTmuxCommandForUser, execTmux } = require('../services/tmuxService');
 const { getHomeDir, getUserWorkspaceRoot, getDefaultWorkspacePath, getUserHomeDir } = require('../services/fileService');
 const { JWT_SECRET, MULTI_USER_ENABLED, PROJECT_ROOT } = require('../config');
 
@@ -216,11 +216,14 @@ const initSocket = (io) => {
         if (kimiModel) ptyEnv.KIMI_MODEL = kimiModel;
       }
 
+      let lastCols = cols || 80;
+      let lastRows = rows || 24;
+
       try {
         ptyProcess = pty.spawn(shell, args, {
           name: 'xterm-256color',
-          cols: cols || 80,
-          rows: rows || 24,
+          cols: lastCols,
+          rows: lastRows,
           cwd: workspacePath,
           env: ptyEnv
         });
@@ -244,14 +247,50 @@ const initSocket = (io) => {
       }
     });
 
-    socket.on('terminal-input', (data) => {
-      if (ptyProcess) {
+    const cancelTmuxCopyMode = (callback) => {
+      if (socket.sessionName) {
+        let physicalSession = socket.sessionName;
+        if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
+          physicalSession = `u_${socket.user.username}_${socket.sessionName}`;
+        }
+        execTmux(['copy-mode', '-q', '-t', physicalSession], (err) => {
+          if (typeof callback === 'function') callback(!err);
+        }, socket.user ? socket.user.username : null);
+      } else if (typeof callback === 'function') {
+        callback(false);
+      }
+    };
+
+    socket.on('exit-copy-mode', (callback) => {
+      cancelTmuxCopyMode(callback);
+    });
+
+    socket.on('terminal-input', (data, opts) => {
+      if (!ptyProcess) return;
+
+      const needsExitCopyMode = Boolean(
+        (opts && opts.exitCopyMode) ||
+        (typeof data === 'string' && (data.includes('\r') || data.includes('\n')))
+      );
+
+      if (needsExitCopyMode && socket.sessionName) {
+        cancelTmuxCopyMode(() => {
+          if (ptyProcess) {
+            ptyProcess.write(data);
+          }
+        });
+      } else {
         ptyProcess.write(data);
       }
     });
 
     socket.on('resize', ({ cols, rows }) => {
-      if (ptyProcess) {
+      if (ptyProcess && cols > 0 && rows > 0) {
+        if (cols === lastCols && rows === lastRows) {
+          return;
+        }
+        lastCols = cols;
+        lastRows = rows;
         try {
           ptyProcess.resize(cols, rows);
         } catch (err) {

@@ -191,12 +191,43 @@ export function reportFocusStatus() {
 export function fitTerminalFor(sessionName) {
   const cached = state.sessionCache.get(sessionName);
   if (cached && cached.term && cached.fitAddon) {
+    if (cached.container && cached.container.classList.contains('hidden')) {
+      return;
+    }
+    if (cached.container && (cached.container.clientWidth < 40 || cached.container.clientHeight < 40)) {
+      return;
+    }
+
+    // On touch devices, if the virtual keyboard is active, avoid shrinking rows (which causes TUI reflow)
+    const isKeyboardActive = isTouchDevice() && (
+      document.body.classList.contains('keyboard-active') ||
+      (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'))
+    );
+
     try {
-      cached.fitAddon.fit();
+      const proposed = cached.fitAddon.proposeDimensions();
+      if (!proposed || proposed.cols <= 0 || proposed.rows <= 0) {
+        return;
+      }
+
+      let targetRows = proposed.rows;
+      if (isKeyboardActive && cached.lastRows && targetRows < cached.lastRows) {
+        targetRows = cached.lastRows;
+      }
+      const targetCols = proposed.cols;
+
+      if (targetCols === cached.lastCols && targetRows === cached.lastRows) {
+        return;
+      }
+
+      cached.lastCols = targetCols;
+      cached.lastRows = targetRows;
+      cached.term.resize(targetCols, targetRows);
+
       if (cached.socket) {
         cached.socket.emit('resize', {
-          cols: cached.term.cols,
-          rows: cached.term.rows
+          cols: targetCols,
+          rows: targetRows
         });
       }
     } catch (e) {
@@ -529,7 +560,9 @@ export function attachSession(sessionName) {
         const pixelsPerLine = (sessionTerm.options.fontSize || 14) * (sessionTerm.options.lineHeight || 1.2);
 
         if (Math.abs(touchAccumulatorY) >= pixelsPerLine) {
-          const linesToScroll = Math.trunc(touchAccumulatorY / pixelsPerLine);
+          const rawLines = Math.trunc(touchAccumulatorY / pixelsPerLine);
+          // Clamp to max 4 lines per touch frame to avoid flood in tmux
+          const linesToScroll = Math.sign(rawLines) * Math.min(Math.abs(rawLines), 4);
           const termEl = sessionTerm.element;
           if (termEl) {
             const wheelEvent = new WheelEvent('wheel', {
@@ -539,7 +572,7 @@ export function attachSession(sessionName) {
             });
             termEl.dispatchEvent(wheelEvent);
           }
-          touchAccumulatorY -= linesToScroll * pixelsPerLine;
+          touchAccumulatorY -= rawLines * pixelsPerLine;
         }
         e.preventDefault();
       }
@@ -571,8 +604,8 @@ export function attachSession(sessionName) {
           const dt = time - lastFrameTime;
           lastFrameTime = time;
 
-          // Frame-rate independent decay (friction)
-          const decay = Math.pow(0.992, dt);
+          // Natural friction decay
+          const decay = Math.pow(0.95, dt);
           touchVelocityY *= decay;
 
           const frameDelta = touchVelocityY * dt;
@@ -580,7 +613,8 @@ export function attachSession(sessionName) {
 
           const pixelsPerLine = (sessionTerm.options.fontSize || 14) * (sessionTerm.options.lineHeight || 1.2);
           if (Math.abs(touchAccumulatorY) >= pixelsPerLine) {
-            const linesToScroll = Math.trunc(touchAccumulatorY / pixelsPerLine);
+            const rawLines = Math.trunc(touchAccumulatorY / pixelsPerLine);
+            const linesToScroll = Math.sign(rawLines) * Math.min(Math.abs(rawLines), 3);
             const termEl = sessionTerm.element;
             if (termEl) {
               const wheelEvent = new WheelEvent('wheel', {
@@ -590,7 +624,7 @@ export function attachSession(sessionName) {
               });
               termEl.dispatchEvent(wheelEvent);
             }
-            touchAccumulatorY -= linesToScroll * pixelsPerLine;
+            touchAccumulatorY -= rawLines * pixelsPerLine;
           }
 
           if (Math.abs(touchVelocityY) > 0.05) {
@@ -644,7 +678,9 @@ export function attachSession(sessionName) {
       term: sessionTerm,
       fitAddon: sessionFitAddon,
       container: container,
-      resizeObserver: resizeObserver
+      resizeObserver: resizeObserver,
+      lastCols: null,
+      lastRows: null
     };
     state.sessionCache.set(sessionName, cached);
 
@@ -658,6 +694,9 @@ export function attachSession(sessionName) {
       let rows = sessionTerm.rows;
       if (typeof cols !== 'number' || isNaN(cols) || cols <= 0) cols = 80;
       if (typeof rows !== 'number' || isNaN(rows) || rows <= 0) rows = 24;
+
+      cached.lastCols = cols;
+      cached.lastRows = rows;
 
       sessionSocket.emit('init-terminal', {
         sessionName: sessionName,
@@ -684,13 +723,35 @@ export function attachSession(sessionName) {
             return;
           }
         }
-        sessionSocket.emit('terminal-input', data);
+        const hasReturn = typeof data === 'string' && (data.includes('\r') || data.includes('\n'));
+        sessionSocket.emit('terminal-input', data, { exitCopyMode: hasReturn });
       }
     });
 
+    // Coalesce rapid terminal output chunks per animation frame to prevent jitter
+    let outputBuffer = '';
+    let rafOutputId = null;
+
+    const flushOutput = () => {
+      rafOutputId = null;
+      if (outputBuffer && sessionTerm) {
+        const batch = outputBuffer;
+        outputBuffer = '';
+        sessionTerm.write(batch);
+      }
+    };
+
     sessionSocket.on('terminal-output', data => {
-      if (sessionTerm) {
-        sessionTerm.write(data);
+      if (!sessionTerm) return;
+      outputBuffer += data;
+      if (outputBuffer.length > 32768) {
+        if (rafOutputId) {
+          cancelAnimationFrame(rafOutputId);
+          rafOutputId = null;
+        }
+        flushOutput();
+      } else if (!rafOutputId) {
+        rafOutputId = requestAnimationFrame(flushOutput);
       }
     });
 
@@ -750,9 +811,10 @@ export function attachSession(sessionName) {
     });
 
     container.addEventListener('click', () => {
-      // On touch devices, do not automatically focus terminal on container click/tap
-      // to avoid keyboard popups when scrolling or viewing logs.
-      // Users can click the dedicated keyboard toggle button in the mobile action bar.
+      // On container tap/click, also request tmux to exit copy-mode if active
+      if (sessionSocket) {
+        sessionSocket.emit('exit-copy-mode');
+      }
       if (!isTouchDevice() && sessionTerm) {
         sessionTerm.focus();
       }

@@ -264,6 +264,9 @@ execTmux(['set-option', '-g', 'mouse', 'on'], (err) => {
     console.error('Failed to set global tmux mouse option:', err.message);
   } else {
     console.log('✅ Global tmux mouse mode enabled by default');
+    // Ensure mouse click/tap automatically exits copy-mode
+    execTmux(['bind-key', '-T', 'copy-mode', 'MouseDown1Pane', 'send-keys', '-X', 'cancel'], () => {});
+    execTmux(['bind-key', '-T', 'copy-mode-vi', 'MouseDown1Pane', 'send-keys', '-X', 'cancel'], () => {});
   }
 });
 
