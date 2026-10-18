@@ -3,7 +3,7 @@ const path = require('path');
 const { execTmux, getRunUser } = require('./tmuxService');
 const { readWorkspaces, resolveWorkspacePath, safeResolve, getUserHomeDir, getHomeDir } = require('./fileService');
 const { execCommand } = require('./gitService');
-const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('./agentChatService');
+const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('./agentChatService');
 const { MULTI_USER_ENABLED, PROJECT_ROOT } = require('../config');
 
 /**
@@ -301,18 +301,18 @@ async function getProjectProgress(workspaceIdentifier, username = null) {
       lastActivity: null
     };
 
-    // Check if this is a Claude Code session with JSONL logs
-    const sessionFileInfo = findClaudeSessionFile(workspacePath, agentSessionId, panePid, userHome, sysHome);
+    // Check if this is a supported agent session with JSONL logs (Claude Code or Antigravity)
+    const sessionFileInfo = findAgentSessionFile(agentType, workspacePath, agentSessionId, panePid, userHome, sysHome);
     if (sessionFileInfo && sessionFileInfo.filePath) {
       try {
-        const parsed = await parseClaudeJsonl(sessionFileInfo.filePath, 10);
+        const parsed = await parseAgentChat(sessionFileInfo.agentType, sessionFileInfo.filePath, 10);
         if (parsed && parsed.messages && parsed.messages.length > 0) {
           const lastMsg = parsed.messages[parsed.messages.length - 1];
           const lastUserMsg = [...parsed.messages].reverse().find(m => m.role === 'user');
           sessionObj.lastActivity = {
             role: lastMsg.role,
-            text: (lastMsg.text || '').substring(0, 160),
-            userPrompt: lastUserMsg ? (lastUserMsg.text || '').substring(0, 120) : '',
+            text: (lastMsg.content || lastMsg.text || '').substring(0, 160),
+            userPrompt: lastUserMsg ? (lastUserMsg.content || lastUserMsg.text || '').substring(0, 120) : '',
             timestamp: lastMsg.timestamp || null
           };
         }

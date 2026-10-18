@@ -22,8 +22,15 @@ let isScrollPinned = true;
 
 // Slash Commands Registry for Composer Popover
 const SLASH_COMMANDS = [
-  { cmd: '/clear', desc: '清空当前智能体对话上下文' },
+  { cmd: '/clear', desc: '清空当前智能体对话上下文并重置' },
   { cmd: '/compact', desc: '压缩上下文历史并释放 Token 空间' },
+  { cmd: '/plan', desc: '进入任务分步规划模式 (Antigravity)' },
+  { cmd: '/goal', desc: '启动长程自主深度执行模式 (Antigravity)' },
+  { cmd: '/boost', desc: '开启复杂编码高阶多视角验证 (Antigravity)' },
+  { cmd: '/learn', desc: '沉淀开发者习惯与自定义规则 (Antigravity)' },
+  { cmd: '/browser', desc: '调用无头浏览器进行交互测试 (Antigravity)' },
+  { cmd: '/schedule', desc: '创建定时器或计划任务 (Antigravity)' },
+  { cmd: '/grill-me', desc: '交互式方案对齐与深度答辩 (Antigravity)' },
   { cmd: '/status', desc: '查看当前会话与模型状态' },
   { cmd: '/cost', desc: '查看当前会话 Token 消耗统计' },
   { cmd: '/help', desc: '显示智能体内置帮助指令' }
@@ -206,11 +213,14 @@ export function initChatMode() {
           <div class="chat-slash-popover hidden" id="chatSlashPopover"></div>
 
           <div class="chat-input-row">
+            <!-- Uploaded Attachment Tray -->
+            <div class="chat-attachment-tray hidden" id="chatAttachmentTray"></div>
+
             <textarea 
               class="chat-textarea" 
               id="chatComposerTextarea" 
               rows="1"
-              placeholder="输入消息，或输入 / 呼出快捷指令..."
+              placeholder="输入消息，可添加/粘贴图片文件，输入 / 呼出指令..."
               autocomplete="off"
               autocorrect="off"
               autocapitalize="off"
@@ -219,6 +229,11 @@ export function initChatMode() {
             ></textarea>
             <div class="chat-composer-toolbar">
               <div class="chat-composer-tools-left">
+                <input type="file" id="chatFileInput" multiple style="display: none;">
+                <button class="chat-ghost-pill-btn" id="chatAttachBtn" type="button" title="添加文件或图片">
+                  <i data-lucide="paperclip"></i>
+                  <span>附件</span>
+                </button>
                 <button class="chat-ghost-pill-btn" id="chatSlashTriggerBtn" type="button" title="快捷指令 (/)">
                   <i data-lucide="slash"></i>
                   <span>指令</span>
@@ -562,6 +577,165 @@ function updateSlashPopover(queryText) {
   });
 }
 
+// Current Session Attachment Tray State
+let currentAttachments = []; // Array of { id, name, originalName, relativePath, absolutePath, size, isImage, localUrl, uploading }
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function clearCurrentAttachments() {
+  currentAttachments.forEach(att => {
+    if (att.localUrl) {
+      try { URL.revokeObjectURL(att.localUrl); } catch (e) {}
+    }
+  });
+  currentAttachments = [];
+  renderAttachmentTray();
+}
+
+function renderAttachmentTray() {
+  const tray = document.getElementById('chatAttachmentTray');
+  if (!tray) return;
+
+  if (currentAttachments.length === 0) {
+    tray.classList.add('hidden');
+    tray.innerHTML = '';
+    return;
+  }
+
+  tray.classList.remove('hidden');
+  const chipsHtml = currentAttachments.map(att => {
+    let iconHtml = '';
+    if (att.uploading) {
+      iconHtml = `<i data-lucide="loader-2" class="spin chat-attach-icon" style="width: 14px; height: 14px;"></i>`;
+    } else if (att.isImage && att.localUrl) {
+      iconHtml = `<img src="${att.localUrl}" class="chat-attach-thumb" alt="${escapeHtml(att.name)}">`;
+    } else {
+      iconHtml = `<span class="chat-attach-icon"><i data-lucide="${att.isImage ? 'image' : 'file-text'}" style="width: 14px; height: 14px;"></i></span>`;
+    }
+
+    return `
+      <div class="chat-attach-chip ${att.uploading ? 'uploading' : ''}" data-id="${escapeHtml(att.id)}" title="${escapeHtml(att.name)}${att.absolutePath ? '\n' + escapeHtml(att.absolutePath) : ''}">
+        ${iconHtml}
+        <span class="chat-attach-name">${escapeHtml(att.name)}</span>
+        <span class="chat-attach-size">${att.uploading ? '上传中...' : formatFileSize(att.size)}</span>
+        <button type="button" class="chat-attach-remove-btn" data-remove-id="${escapeHtml(att.id)}" title="移除附件">
+          <i data-lucide="x" style="width: 12px; height: 12px;"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  tray.innerHTML = chipsHtml;
+
+  tray.querySelectorAll('.chat-attach-remove-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = btn.getAttribute('data-remove-id');
+      const idx = currentAttachments.findIndex(a => a.id === id);
+      if (idx !== -1) {
+        if (currentAttachments[idx].localUrl) {
+          try { URL.revokeObjectURL(currentAttachments[idx].localUrl); } catch (e) {}
+        }
+        currentAttachments.splice(idx, 1);
+        renderAttachmentTray();
+      }
+    });
+  });
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+async function uploadAttachedFiles(fileList) {
+  if (!fileList || fileList.length === 0) return;
+  const currentSess = getCurrentSessionName();
+  if (!currentSess) {
+    alert('当前没有活跃的会话');
+    return;
+  }
+
+  const newItems = [];
+  const filesToUpload = [];
+
+  for (const file of fileList) {
+    const tempId = 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const isImg = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(file.name);
+    let localUrl = null;
+    if (isImg) {
+      try {
+        localUrl = URL.createObjectURL(file);
+      } catch (e) {}
+    }
+
+    const item = {
+      id: tempId,
+      name: file.name,
+      originalName: file.name,
+      size: file.size,
+      isImage: isImg,
+      localUrl,
+      uploading: true,
+      relativePath: '',
+      absolutePath: ''
+    };
+
+    newItems.push(item);
+    filesToUpload.push({ item, file });
+    currentAttachments.push(item);
+  }
+
+  renderAttachmentTray();
+
+  try {
+    const formData = new FormData();
+    for (const f of filesToUpload) {
+      formData.append('files', f.file);
+    }
+
+    const res = await fetch(`/api/sessions/${encodeURIComponent(currentSess)}/chat-upload`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (data.success && Array.isArray(data.files)) {
+      data.files.forEach((serverFile, idx) => {
+        if (filesToUpload[idx]) {
+          const target = filesToUpload[idx].item;
+          target.uploading = false;
+          target.name = serverFile.name;
+          target.relativePath = serverFile.relativePath;
+          target.absolutePath = serverFile.absolutePath;
+          target.size = serverFile.size;
+          target.isImage = serverFile.isImage;
+        }
+      });
+    }
+  } catch (err) {
+    console.error('[ChatMode] Upload error:', err);
+    alert(`上传文件失败: ${err.message}`);
+    newItems.forEach(item => {
+      const idx = currentAttachments.indexOf(item);
+      if (idx !== -1) currentAttachments.splice(idx, 1);
+    });
+  } finally {
+    renderAttachmentTray();
+  }
+}
+
 function executeOrFillSlashCommand(cmd) {
   const textarea = document.getElementById('chatComposerTextarea');
   updateSlashPopover(null);
@@ -579,6 +753,77 @@ function bindComposerEvents() {
   const interruptBtn = document.getElementById('chatInterruptBtn');
   const slashTriggerBtn = document.getElementById('chatSlashTriggerBtn');
   const quickClearBtn = document.getElementById('chatQuickClearBtn');
+  const attachBtn = document.getElementById('chatAttachBtn');
+  const fileInput = document.getElementById('chatFileInput');
+
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files.length > 0) {
+        uploadAttachedFiles(Array.from(fileInput.files));
+        fileInput.value = '';
+      }
+    });
+  }
+
+  // Support clipboard paste (screenshots and images)
+  if (textarea) {
+    textarea.addEventListener('paste', (e) => {
+      const clipboardData = e.clipboardData || window.clipboardData;
+      if (!clipboardData) return;
+      const items = clipboardData.items;
+      if (!items) return;
+
+      const pastedFiles = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const ext = blob.type.split('/')[1] || 'png';
+            const file = new File([blob], `screenshot_${Date.now()}.${ext}`, { type: blob.type });
+            pastedFiles.push(file);
+          }
+        }
+      }
+
+      if (pastedFiles.length > 0) {
+        e.preventDefault();
+        uploadAttachedFiles(pastedFiles);
+      }
+    });
+  }
+
+  // Support Drag and Drop files onto composer
+  const composerShell = document.querySelector('.chat-composer-shell');
+  const inputRow = document.querySelector('.chat-input-row');
+  if (composerShell && inputRow) {
+    ['dragenter', 'dragover'].forEach(evt => {
+      composerShell.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        inputRow.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+      composerShell.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        inputRow.classList.remove('drag-over');
+      });
+    });
+
+    composerShell.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length > 0) {
+        uploadAttachedFiles(Array.from(dt.files));
+      }
+    });
+  }
 
   if (textarea) {
     textarea.addEventListener('keydown', (e) => {
@@ -830,8 +1075,15 @@ export function sendRawToTmux(text) {
  */
 export function sendChatMessage(overrideText) {
   const textarea = document.getElementById('chatComposerTextarea');
-  const text = (typeof overrideText === 'string' ? overrideText : (textarea ? textarea.value : '')).trim();
-  if (!text) return;
+  let text = (typeof overrideText === 'string' ? overrideText : (textarea ? textarea.value : '')).trim();
+
+  const attachmentsToSend = [...currentAttachments];
+
+  if (!text && attachmentsToSend.length === 0) return;
+
+  if (!text && attachmentsToSend.length > 0) {
+    text = '请查看附带的文件/图片并进行分析：';
+  }
 
   stopVoiceInput();
   updateSlashPopover(null);
@@ -839,18 +1091,28 @@ export function sendChatMessage(overrideText) {
   const currentSess = getCurrentSessionName();
   if (!currentSess) return;
 
+  // Build full prompt text with injected file paths inside the workspace to avoid agent permission prompts
+  let fullPrompt = text;
+  if (attachmentsToSend.length > 0) {
+    const fileEntries = attachmentsToSend.map(f => {
+      return `- ${f.relativePath} (绝对路径: ${f.absolutePath})`;
+    }).join('\n');
+    fullPrompt = `${text}\n\n[附带文件]:\n${fileEntries}`;
+  }
+
   // 1. Optimistic append & pin scroll to bottom
   isScrollPinned = true;
-  appendUserMessageToUI(text);
+  appendUserMessageToUI(text, attachmentsToSend);
 
-  // 2. Clear input
+  // 2. Clear input & reset attachments
   if (textarea) {
     textarea.value = '';
     textarea.style.height = 'auto';
   }
+  clearCurrentAttachments();
 
   // 3. Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
-  sendRawToTmux(text + '\r');
+  sendRawToTmux(fullPrompt + '\r');
 
   // 4. Update status indicator
   updateStatusBadge('思考与执行中...', 'working');
@@ -945,7 +1207,17 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   const userRecentlyScrolled = (performance.now() - lastUserScrollAt) <= SCROLL_COOL_DOWN_MS;
 
   const displaySession = sessionName || currentSess || '主会话';
-  const agentLabel = (data && data.agentType) ? data.agentType.toUpperCase() : 'TMUX 智能体';
+  let agentLabel = 'TMUX 智能体';
+  if (data && data.agentType) {
+    const t = data.agentType.toLowerCase();
+    if (t === 'agy' || t === 'antigravity') {
+      agentLabel = 'ANTIGRAVITY';
+    } else if (t === 'claude') {
+      agentLabel = 'CLAUDE CODE';
+    } else {
+      agentLabel = data.agentType.toUpperCase();
+    }
+  }
   if (agentNameEl) {
     agentNameEl.textContent = `${agentLabel} · ${displaySession}`;
   }
@@ -1078,11 +1350,52 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
       }
     }
 
-    // 3. Markdown / Assistant Prose Content
+    // 3. Markdown / Assistant Prose Content & User Attachments
     if (msg.content) {
       const isQuestionFallback = hasAskQuestionTool && msg.content.includes('智能体发起提问');
       if (!isQuestionFallback) {
-        if (!isUser && window.marked) {
+        if (isUser) {
+          let userText = msg.content;
+          let attachedItems = [];
+          const attMatch = userText.match(/([\s\S]*?)\n\n\[(?:附带文件|附件路径)\]:\n([\s\S]*)$/);
+          if (attMatch) {
+            userText = attMatch[1].trim();
+            const attLines = attMatch[2].split('\n').filter(Boolean);
+            for (const line of attLines) {
+              const fMatch = line.match(/^-\s*([^\s]+)(?:\s*\(绝对路径:\s*([^\)]+)\))?/);
+              if (fMatch) {
+                const rel = fMatch[1];
+                const abs = fMatch[2] || rel;
+                const fname = rel.split('/').pop() || 'file';
+                const isImg = /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(fname);
+                attachedItems.push({ name: fname, relativePath: rel, absolutePath: abs, isImage: isImg });
+              }
+            }
+          }
+
+          let attHtml = '';
+          if (attachedItems.length > 0) {
+            const chips = attachedItems.map(item => {
+              if (item.isImage) {
+                const imgSrc = `/api/sessions/${encodeURIComponent(sessionName)}/chat-attachments/${encodeURIComponent(item.name)}`;
+                return `
+                  <div class="chat-bubble-att-img-wrap">
+                    <img src="${imgSrc}" class="chat-bubble-att-img" alt="${escapeHtml(item.name)}" title="${escapeHtml(item.name)}" onclick="window.open(this.src, '_blank')">
+                  </div>
+                `;
+              }
+              return `
+                <div class="chat-bubble-att-item">
+                  <i data-lucide="file-text" style="width: 13px; height: 13px;"></i>
+                  <span class="chat-bubble-att-name">${escapeHtml(item.name)}</span>
+                </div>
+              `;
+            }).join('');
+            attHtml = `<div class="chat-bubble-attachments">${chips}</div>`;
+          }
+
+          bodyHtml += `${attHtml}${userText ? `<div>${escapeHtml(userText)}</div>` : ''}`;
+        } else if (window.marked) {
           try {
             const parsedHtml = window.marked.parse(msg.content);
             bodyHtml += `<div class="chat-prose-body">${enhanceMarkdownCodeBlocks(parsedHtml)}</div>`;
@@ -1549,7 +1862,7 @@ function bindDecisionCardEvents(pending) {
 /**
  * Optimistically append user message
  */
-function appendUserMessageToUI(text) {
+function appendUserMessageToUI(text, attachments = []) {
   const container = document.getElementById('agentChatMessages');
   if (!container) return;
 
@@ -1558,14 +1871,38 @@ function appendUserMessageToUI(text) {
     container.innerHTML = '';
   }
 
+  let attachmentsHtml = '';
+  if (attachments && attachments.length > 0) {
+    const items = attachments.map(att => {
+      if (att.isImage && att.localUrl) {
+        return `
+          <div class="chat-bubble-att-img-wrap">
+            <img src="${att.localUrl}" class="chat-bubble-att-img" alt="${escapeHtml(att.name)}" title="${escapeHtml(att.name)}">
+          </div>
+        `;
+      }
+      return `
+        <div class="chat-bubble-att-item">
+          <i data-lucide="file-text" style="width: 13px; height: 13px;"></i>
+          <span class="chat-bubble-att-name">${escapeHtml(att.name)}</span>
+        </div>
+      `;
+    }).join('');
+    attachmentsHtml = `<div class="chat-bubble-attachments">${items}</div>`;
+  }
+
   const row = document.createElement('div');
   row.className = 'chat-msg-row user';
   row.innerHTML = `
     <div class="chat-bubble-wrap">
-      <div class="chat-bubble">${escapeHtml(text)}</div>
+      <div class="chat-bubble">
+        ${attachmentsHtml}
+        ${text ? `<div class="chat-bubble-text">${escapeHtml(text)}</div>` : ''}
+      </div>
     </div>
   `;
   container.appendChild(row);
+  if (window.lucide) window.lucide.createIcons();
   scrollToChatBottom(true);
 }
 

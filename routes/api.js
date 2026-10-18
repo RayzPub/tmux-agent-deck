@@ -23,7 +23,7 @@ const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
 const iconService = require('../services/iconService');
-const { findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid } = require('../services/agentChatService');
+const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid, getAgySessionIdFromPanePid } = require('../services/agentChatService');
 const llmGatewayService = require('../services/llmGatewayService');
 const projectService = require('../services/projectService');
 
@@ -1780,12 +1780,21 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
 
     // Locate the matching .jsonl session file strictly
-    const sessionFileInfo = findClaudeSessionFile(targetWorkspace, agentSessionId, panePid, userHome, sysHome);
+    const sessionFileInfo = findAgentSessionFile(agentType, targetWorkspace, agentSessionId, panePid, userHome, sysHome);
 
-    const isClaude = (agentType === 'claude') || (sessionFileInfo && sessionFileInfo.filePath) || (panePid && getSessionIdFromPanePid(panePid));
+    const isAgy = (agentType === 'agy' || agentType === 'antigravity') ||
+                  (sessionFileInfo && sessionFileInfo.agentType === 'agy') ||
+                  (panePid && getAgySessionIdFromPanePid(panePid)) ||
+                  (name.toLowerCase().includes('agy'));
 
-    // Only Claude Code is currently supported for Chat Mode
-    if (!isClaude) {
+    const isClaude = (agentType === 'claude') ||
+                     (sessionFileInfo && sessionFileInfo.agentType === 'claude') ||
+                     (panePid && getSessionIdFromPanePid(panePid));
+
+    const effectiveAgent = (sessionFileInfo && sessionFileInfo.agentType) || (isAgy ? 'agy' : (isClaude ? 'claude' : null));
+
+    // Check if Chat Mode is supported (Claude Code or Antigravity)
+    if (!effectiveAgent) {
       return res.json({
         supported: false,
         hasHistory: false,
@@ -1800,7 +1809,7 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
         supported: true,
         hasHistory: false,
         sessionName: name,
-        agentType: 'claude',
+        agentType: effectiveAgent,
         workspacePath: targetWorkspace,
         messages: [],
         pendingAction: null
@@ -1808,7 +1817,7 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     }
 
     try {
-      const parsed = await parseClaudeJsonl(sessionFileInfo.filePath, 60);
+      const parsed = await parseAgentChat(effectiveAgent, sessionFileInfo.filePath, 60);
       
       // Also inspect real-time pane buffer for terminal permission/question states
       execTmux(['capture-pane', '-pt', physicalSession, '-S', '-25'], (capErr, capStdout) => {
@@ -1846,7 +1855,7 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
           supported: true,
           hasHistory: true,
           sessionName: name,
-          agentType: 'claude',
+          agentType: effectiveAgent,
           sessionId: sessionFileInfo.sessionId,
           workspacePath: targetWorkspace,
           messages: parsed.messages,
@@ -1857,6 +1866,116 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     } catch (parseErr) {
       return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
     }
+  }, user);
+});
+
+// Upload attachments for Chat Mode (saved in <workspace>/.deck/uploads to prevent agent outside-workspace permission prompts)
+router.post('/sessions/:session/chat-upload', requireAuth, (req, res) => {
+  fileUpload.array('files', 10)(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: '上传失败：单次最多上传 10 个文件' });
+      }
+      return res.status(400).json({ error: `上传失败: ${err.message}` });
+    }
+
+    const sessionName = req.params.session;
+    const user = req.user.username;
+    const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
+    const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
+    const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
+
+    execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}'], (tmuxErr, stdout) => {
+      const parts = (stdout || '').trim().split('|');
+      const sessionPath = parts[0] || null;
+      const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
+
+      if (!targetWorkspace || !fs.existsSync(targetWorkspace)) {
+        return res.status(404).json({ error: '会话工作空间目录不存在' });
+      }
+
+      // Safe temporary uploads folder strictly within the workspace
+      const uploadDir = safeResolve(targetWorkspace, '.deck/uploads', user);
+      if (!fs.existsSync(uploadDir)) {
+        try {
+          fs.mkdirSync(uploadDir, { recursive: true });
+          chownToSudoUser(uploadDir);
+        } catch (mkErr) {
+          return res.status(500).json({ error: `创建上传目录失败: ${mkErr.message}` });
+        }
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: '未选择任何待上传文件' });
+      }
+
+      const uploadedFiles = [];
+      for (const file of req.files) {
+        const originalName = file.originalname || 'upload';
+        const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim() || 'upload';
+        const ext = path.extname(cleanName);
+        const base = path.basename(cleanName, ext);
+
+        // Append timestamp suffix to avoid collisions
+        const uniqueName = `${base}_${Date.now()}${ext}`;
+        const destPath = safeResolve(targetWorkspace, path.join('.deck/uploads', uniqueName), user);
+
+        try {
+          fs.writeFileSync(destPath, file.buffer);
+          chownToSudoUser(destPath);
+
+          const isImg = file.mimetype.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(uniqueName);
+
+          uploadedFiles.push({
+            name: uniqueName,
+            originalName: cleanName,
+            relativePath: `.deck/uploads/${uniqueName}`,
+            absolutePath: destPath,
+            size: file.size,
+            mimeType: file.mimetype,
+            isImage: isImg
+          });
+        } catch (writeErr) {
+          console.error('[ChatUpload] Failed to save file:', writeErr);
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: `成功保存 ${uploadedFiles.length} 个文件至工作区临时目录`,
+        files: uploadedFiles
+      });
+    }, user);
+  });
+});
+
+// Serve uploaded chat attachments securely
+router.get('/sessions/:session/chat-attachments/:filename', requireAuth, (req, res) => {
+  const sessionName = req.params.session;
+  const user = req.user.username;
+  const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
+  const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
+  const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
+  const filename = path.basename(req.params.filename);
+
+  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}'], (tmuxErr, stdout) => {
+    const parts = (stdout || '').trim().split('|');
+    const sessionPath = parts[0] || null;
+    const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
+
+    if (!targetWorkspace) {
+      return res.status(404).send('Workspace not found');
+    }
+
+    const filePath = safeResolve(targetWorkspace, path.join('.deck/uploads', filename), user);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('Attachment not found');
+    }
+
+    res.sendFile(filePath, { dotfiles: 'allow' });
   }, user);
 });
 

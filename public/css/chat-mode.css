@@ -1913,3 +1913,193 @@ body.light-minimalist .chat-starter-pill.shuffle:hover {
   color: #0f172a;
   background: #ffffff;
 }
+
+/* ===================================================
+   Attachment Tray & File Preview (Chat Mode)
+   =================================================== */
+
+.chat-attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 2px 8px 2px;
+  width: 100%;
+}
+
+.chat-attachment-tray.hidden {
+  display: none !important;
+}
+
+.chat-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #e2e8f0;
+  max-width: 100%;
+  transition: all 150ms ease;
+  user-select: none;
+}
+
+.chat-attach-chip.uploading {
+  opacity: 0.75;
+  border-style: dashed;
+  animation: pulse-glow 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { border-color: rgba(255, 255, 255, 0.1); }
+  50% { border-color: var(--neon-cyan, #00f0ff); }
+}
+
+.chat-attach-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 0.5px solid rgba(255, 255, 255, 0.15);
+}
+
+.chat-attach-icon {
+  display: flex;
+  align-items: center;
+  color: var(--neon-cyan, #00f0ff);
+  flex-shrink: 0;
+}
+
+.chat-attach-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+}
+
+.chat-attach-size {
+  font-size: 10px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.chat-attach-remove-btn {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  margin-left: 2px;
+  cursor: pointer;
+  color: #94a3b8;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.chat-attach-remove-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.chat-input-row.drag-over {
+  box-shadow: inset 0 0 0 2px var(--neon-cyan, #00f0ff), 0 0 16px rgba(0, 240, 255, 0.25) !important;
+  background: #19223c !important;
+}
+
+/* User Bubble Attached Files Preview */
+.chat-bubble-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chat-bubble-att-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #f1f5f9;
+  max-width: 100%;
+  width: fit-content;
+}
+
+.chat-bubble-att-img-wrap {
+  margin-bottom: 4px;
+}
+
+.chat-bubble-att-img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Light Mode Adaptations */
+body.light-minimalist .chat-attach-chip {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+body.light-minimalist .chat-attach-chip.uploading {
+  border-color: #4f46e5;
+}
+
+body.light-minimalist .chat-attach-thumb {
+  border: 0.5px solid #cbd5e1;
+}
+
+body.light-minimalist .chat-attach-icon {
+  color: #4f46e5;
+}
+
+body.light-minimalist .chat-attach-size {
+  color: #64748b;
+}
+
+body.light-minimalist .chat-attach-remove-btn {
+  color: #64748b;
+}
+
+body.light-minimalist .chat-attach-remove-btn:hover {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+body.light-minimalist .chat-input-row.drag-over {
+  box-shadow: inset 0 0 0 2px #4f46e5, 0 0 16px rgba(79, 70, 229, 0.2) !important;
+  background: #f8fafc !important;
+}
+
+body.light-minimalist .chat-bubble-att-item {
+  background: #ffffff;
+  border: 1px solid #c7d2fe;
+  color: #1e1b4b;
+}
+
+body.light-minimalist .chat-bubble-att-img {
+  border: 1px solid #c7d2fe;
+}
+
