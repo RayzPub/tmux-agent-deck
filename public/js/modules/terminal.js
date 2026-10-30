@@ -8,26 +8,31 @@ export function isTouchDevice() {
          ('ontouchstart' in window);
 }
 
-export function showTipToast(message, duration = 4000) {
+export function showTipToast(message, duration = 4000, type = 'warning') {
   const existing = document.querySelector('.connection-toast.tip-toast');
   if (existing) {
-    existing.querySelector('.toast-message').textContent = message;
+    const msgEl = existing.querySelector('.toast-message');
+    if (msgEl) msgEl.textContent = message;
+    existing.className = `connection-toast ${type} tip-toast`;
     return;
   }
+  const isSpinner = message.includes('正在') || message.includes('加载') || message.includes('连接');
   const toast = document.createElement('div');
-  toast.className = 'connection-toast warning tip-toast';
+  toast.className = `connection-toast ${type} tip-toast`;
   toast.innerHTML = `
-    <i data-lucide="info"></i>
+    ${isSpinner 
+      ? '<div class="cyber-spinner"></div>' 
+      : '<i data-lucide="info"></i>'}
     <span class="toast-message">${message}</span>
   `;
   document.body.appendChild(toast);
-  if (window.lucide) {
+  if (window.lucide && !isSpinner) {
     window.lucide.createIcons();
   }
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.5s ease';
-    setTimeout(() => toast.remove(), 500);
+    toast.style.transition = 'opacity 0.4s ease';
+    setTimeout(() => toast.remove(), 400);
   }, duration);
 }
 
@@ -334,19 +339,24 @@ export function attachSession(sessionName) {
 
     const showConnectionToast = (message, type = 'warning') => {
       if (reconnectingToast) {
-        reconnectingToast.querySelector('.toast-message').textContent = message;
+        const msgEl = reconnectingToast.querySelector('.toast-message');
+        if (msgEl) msgEl.textContent = message;
         reconnectingToast.className = `connection-toast ${type}`;
         const spinner = reconnectingToast.querySelector('.cyber-spinner');
+        const errIcon = reconnectingToast.querySelector('.toast-error-icon');
         if (spinner) {
-          spinner.style.display = (type === 'warning') ? 'block' : 'none';
+          spinner.style.display = (type === 'warning' || type === 'info') ? 'block' : 'none';
+        }
+        if (errIcon) {
+          errIcon.style.display = (type === 'error') ? 'inline-flex' : 'none';
         }
         return;
       }
       reconnectingToast = document.createElement('div');
       reconnectingToast.className = `connection-toast ${type}`;
-      reconnectingToast.style.cursor = 'pointer';
       reconnectingToast.innerHTML = `
-        <div class="cyber-spinner" style="width: 14px; height: 14px; border-width: 1px; display: ${type === 'warning' ? 'block' : 'none'};"></div>
+        <div class="cyber-spinner" style="display: ${type === 'warning' || type === 'info' ? 'block' : 'none'};"></div>
+        <svg class="toast-error-icon" style="display: ${type === 'error' ? 'inline-flex' : 'none'}; width: 18px; height: 18px; flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
         <span class="toast-message">${message}</span>
       `;
       

@@ -38,6 +38,7 @@ const SLASH_COMMANDS = [
 let slashPopoverOpen = false;
 let slashActiveIndex = 0;
 let filteredSlashCommands = [...SLASH_COMMANDS];
+let slashBlurTimer = null;
 
 /**
  * Helper to safely resolve current active session name
@@ -601,11 +602,22 @@ export async function applySessionViewMode(sessionName, forceMode) {
  */
 function updateSlashPopover(queryText) {
   const popover = document.getElementById('chatSlashPopover');
+  const slashTriggerBtn = document.getElementById('chatSlashTriggerBtn');
   if (!popover) return;
+
+  if (slashBlurTimer) {
+    clearTimeout(slashBlurTimer);
+    slashBlurTimer = null;
+  }
 
   if (queryText === null || !queryText.startsWith('/')) {
     slashPopoverOpen = false;
     popover.classList.add('hidden');
+    popover.innerHTML = '';
+    if (slashTriggerBtn) {
+      slashTriggerBtn.classList.remove('active');
+      slashTriggerBtn.setAttribute('aria-expanded', 'false');
+    }
     return;
   }
 
@@ -615,26 +627,46 @@ function updateSlashPopover(queryText) {
   if (filteredSlashCommands.length === 0) {
     slashPopoverOpen = false;
     popover.classList.add('hidden');
+    popover.innerHTML = '';
+    if (slashTriggerBtn) {
+      slashTriggerBtn.classList.remove('active');
+      slashTriggerBtn.setAttribute('aria-expanded', 'false');
+    }
     return;
   }
 
   slashPopoverOpen = true;
+  if (slashTriggerBtn) {
+    slashTriggerBtn.classList.add('active');
+    slashTriggerBtn.setAttribute('aria-expanded', 'true');
+  }
+
   if (slashActiveIndex >= filteredSlashCommands.length) {
     slashActiveIndex = 0;
   }
 
   popover.innerHTML = `
     <div class="chat-slash-popover-title">// 快捷指令 (↑↓ 选择 · Enter 确认)</div>
-    ${filteredSlashCommands.map((item, idx) => `
-      <button type="button" class="chat-slash-item ${idx === slashActiveIndex ? 'active' : ''}" data-cmd="${escapeHtml(item.cmd)}">
-        <span class="chat-slash-cmd">${escapeHtml(item.cmd)}</span>
-        <span class="chat-slash-desc">${escapeHtml(item.desc)}</span>
-      </button>
-    `).join('')}
+    <div class="chat-slash-list">
+      ${filteredSlashCommands.map((item, idx) => `
+        <button type="button" class="chat-slash-item ${idx === slashActiveIndex ? 'active' : ''}" data-cmd="${escapeHtml(item.cmd)}">
+          <span class="chat-slash-cmd">${escapeHtml(item.cmd)}</span>
+          <span class="chat-slash-desc">${escapeHtml(item.desc)}</span>
+        </button>
+      `).join('')}
+    </div>
   `;
   popover.classList.remove('hidden');
 
+  // Prevent clicks inside the popover from stealing focus or triggering textarea blur
+  popover.onmousedown = (e) => {
+    e.preventDefault();
+  };
+
   popover.querySelectorAll('.chat-slash-item').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -642,6 +674,11 @@ function updateSlashPopover(queryText) {
       if (cmd) executeOrFillSlashCommand(cmd);
     });
   });
+
+  const activeItem = popover.querySelector('.chat-slash-item.active');
+  if (activeItem) {
+    activeItem.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 // Current Session Attachment Tray State
@@ -822,8 +859,14 @@ function bindComposerEvents() {
   const quickClearBtn = document.getElementById('chatQuickClearBtn');
   const attachBtn = document.getElementById('chatAttachBtn');
   const fileInput = document.getElementById('chatFileInput');
+  const inputRow = textarea ? textarea.closest('.chat-input-row') : null;
 
   if (attachBtn && fileInput) {
+    attachBtn.addEventListener('mousedown', (e) => {
+      // Prevent button click from stealing focus or triggering input row focus
+      e.preventDefault();
+    });
+
     attachBtn.addEventListener('click', (e) => {
       e.preventDefault();
       fileInput.click();
@@ -866,7 +909,6 @@ function bindComposerEvents() {
 
   // Support Drag and Drop files onto composer
   const composerShell = document.querySelector('.chat-composer-shell');
-  const inputRow = document.querySelector('.chat-input-row');
   if (composerShell && inputRow) {
     ['dragenter', 'dragover'].forEach(evt => {
       composerShell.addEventListener(evt, (e) => {
@@ -948,6 +990,7 @@ function bindComposerEvents() {
     });
 
     textarea.addEventListener('focus', () => {
+      if (inputRow) inputRow.classList.add('is-focused');
       // Prevent iOS WebKit window scroll and pin messages to bottom
       window.scrollTo(0, 0);
       setTimeout(() => {
@@ -960,8 +1003,17 @@ function bindComposerEvents() {
     });
 
     textarea.addEventListener('blur', () => {
+      if (inputRow) inputRow.classList.remove('is-focused');
       window.scrollTo(0, 0);
-      setTimeout(() => updateSlashPopover(null), 180);
+      if (slashBlurTimer) clearTimeout(slashBlurTimer);
+      slashBlurTimer = setTimeout(() => {
+        const active = document.activeElement;
+        const popover = document.getElementById('chatSlashPopover');
+        const triggerBtn = document.getElementById('chatSlashTriggerBtn');
+        if (popover && (popover === active || popover.contains(active))) return;
+        if (triggerBtn && (triggerBtn === active || triggerBtn.contains(active))) return;
+        updateSlashPopover(null);
+      }, 200);
     });
   }
 
@@ -969,9 +1021,18 @@ function bindComposerEvents() {
   bindChatVoiceInput();
 
   if (slashTriggerBtn && textarea) {
+    slashTriggerBtn.addEventListener('mousedown', (e) => {
+      // Prevent textarea from blurring when clicking trigger button
+      e.preventDefault();
+    });
+
     slashTriggerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (slashBlurTimer) {
+        clearTimeout(slashBlurTimer);
+        slashBlurTimer = null;
+      }
       if (slashPopoverOpen) {
         updateSlashPopover(null);
       } else {
@@ -986,11 +1047,26 @@ function bindComposerEvents() {
   }
 
   if (quickClearBtn) {
+    quickClearBtn.addEventListener('mousedown', (e) => {
+      // Prevent focus shift
+      e.preventDefault();
+    });
+
     quickClearBtn.addEventListener('click', (e) => {
       e.preventDefault();
       sendChatMessage('/clear');
     });
   }
+
+  // Dismiss slash popover when clicking anywhere outside
+  document.addEventListener('pointerdown', (e) => {
+    if (!slashPopoverOpen) return;
+    const popover = document.getElementById('chatSlashPopover');
+    const triggerBtn = document.getElementById('chatSlashTriggerBtn');
+    if (popover && !popover.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
+      updateSlashPopover(null);
+    }
+  });
 
   if (sendBtn) {
     sendBtn.addEventListener('click', (e) => {

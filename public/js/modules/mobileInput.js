@@ -75,9 +75,6 @@ export function syncAppViewportHeight() {
   // Clear any stale inline pixel height locks so CSS 100% / 100dvh applies cleanly
   if (document.documentElement.style.height) document.documentElement.style.height = '';
   if (document.body.style.height) document.body.style.height = '';
-
-  // Force synchronous reflow
-  void document.body.offsetHeight;
 }
 
 /**
@@ -130,9 +127,16 @@ export function initVisualViewportLinkage() {
     document.documentElement.style.setProperty('--keyboard-offset', `${bottomOffset}px`);
 
     if (isKeyboardOpen) {
+      document.body.classList.remove('keyboard-recovering');
       document.body.classList.add('keyboard-active');
     } else {
-      document.body.classList.remove('keyboard-active');
+      if (document.body.classList.contains('keyboard-active')) {
+        document.body.classList.remove('keyboard-active');
+        document.body.classList.add('keyboard-recovering');
+        setTimeout(() => {
+          document.body.classList.remove('keyboard-recovering');
+        }, 250);
+      }
       if (window.scrollY !== 0) {
         window.scrollTo(0, 0);
       }
@@ -224,86 +228,55 @@ export function initVisualViewportLinkage() {
     if (document.documentElement.style.height) document.documentElement.style.height = '';
     if (document.body.style.height) document.body.style.height = '';
 
-    // iOS PWA standalone WebKit layout flush trick:
-    if (isIosStandalone()) {
-      const appBody = document.querySelector('.dashboard-body') || document.body;
-      if (appBody) {
-        const origDisplay = appBody.style.display;
-        appBody.style.display = 'none';
-        void appBody.offsetHeight;
-        appBody.style.display = origDisplay || '';
-      }
-    }
-
     syncAppViewportHeight();
     handleViewportChange();
     fitTerminal();
   };
 
-  window.addEventListener('resize', () => {
-    handleOrientationOrResize();
-    [50, 150, 300].forEach((delay) => {
-      setTimeout(handleOrientationOrResize, delay);
-    });
-  });
+  // Single debounced handler for resize & orientation
+  let resizeDebounceTimer = null;
+  const debouncedResizeHandler = (delay = 100) => {
+    if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      handleOrientationOrResize();
+    }, delay);
+  };
 
-  window.addEventListener('orientationchange', () => {
-    handleOrientationOrResize();
-    // Multi-stage cadence matching Safari toolbar collapse and rotation animations
-    [30, 80, 150, 250, 400, 600, 900, 1200].forEach((delay) => {
-      setTimeout(handleOrientationOrResize, delay);
-    });
-  });
+  window.addEventListener('resize', () => debouncedResizeHandler(80));
+  window.addEventListener('orientationchange', () => debouncedResizeHandler(150));
 
-  // Lifecycle hooks for PWA resume / reopen / tab switch to eradicate top whitespace
+  // Lifecycle hooks for PWA resume / reopen / tab switch to eradicate top whitespace smoothly
+  let pwaResumeDebounceTimer = null;
   const handlePwaReopen = () => {
-    const active = document.activeElement;
-    const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-    if (!isInput) {
-      document.body.classList.remove('keyboard-active');
-      document.documentElement.style.setProperty('--keyboard-offset', '0px');
-      document.documentElement.style.setProperty('--app-height', '100dvh');
-      document.documentElement.style.setProperty('--app-visual-height', '100dvh');
-    }
+    if (pwaResumeDebounceTimer) clearTimeout(pwaResumeDebounceTimer);
+    pwaResumeDebounceTimer = setTimeout(() => {
+      const active = document.activeElement;
+      const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+      if (!isInput) {
+        document.body.classList.remove('keyboard-active');
+        document.documentElement.style.setProperty('--keyboard-offset', '0px');
+        document.documentElement.style.setProperty('--app-height', '100dvh');
+        document.documentElement.style.setProperty('--app-visual-height', '100dvh');
+      }
 
-    // 1. Force window scroll to top immediately
-    window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
 
-    // 2. Force WebKit to purge stale composited backing store / layer offset
-    const appBody = document.querySelector('.dashboard-body') || document.body;
-    if (appBody) {
-      const origDisplay = appBody.style.display;
-      appBody.style.display = 'none';
-      void appBody.offsetHeight; // synchronous layout reflow
-      appBody.style.display = origDisplay || '';
-    }
-
-    // 3. Dual-rAF schedule to guarantee WebKit post-resume frame is fully normalized
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.scrollTo(0, 0);
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-        syncAppViewportHeight();
-        handleViewportChange();
-        fitTerminal();
-        window.dispatchEvent(new Event('resize'));
-      });
-    });
+      syncAppViewportHeight();
+      handleViewportChange();
+      fitTerminal();
+    }, 60);
   };
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       handlePwaReopen();
-      [30, 100, 250, 500, 800].forEach((delay) => setTimeout(handlePwaReopen, delay));
     }
   });
 
   window.addEventListener('pageshow', () => {
     handlePwaReopen();
-    [30, 100, 250, 500, 800].forEach((delay) => setTimeout(handlePwaReopen, delay));
   });
 
   window.addEventListener('focus', () => {
@@ -365,38 +338,16 @@ export function initVisualViewportLinkage() {
 
           syncAppViewportHeight();
 
-          // Deferred WebKit Snap-Back Reflow:
-          // Wait 300ms for iOS virtual keyboard slide-down animation to fully finish,
-          // then trigger layout reflow to eliminate WebKit's ghost canvas shift / blank gap.
+          // Deferred smooth stabilization after virtual keyboard slide-down animation
           setTimeout(() => {
             window.scrollTo(0, 0);
             document.documentElement.scrollTop = 0;
             document.body.scrollTop = 0;
 
-            const appBody = document.querySelector('.dashboard-body') || document.body;
-            if (appBody) {
-              const origDisplay = appBody.style.display;
-              appBody.style.display = 'none';
-              void appBody.offsetHeight; // Force reflow
-              appBody.style.display = origDisplay || '';
-            }
-
             syncAppViewportHeight();
             handleViewportChange();
             fitTerminal();
-          }, 320);
-
-          // Multi-stage recovery during and after keyboard collapse animation
-          [30, 80, 160, 480, 750].forEach((delay) => {
-            setTimeout(() => {
-              window.scrollTo(0, 0);
-              document.documentElement.scrollTop = 0;
-              document.body.scrollTop = 0;
-              syncAppViewportHeight();
-              handleViewportChange();
-              fitTerminal();
-            }, delay);
-          });
+          }, 240);
         }
       }, 20);
     }

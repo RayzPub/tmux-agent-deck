@@ -111,7 +111,9 @@ if (window.lucide) {
 }
 
 // Set Host IP in header
-hostIpText.textContent = window.location.hostname || '127.0.0.1';
+if (hostIpText) {
+  hostIpText.textContent = window.location.hostname || '127.0.0.1';
+}
 
 // Theme toggling initialization
 if (themeToggleBtn) {
@@ -947,7 +949,14 @@ createSessionForm.addEventListener('submit', async (e) => {
 
 if (reloadBtn) {
   reloadBtn.addEventListener('click', () => {
-    window.location.reload();
+    showTipToast('正在重新加载...', 4000, 'info');
+    const icon = reloadBtn.querySelector('i, svg');
+    if (icon) {
+      icon.style.animation = 'spin 0.8s linear infinite';
+    }
+    setTimeout(() => {
+      window.location.reload();
+    }, 120);
   });
 }
 
