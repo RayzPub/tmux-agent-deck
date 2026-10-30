@@ -181,13 +181,16 @@ app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json');
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.json({
+    id: '/',
     name: 'CCNOW',
     short_name: 'CCNOW',
     description: 'Cyberpunk CCNOW Console',
     start_url: '/',
+    scope: '/',
     display: 'standalone',
+    display_override: ['standalone', 'window-controls-overlay'],
     background_color: '#0a0c16',
-    theme_color: '#00f0ff',
+    theme_color: '#0a0c16',
     orientation: 'any',
     icons: [
       {

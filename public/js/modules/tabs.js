@@ -137,6 +137,15 @@ export function renderTabs() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+
+  // Smooth scroll active tab into view when tabs overflow
+  const activeTabEl = workspaceTabs.querySelector('.workspace-tab.active');
+  if (activeTabEl) {
+    setTimeout(() => {
+      activeTabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }, 40);
+  }
+
   saveTabsState();
   updateMobileControlsVisibility();
 }

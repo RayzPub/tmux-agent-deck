@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" id="pwaThemeColor" content="#141a29">
-  <!-- iOS PWA Standalone Optimization -->
+  <!-- iOS & Android PWA Standalone Optimization -->
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
@@ -76,6 +77,10 @@
             <i data-lucide="moon"></i>
             <span>赛博朋克</span>
           </button>
+          <button id="fullscreenToggleBtn" class="header-btn" title="切换全屏沉浸模式">
+            <i data-lucide="maximize"></i>
+            <span>全屏模式</span>
+          </button>
           <button id="qrCodeBtn" class="header-btn hidden-mobile" title="手机扫码打开网页">
             <i data-lucide="qr-code"></i>
             <span>手机扫码连接</span>
@@ -138,14 +143,16 @@
       <!-- Sidebar Navigation Tabs (CDS Segmented Pill Control) -->
       <div class="sidebar-tabs-wrapper">
         <div class="sidebar-tabs">
-          <button class="sidebar-tab active" id="tabSessionsBtn">
+          <button class="sidebar-tab active" id="tabSessionsBtn" title="智能体会话">
             <i data-lucide="terminal"></i>
-            <span>智能体会话</span>
+            <span class="tab-label-full">智能体会话</span>
+            <span class="tab-label-short">智能体</span>
             <span class="session-count" id="sessionCount">0</span>
           </button>
-          <button class="sidebar-tab" id="tabFilesBtn">
+          <button class="sidebar-tab" id="tabFilesBtn" title="文件浏览器">
             <i data-lucide="folder-tree"></i>
-            <span>文件浏览器</span>
+            <span class="tab-label-full">文件浏览器</span>
+            <span class="tab-label-short">文件浏览</span>
           </button>
         </div>
       </div>

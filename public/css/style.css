@@ -103,32 +103,26 @@ html {
   overflow: hidden;
   overscroll-behavior: none;
   overscroll-behavior-y: none;
+  touch-action: pan-x pan-y;
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
 body {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
   margin: 0;
   padding: 0;
   width: 100%;
-  width: 100vw;
+  height: 100%;
+  height: 100dvh;
   background-color: var(--bg-core, #141a29) !important;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 16px;
-  height: 100%;
-  height: -webkit-fill-available;
-  height: 100dvh;
-  height: var(--app-height, 100dvh);
   overflow: hidden;
   overscroll-behavior: none;
   overscroll-behavior-y: none;
+  touch-action: pan-x pan-y;
   display: flex;
   flex-direction: column;
   -webkit-text-size-adjust: 100%;
@@ -522,18 +516,11 @@ body {
    DASHBOARD STYLES (index.html)
    ========================================================================== */
 .dashboard-body {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
   width: 100%;
-  width: 100vw;
   height: 100%;
-  height: -webkit-fill-available;
   height: 100dvh;
-  height: var(--app-height, 100dvh);
-  max-height: var(--app-height, 100dvh);
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   overscroll-behavior: none;
   overscroll-behavior-y: none;
@@ -660,9 +647,9 @@ body {
 /* Layout Containers */
 .main-container {
   display: flex;
-  flex: 1;
+  flex: 1 1 0%;
   min-height: 0;
-  height: 100%;
+  width: 100%;
   position: relative;
   overflow: hidden;
 }
@@ -714,14 +701,21 @@ body {
 
 .session-count {
   font-family: var(--font-header);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
-  color: #fff;
-  background: var(--neon-cyan);
-  box-shadow: var(--glow-cyan);
-  padding: 2px 8px;
-  border-radius: 10px;
   color: #000;
+  background: var(--neon-cyan);
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.4);
+  padding: 0 5px;
+  border-radius: 999px;
+  min-width: 15px;
+  height: 15px;
+  line-height: 15px;
+  text-align: center;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .action-bar {
@@ -1712,7 +1706,7 @@ body.light-minimalist .highlight-text-btn:hover {
     z-index: 5;
   }
 
-  body.keyboard-active .mobile-bottom-controls {
+  .mobile-bottom-controls:focus-within {
     padding-bottom: 2px !important;
   }
 }
@@ -1852,7 +1846,7 @@ body.light-minimalist .highlight-text-btn:hover {
   border-radius: var(--radius-pill, 999px);
   color: #fff;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 20px;
   padding: 8px 14px;
   outline: none;
@@ -1949,32 +1943,17 @@ body.light-minimalist .highlight-text-btn:hover {
   to { opacity: 1; box-shadow: 0 0 18px rgba(255, 0, 127, 0.8); }
 }
 
-/* "整个页面上弹" - Duo & Mobile Page Elevation on Input */
-body.keyboard-active .cyber-header,
-body.keyboard-active .main-container {
-  transform: translateY(calc(-1 * var(--keyboard-offset, 0px)));
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
+/* Mobile Virtual Keyboard Adaptation: Lift bottom inputs & controls */
 
-body.keyboard-recovering .cyber-header,
-body.keyboard-recovering .main-container {
-  transform: translateY(0);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-body.keyboard-active #terminalPanel {
-  transform: none !important;
-}
-
-@media (max-width: 768px) {
+@media (max-width: 760px) {
   .hidden-mobile {
     display: none !important;
   }
   
-  /* Compact Header for iPhone 16 Pro Max and other phones */
+  /* Compact Header for iPhone and Duo portrait */
   .cyber-header {
-    height: calc(56px + env(safe-area-inset-top, 0px));
-    min-height: calc(56px + env(safe-area-inset-top, 0px));
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    min-height: calc(48px + env(safe-area-inset-top, 0px));
     padding: 0 12px;
     padding-top: env(safe-area-inset-top, 0px);
     padding-left: max(12px, env(safe-area-inset-left, 0px));
@@ -2012,56 +1991,55 @@ body.keyboard-active #terminalPanel {
   }
   
   .header-btn span {
-    display: none; /* Hide "DISCONNECT" text on mobile */
+    display: none; /* Hide text on mobile */
   }
   
-  /* Layout adjustments */
+  /* Layout adjustments: Single column layout */
   .main-container {
     flex-direction: column;
     flex: 1;
     min-height: 0;
     height: 100%;
+    position: relative;
   }
   
   /* Sidebar styled as sliding Drawer overlay */
   .sidebar {
-    position: absolute;
-    left: -320px;
-    top: 0;
-    width: 280px;
-    height: 100%;
-    z-index: 1000;
-    border-right: 1px solid var(--border-neon);
-    border-bottom: none;
-    background: var(--bg-sidebar);
-    box-shadow: 5px 0 25px rgba(0, 0, 0, 0.9), 0 0 15px rgba(0, 240, 255, 0.1);
-    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: absolute !important;
+    left: -280px !important;
+    top: 0 !important;
+    width: min(280px, 85vw) !important;
+    max-width: 320px !important;
+    height: 100% !important;
+    z-index: 1000 !important;
+    border-right: 1px solid var(--border-neon) !important;
+    border-bottom: none !important;
+    background: var(--surface-0, #141a29) !important;
+    box-shadow: 5px 0 25px rgba(0, 0, 0, 0.85), 0 0 15px rgba(0, 240, 255, 0.08) !important;
+    transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1) !important;
   }
   
   .sidebar.open {
-    left: 0;
+    left: 0 !important;
   }
   
   .close-sidebar-btn {
     display: flex;
   }
   
-  /* Terminal Workspace full screen height */
+  /* Terminal Workspace full screen width */
   .terminal-workspace {
     padding: 6px 6px 0px 6px !important;
-    height: 100%;
-    width: 100%;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
     overscroll-behavior: none;
     overscroll-behavior-y: none;
   }
   
-  .terminal-workspace.has-mobile-controls,
-  body.keyboard-active .terminal-workspace.has-mobile-controls {
+  .terminal-workspace.has-mobile-controls {
     padding-bottom: 0px !important;
-  }
-
-  body.keyboard-active #terminalPanel {
-    transform: none !important;
   }
   
   /* Compact Welcome Panel */
@@ -5860,10 +5838,29 @@ body.light-minimalist .deck-dropdown-menu .header-btn:hover {
 
 /* 7.2 Left Sidebar Container & Workspace Context Header */
 .sidebar {
-  width: 300px;
+  width: 248px; /* Strictly in 224–264px range */
+  min-width: 224px;
+  max-width: 264px;
   background: var(--surface-0, #141a29);
   border-right: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.08));
-  transition: width 0.26s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease, left 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1), min-width 0.25s cubic-bezier(0.22, 1, 0.36, 1), max-width 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease, left 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  container-type: inline-size;
+  container-name: sidebar-panel;
+}
+
+.sidebar.collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  border-right: none !important;
+  overflow: hidden !important;
 }
 
 body.light-minimalist .sidebar {
@@ -5874,8 +5871,8 @@ body.light-minimalist .sidebar {
 .workspace-selector-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 14px 12px 14px;
+  gap: 6px;
+  padding: 8px 10px 8px 10px;
   margin-bottom: 0;
   background: linear-gradient(180deg, rgba(16, 21, 36, 0.65) 0%, rgba(6, 8, 16, 0.4) 100%);
   border-bottom: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.08));
@@ -5889,17 +5886,17 @@ body.light-minimalist .workspace-selector-actions {
 
 .workspace-tech-header {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 1.2px;
+  letter-spacing: 0.8px;
   color: var(--neon-cyan);
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 .workspace-selector-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
 }
 
@@ -5913,9 +5910,9 @@ body.light-minimalist .workspace-selector-actions {
 
 .workspace-select-wrapper .input-icon {
   position: absolute;
-  left: 11px;
-  width: 15px;
-  height: 15px;
+  left: 9px;
+  width: 13px;
+  height: 13px;
   color: var(--text-secondary);
   z-index: 2;
   pointer-events: none;
@@ -5924,16 +5921,16 @@ body.light-minimalist .workspace-selector-actions {
 .workspace-select-wrapper .cyber-select,
 .workspace-select-wrapper .cyber-custom-select-trigger {
   width: 100%;
-  height: 34px !important;
-  padding: 6px 10px 6px 34px !important;
-  font-size: 12.5px !important;
+  height: 30px !important;
+  padding: 4px 6px 4px 28px !important;
+  font-size: 11.5px !important;
   border-radius: var(--radius-sm, 8px) !important;
   background: var(--surface-2, #101524) !important;
   border: 0.5px solid rgba(255, 255, 255, 0.12) !important;
   color: var(--text-primary) !important;
   box-shadow: var(--shadow-sm) !important;
   font-family: var(--font-mono);
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
@@ -5991,9 +5988,9 @@ body.light-minimalist .cyber-btn-outline:hover {
 
 .sidebar-icon-btn {
   padding: 0 !important;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6003,8 +6000,8 @@ body.light-minimalist .cyber-btn-outline:hover {
 
 .sidebar-icon-btn i,
 .sidebar-icon-btn svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 #closeSidebarBtn {
@@ -6013,10 +6010,7 @@ body.light-minimalist .cyber-btn-outline:hover {
   color: var(--neon-pink);
 }
 
-@media (max-width: 768px),
-       ((hover: none) and (pointer: coarse) and (max-width: 1024px)),
-       (horizontal-viewport-segments: 2),
-       (screen-spanning: single-fold-vertical) {
+@media (max-width: 760px) {
   #closeSidebarBtn {
     display: inline-flex !important;
   }
@@ -6029,19 +6023,23 @@ body.light-minimalist #closeSidebarBtn {
 
 /* 7.3 Sidebar Navigation Tabs — CDS 999px Segmented Pill Control */
 .sidebar-tabs-wrapper {
-  padding: 10px 14px 6px 14px;
+  padding: 4px 6px 4px 6px;
   background: transparent;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .sidebar-tabs {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px;
+  gap: 2px;
+  padding: 2px;
   border-radius: var(--radius-pill, 999px);
   background: rgba(0, 0, 0, 0.35);
   border: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.08));
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 body.light-minimalist .sidebar-tabs {
@@ -6051,21 +6049,61 @@ body.light-minimalist .sidebar-tabs {
 }
 
 .sidebar-tab {
-  flex: 1;
+  flex: 1 1 50%;
+  min-width: 0;
   border: none !important;
   border-radius: var(--radius-pill, 999px);
-  padding: 7px 10px;
-  font-family: var(--font-header);
+  padding: 5px 6px;
+  font-family: var(--font-body);
   font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
   color: var(--text-secondary);
   background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sidebar-tab .tab-label-full {
+  display: inline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-tab .tab-label-short {
+  display: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container sidebar-panel (max-width: 236px) {
+  .sidebar-tab {
+    padding: 4px 4px;
+    font-size: 11px;
+    gap: 3px;
+  }
+  .sidebar-tab .tab-label-full {
+    display: none;
+  }
+  .sidebar-tab .tab-label-short {
+    display: inline;
+  }
+}
+
+.sidebar-tab i,
+.sidebar-tab svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .sidebar-tab:hover {
@@ -6139,20 +6177,23 @@ body.light-minimalist .sidebar-primary-action-btn:hover {
 }
 
 .session-list {
-  padding: 8px 14px 18px 14px;
-  gap: 8px;
+  padding: 6px 10px 10px 10px;
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   mask-image: linear-gradient(
     to bottom,
     transparent 0px,
-    #000 8px,
-    #000 calc(100% - 14px),
+    #000 6px,
+    #000 calc(100% - 10px),
     transparent 100%
   );
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0px,
-    #000 8px,
-    #000 calc(100% - 14px),
+    #000 6px,
+    #000 calc(100% - 10px),
     transparent 100%
   );
 }
@@ -6160,10 +6201,14 @@ body.light-minimalist .sidebar-primary-action-btn:hover {
 .session-card {
   background: var(--surface-2, rgba(16, 21, 36, 0.72));
   border: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.08));
-  border-radius: var(--radius-md, 10px);
-  padding: 11px 13px;
+  border-radius: var(--radius-sm, 8px);
+  padding: 7px 10px;
   box-shadow: var(--shadow-sm);
-  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: all 0.16s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
 }
 
 .session-card:hover {
@@ -6174,7 +6219,7 @@ body.light-minimalist .sidebar-primary-action-btn:hover {
 }
 
 .session-card:active {
-  transform: scale(0.99);
+  transform: scale(0.985);
 }
 
 .session-card.active {
@@ -6203,14 +6248,17 @@ body.light-minimalist .session-card.active {
 }
 
 .session-info {
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
+  margin-bottom: 4px;
 }
 
 .session-name-wrapper {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   overflow: hidden;
   min-width: 0;
   flex: 1;
@@ -6218,8 +6266,8 @@ body.light-minimalist .session-card.active {
 
 .session-status-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
   flex-shrink: 0;
   transition: all 0.2s ease;
@@ -6246,18 +6294,27 @@ body.light-minimalist .session-status-dot.detached {
 }
 
 .session-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.3px;
-  max-width: 135px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
 }
 
 .session-workspace {
   border-radius: var(--radius-xs, 6px);
-  padding: 2px 7px;
-  font-size: 10.5px;
+  padding: 1px 6px;
+  font-size: 9.5px;
   background: rgba(255, 255, 255, 0.04);
   border: 0.5px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  max-width: 85px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 body.light-minimalist .session-workspace {
@@ -6272,19 +6329,123 @@ body.light-minimalist .session-card.active .session-workspace {
   color: #3730a3;
 }
 
-/* Hover-reveal delete action on Desktop, always visible on touch/mobile */
-@media (hover: hover) and (min-width: 769px) {
-  .session-card .card-action-btn {
-    opacity: 0;
-    transform: scale(0.92);
-    transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease, background 0.15s ease;
-  }
+.session-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
 
-  .session-card:hover .card-action-btn,
-  .session-card:focus-within .card-action-btn {
-    opacity: 1;
-    transform: scale(1);
-  }
+.session-time {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Secondary Actions Menu for Session Card */
+.session-more-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+  position: relative;
+  touch-action: manipulation;
+}
+
+.session-more-btn i,
+.session-more-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.session-more-btn::after {
+  content: '';
+  position: absolute;
+  inset: -6px; /* expands touch hitbox to >=40x40px */
+}
+
+.session-more-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+body.light-minimalist .session-more-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.session-card-menu {
+  position: absolute;
+  right: 6px;
+  bottom: calc(100% - 2px);
+  background: var(--surface-3, #1e263d);
+  border: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  padding: 3px;
+  z-index: 60;
+  min-width: 105px;
+  display: flex;
+  flex-direction: column;
+}
+
+body.light-minimalist .session-card-menu {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.session-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: var(--font-header, sans-serif);
+  width: 100%;
+  text-align: left;
+  min-height: 32px;
+  touch-action: manipulation;
+}
+
+.session-menu-item i,
+.session-menu-item svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.session-menu-item.danger {
+  color: var(--neon-pink, #ff007f);
+}
+
+body.light-minimalist .session-menu-item.danger {
+  color: #ef4444;
+}
+
+.session-menu-item:hover,
+.session-menu-item:active {
+  background: rgba(255, 0, 127, 0.12);
+}
+
+body.light-minimalist .session-menu-item:hover,
+body.light-minimalist .session-menu-item:active {
+  background: #fef2f2;
 }
 
 .card-action-btn {
@@ -6736,20 +6897,16 @@ body.light-minimalist .auth-alert.success .alert-message {
 
 /* ==========================================================================
    14. iPhone Duo & Foldable Dual-Screen / Wide-Screen Optimization
-   Main Inner Display: ~890px x 626px (Landscape 10:7 squarish wide canvas)
-   Portrait Display: Vertical dual screen & unfolded tall canvas
-   Edge-to-Edge Full-Bleed Immersive Architecture:
-   Zero margins, zero framing padding, 100% full-screen coverage
+   Main Inner Display: ~951px (Landscape dual canvas) -> Dual Column
+   Portrait Display: ~669px (Vertical canvas) -> Single Column + Drawer
+   Outer Display: ~382px (Closed canvas) -> Single Column + Drawer
+   Edge-to-Edge Full-Bleed Immersive Architecture (100dvh, zero margins)
    ========================================================================== */
-@media (min-width: 580px) and (hover: none) and (pointer: coarse),
-       (min-width: 769px) and (hover: none) and (pointer: coarse),
+@media (min-width: 761px),
        ((orientation: landscape) and (hover: none) and (pointer: coarse)),
        ((orientation: landscape) and (max-height: 768px)),
-       (min-width: 580px) and (max-height: 768px),
        (horizontal-viewport-segments: 2),
-       (screen-spanning: single-fold-vertical),
-       (vertical-viewport-segments: 2),
-       (screen-spanning: single-fold-horizontal) {
+       (screen-spanning: single-fold-vertical) {
 
   /* 14.1 Full-Bleed Edge-to-Edge Canvas: Zero Padding, Zero Extra Margins */
   .dashboard-body {
@@ -6760,13 +6917,8 @@ body.light-minimalist .auth-alert.success .alert-message {
     width: 100vw !important;
     height: 100% !important;
     height: 100dvh !important;
-    inset: 0 !important;
     box-sizing: border-box;
     overflow: hidden;
-  }
-
-  body.keyboard-active {
-    padding: 0 !important;
   }
 
   /* 14.2 Flush Top Header: Seamless Status-Bar Integration */
@@ -6775,8 +6927,8 @@ body.light-minimalist .auth-alert.success .alert-message {
     min-height: calc(46px + env(safe-area-inset-top, 0px)) !important;
     padding: 0 14px !important;
     padding-top: calc(3px + env(safe-area-inset-top, 0px)) !important;
-    padding-left: max(24px, calc(env(safe-area-inset-left, 0px) + 16px)) !important;
-    padding-right: max(24px, calc(env(safe-area-inset-right, 0px) + 16px)) !important;
+    padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 8px)) !important;
+    padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + 8px)) !important;
     border-radius: 0 !important;
     border: none !important;
     border-bottom: 1px solid var(--border-hairline, rgba(255, 255, 255, 0.08)) !important;
@@ -6839,8 +6991,10 @@ body.light-minimalist .auth-alert.success .alert-message {
     display: none !important;
   }
 
-  /* 14.3 Full-Bleed Main Stage Container */
+  /* 14.3 Dual-Column Main Stage: Left Workspace + Right Agent Conversation */
   .main-container {
+    display: flex !important;
+    flex-direction: row !important;
     flex: 1;
     min-height: 0 !important;
     height: auto;
@@ -6860,13 +7014,51 @@ body.light-minimalist .auth-alert.success .alert-message {
     box-shadow: none !important;
   }
 
+  /* Left Workspace Sidebar strictly within 224-264px */
+  .sidebar {
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 248px !important;
+    min-width: 224px !important;
+    max-width: 264px !important;
+    height: 100% !important;
+    flex-shrink: 0 !important;
+    border-right: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.08)) !important;
+    z-index: 10 !important;
+    box-shadow: none !important;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1), min-width 0.25s cubic-bezier(0.22, 1, 0.36, 1), max-width 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease !important;
+  }
+
+  .sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    border-right: none !important;
+    overflow: hidden !important;
+  }
+
+  #closeSidebarBtn {
+    display: none !important;
+  }
+
+  .sidebarOverlay {
+    display: none !important;
+  }
+
+  /* Right Conversation Workspace fills all remaining space */
   .terminal-workspace {
     padding: 3px 6px 3px 6px !important;
     padding-bottom: max(3px, calc(env(safe-area-inset-bottom, 0px) - 14px)) !important;
     background: transparent;
     height: 100%;
-    width: 100%;
-    min-height: 0 !important;
+    width: auto;
+    flex: 1 !important;
+    min-width: 0 !important;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -6922,11 +7114,24 @@ body.light-minimalist .auth-alert.success .alert-message {
   .workspace-tabs {
     padding: 2px 4px 4px 2px;
     gap: 4px;
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
 
   .workspace-tab {
+    flex-shrink: 0;
     padding: 5px 10px;
     font-size: 11px;
+    min-height: 28px;
+  }
+
+  .workspace-tab .close-tab-btn {
+    padding: 6px;
+    margin: -6px -2px -6px 2px;
+    min-width: 24px;
+    min-height: 24px;
   }
 
   /* Compact Mobile Controls in Wide / Landscape Mode */
@@ -7042,21 +7247,21 @@ body.light-minimalist .auth-alert.success .alert-message {
 /* Dual-Screen Fold / Seam Protection (CSS Viewport Segments API) */
 @media (horizontal-viewport-segments: 2), (screen-spanning: single-fold-vertical) {
   .main-container {
-    display: flex;
-    flex-direction: row;
+    display: flex !important;
+    flex-direction: row !important;
   }
 
   .sidebar {
-    width: env(viewport-segment-width 0 0, 420px);
-    max-width: calc(50vw - 12px);
-    border-right: 1px solid var(--border-neon);
+    width: env(viewport-segment-width 0 0, 248px) !important;
+    max-width: calc(50vw - 8px) !important;
+    border-right: 1px solid var(--border-neon) !important;
   }
 
   .terminal-workspace {
-    flex: 1;
-    min-width: 0;
-    padding-left: max(14px, calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-width 0 0, 50vw) + 12px));
-    padding-right: max(14px, env(safe-area-inset-right, 0px));
+    flex: 1 !important;
+    min-width: 0 !important;
+    padding-left: max(10px, calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-width 0 0, 50vw) + 8px)) !important;
+    padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
   }
 
   /* Modals center in single viewport segment to avoid fold crease */
@@ -7115,17 +7320,9 @@ body.light-minimalist .sidebar {
   }
 
   .dashboard-body {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
     width: 100% !important;
-    width: 100vw !important;
     height: 100% !important;
-    height: -webkit-fill-available !important;
     height: 100dvh !important;
-    max-height: 100dvh !important;
     background-color: var(--bg-core, #141a29) !important;
   }
 }

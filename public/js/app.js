@@ -14,7 +14,10 @@ import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 import { initProjectOverviewEvents, openProjectTab } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
-import { initMobileInput } from './modules/mobileInput.js';
+import { initMobileInput, initPreventZoom } from './modules/mobileInput.js';
+
+// Lock zoom immediately at script evaluation
+initPreventZoom();
 
 // Expose immediately for terminal and tab operations
 window.applySessionViewMode = applySessionViewMode;
@@ -26,6 +29,7 @@ const newSessionBtn = document.getElementById('newSessionBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const hostIpText = document.getElementById('hostIp');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
+const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
 const pushToggleBtn = document.getElementById('pushToggleBtn');
 const reloadBtn = document.getElementById('reloadBtn');
 
@@ -123,6 +127,51 @@ initTheme();
 loadAppIcons();
 initAppIconAdminPanel();
 initLlmGatewayAdminPanel();
+
+// Fullscreen mode toggling initialization
+function updateFullscreenButtonState() {
+  if (!fullscreenToggleBtn) return;
+  const isFull = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  const icon = fullscreenToggleBtn.querySelector('i');
+  const span = fullscreenToggleBtn.querySelector('span');
+  if (span) {
+    span.textContent = isFull ? '退出全屏' : '全屏模式';
+  }
+  if (icon) {
+    icon.setAttribute('data-lucide', isFull ? 'minimize' : 'maximize');
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      window.lucide.createIcons();
+    }
+  }
+}
+
+if (fullscreenToggleBtn) {
+  fullscreenToggleBtn.addEventListener('click', async () => {
+    try {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          await document.documentElement.webkitRequestFullscreen();
+        } else {
+          alert('当前浏览器环境暂不支持网页直接进入全屏。推荐在 Safari / Chrome 点击分享，选择“添加到主屏幕”，即可享受全屏独立 App 沉浸体验！');
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen toggle request error:', err);
+    }
+    updateFullscreenButtonState();
+  });
+
+  document.addEventListener('fullscreenchange', updateFullscreenButtonState);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenButtonState);
+}
 
 // Push notification toggling initialization
 if (pushToggleBtn) {
@@ -288,18 +337,48 @@ export function renderSessions(sessions) {
       <div class="session-meta">
         <span class="session-time">${session.created}</span>
         <div class="card-actions">
-          <button class="card-action-btn danger-btn" data-action="kill" data-name="${session.name}" title="结束会话">
-            <i data-lucide="trash-2"></i>
+          <button class="session-more-btn" data-action="toggle-menu" data-name="${session.name}" title="更多操作">
+            <i data-lucide="more-horizontal"></i>
           </button>
+          <div class="session-card-menu hidden">
+            <button class="session-menu-item danger" data-action="kill" data-name="${session.name}" title="终止该会话">
+              <i data-lucide="trash-2"></i>
+              <span>结束会话</span>
+            </button>
+          </div>
         </div>
       </div>
     `;
 
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.card-action-btn')) return;
+      if (e.target.closest('.card-actions')) return;
       closeSidebarOnMobile();
       attachSession(session.name);
     });
+
+    const moreBtn = card.querySelector('.session-more-btn');
+    const cardMenu = card.querySelector('.session-card-menu');
+    if (moreBtn && cardMenu) {
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.session-card-menu:not(.hidden)').forEach(m => {
+          if (m !== cardMenu) m.classList.add('hidden');
+        });
+        cardMenu.classList.toggle('hidden');
+      });
+    }
+
+    const killBtn = card.querySelector('.session-menu-item[data-action="kill"]');
+    if (killBtn) {
+      killBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (cardMenu) cardMenu.classList.add('hidden');
+        const name = killBtn.getAttribute('data-name');
+        if (confirm(`您确定要终止 tmux 会话 "${name}" 吗？`)) {
+          await killSession(name);
+        }
+      });
+    }
 
     sessionList.appendChild(card);
   });
@@ -307,17 +386,16 @@ export function renderSessions(sessions) {
   if (window.lucide) {
     window.lucide.createIcons();
   }
-
-  document.querySelectorAll('.card-action-btn[data-action="kill"]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const name = btn.getAttribute('data-name');
-      if (confirm(`您确定要终止 tmux 会话 "${name}" 吗？`)) {
-        await killSession(name);
-      }
-    });
-  });
 }
+
+// Global click listener to dismiss any open session secondary card menus
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.card-actions')) {
+    document.querySelectorAll('.session-card-menu:not(.hidden)').forEach(m => {
+      m.classList.add('hidden');
+    });
+  }
+});
 
 async function killSession(name) {
   try {
@@ -345,7 +423,7 @@ window.deckEvents = {
 
 // Unified sidebar closed function
 function closeSidebarOnMobile() {
-  if (window.innerWidth <= 768 && sidebar && sidebarOverlay) {
+  if (window.innerWidth <= 760 && sidebar && sidebarOverlay) {
     sidebar.classList.remove('open');
     sidebarOverlay.classList.add('hidden');
   }
@@ -379,7 +457,7 @@ if (closeTerminalBtn) {
 // Sidebar drawer toggle
 if (sidebar && sidebarOverlay) {
   const toggleSidebar = () => {
-    if (window.innerWidth <= 768) {
+    if (window.innerWidth <= 760) {
       sidebar.classList.toggle('open');
       sidebarOverlay.classList.toggle('hidden');
     } else {
@@ -389,7 +467,7 @@ if (sidebar && sidebarOverlay) {
   };
 
   const closeSidebar = () => {
-    if (window.innerWidth <= 768) {
+    if (window.innerWidth <= 760) {
       sidebar.classList.remove('open');
       sidebarOverlay.classList.add('hidden');
     } else {
@@ -411,6 +489,18 @@ if (sidebar && sidebarOverlay) {
     closeSidebarBtnFiles.addEventListener('click', closeSidebar);
   }
 
+  // Auto clean up drawer and overlay when switching from mobile/portrait to landscape/desktop (>760px)
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 760) {
+      if (sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+      }
+      if (!sidebarOverlay.classList.contains('hidden')) {
+        sidebarOverlay.classList.add('hidden');
+      }
+    }
+  });
+
   // Swipe to open/close sidebar on mobile
   let touchStartX = 0;
   let touchStartY = 0;
@@ -421,7 +511,7 @@ if (sidebar && sidebarOverlay) {
   }, { passive: true });
 
   document.addEventListener('touchend', (e) => {
-    const isTouch = window.innerWidth <= 768 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+    const isTouch = window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
     if (!isTouch && window.innerWidth > 1024) return;
 
     const touchEndX = e.changedTouches[0].clientX;
@@ -432,7 +522,7 @@ if (sidebar && sidebarOverlay) {
 
     // Horizontal swipe threshold of 60px, must be mostly horizontal
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
-      if (window.innerWidth <= 768) {
+      if (window.innerWidth <= 760) {
         const isSidebarOpen = sidebar.classList.contains('open');
 
         if (deltaX > 0) {
@@ -471,14 +561,14 @@ if (cyberHeader) {
     if (e.target.closest('button, .header-btn, .sidebar-toggle-btn, #sidebarToggle, #deckControlToggleBtn, .deck-control-dropdown, a, input, select')) {
       return;
     }
-    if (window.innerWidth <= 768) e.preventDefault();
+    if (window.innerWidth <= 760) e.preventDefault();
   }, { passive: false });
 }
 
 const terminalWorkspace = document.querySelector('.terminal-workspace');
 if (terminalWorkspace) {
   terminalWorkspace.addEventListener('touchmove', (e) => {
-    if (window.innerWidth <= 768) {
+    if (window.innerWidth <= 760) {
       if (e.target.closest('#editorTextarea') || 
           e.target.closest('#markdownPreview') || 
           e.target.closest('#diffPanel .editor-container-wrapper') || 

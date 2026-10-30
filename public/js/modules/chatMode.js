@@ -7,6 +7,7 @@
 import { state } from './state.js';
 import { fitTerminal, attachSession, isTouchDevice } from './terminal.js';
 import { stopVoiceInput, bindChatVoiceInput } from './voice.js';
+import { restorePwaViewportScroll } from './mobileInput.js';
 
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
@@ -472,6 +473,7 @@ export async function checkSessionSupport(sessionName) {
  */
 export async function applySessionViewMode(sessionName, forceMode) {
   const terminalContainer = document.getElementById('terminal-container');
+  const terminalWrapper = document.querySelector('.terminal-container-wrapper');
   const chatContainer = document.getElementById('agentChatContainer');
   const btnTerminal = document.getElementById('modeBtnTerminal');
   const btnChat = document.getElementById('modeBtnChat');
@@ -487,6 +489,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
     if (switcher) switcher.style.display = 'none';
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
+    if (terminalWrapper) {
+      terminalWrapper.classList.remove('hidden');
+      terminalWrapper.style.display = '';
+    }
     stopChatPolling();
     return;
   }
@@ -512,6 +518,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
   const cachedSupport = sessionSupportCache.get(currentSess);
   if (targetMode === 'chat' && cachedSupport !== false) {
     terminalContainer.classList.add('hidden');
+    if (terminalWrapper) {
+      terminalWrapper.classList.add('hidden');
+      terminalWrapper.style.display = 'none';
+    }
     chatContainer.classList.remove('hidden');
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
@@ -538,6 +548,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
     if (switcher) switcher.style.display = 'none';
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
+    if (terminalWrapper) {
+      terminalWrapper.classList.remove('hidden');
+      terminalWrapper.style.display = '';
+    }
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
 
@@ -559,6 +573,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
 
   if (targetMode === 'chat') {
     terminalContainer.classList.add('hidden');
+    if (terminalWrapper) {
+      terminalWrapper.classList.add('hidden');
+      terminalWrapper.style.display = 'none';
+    }
     chatContainer.classList.remove('hidden');
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
@@ -577,6 +595,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
   } else {
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
+    if (terminalWrapper) {
+      terminalWrapper.classList.remove('hidden');
+      terminalWrapper.style.display = '';
+    }
     btnTerminal.classList.add('active');
     btnChat.classList.remove('active');
 
@@ -977,8 +999,7 @@ function bindComposerEvents() {
 
     textarea.addEventListener('input', () => {
       textarea.style.height = 'auto';
-      const isKeyboardActive = document.body.classList.contains('keyboard-active');
-      const maxHeight = isKeyboardActive ? 80 : 150;
+      const maxHeight = window.innerWidth <= 768 ? 96 : 150;
       textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
 
       const val = textarea.value;
@@ -991,20 +1012,12 @@ function bindComposerEvents() {
 
     textarea.addEventListener('focus', () => {
       if (inputRow) inputRow.classList.add('is-focused');
-      // Prevent iOS WebKit window scroll and pin messages to bottom
-      window.scrollTo(0, 0);
-      setTimeout(() => {
-        window.scrollTo(0, 0);
-        scrollToChatBottom(true);
-      }, 100);
-      setTimeout(() => {
-        window.scrollTo(0, 0);
-      }, 300);
+      scrollToChatBottom(true);
     });
 
     textarea.addEventListener('blur', () => {
       if (inputRow) inputRow.classList.remove('is-focused');
-      window.scrollTo(0, 0);
+      restorePwaViewportScroll();
       if (slashBlurTimer) clearTimeout(slashBlurTimer);
       slashBlurTimer = setTimeout(() => {
         const active = document.activeElement;

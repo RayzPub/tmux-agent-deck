@@ -204,9 +204,8 @@ export function fitTerminalFor(sessionName) {
     }
 
     // On touch devices, if the virtual keyboard is active, avoid shrinking rows (which causes TUI reflow)
-    const isKeyboardActive = isTouchDevice() && (
-      document.body.classList.contains('keyboard-active') ||
-      (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'))
+    const isKeyboardActive = isTouchDevice() && Boolean(
+      document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')
     );
 
     try {
