@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" id="pwaThemeColor" content="#141a29">
+  <!-- iOS PWA Standalone Optimization -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CCNOW">
   <title>CCNOW // AI 智能体后台控制中心</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
@@ -323,6 +327,40 @@
         <!-- Terminal Output Node -->
         <div class="terminal-container-wrapper">
           <div id="terminal-container"></div>
+        </div>
+
+        <!-- Terminal Bottom Shortcut Controls (Rearranged for Duo & Mobile) -->
+        <div class="mobile-bottom-controls hidden">
+          <!-- Mobile Keyboard Helper Bar (Row 1) -->
+          <div class="mobile-keyboard-bar" id="mobileKeyboardBar">
+            <div class="helper-key-group main-keys">
+              <button class="helper-key" data-key="esc">ESC</button>
+              <button class="helper-key" data-key="tab">TAB</button>
+              <button class="helper-key" data-key="ctrl-c">C-c</button>
+              <button class="helper-key" data-key="clear" title="发送 /clear">/clear</button>
+              <button class="helper-key modifier-key" data-key="paste" title="粘贴"><i data-lucide="clipboard-paste"></i></button>
+              <button class="helper-key" data-key="pgup" title="Page Up">PgUp</button>
+              <button class="helper-key" data-key="pgdn" title="Page Down">PgDn</button>
+            </div>
+            <div class="helper-key-group arrow-keys">
+              <button class="helper-key arrow-key" data-key="left"><i data-lucide="chevron-left"></i></button>
+              <button class="helper-key arrow-key" data-key="up"><i data-lucide="chevron-up"></i></button>
+              <button class="helper-key arrow-key" data-key="down"><i data-lucide="chevron-down"></i></button>
+              <button class="helper-key arrow-key" data-key="right"><i data-lucide="chevron-right"></i></button>
+              <button class="helper-key keyboard-toggle" id="keyboardToggleBtn" data-key="keyboard-toggle" title="呼出/隐藏软键盘">
+                <i data-lucide="keyboard"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Mobile Command Input Bar (Row 2) -->
+          <div class="mobile-input-bar" id="mobileInputBar">
+            <button id="mobileMicBtn" class="mobile-mic-btn" title="语音输入"><i data-lucide="mic"></i></button>
+            <textarea id="mobileCommandInput" class="mobile-cmd-input" rows="1" placeholder="输入终端命令或口述..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send"></textarea>
+            <button id="mobileSendBtn" class="mobile-send-btn" title="发送至终端">
+              <i data-lucide="send"></i>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -753,36 +791,6 @@
 
   <!-- Sidebar Overlay for mobile -->
   <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
-
-  <!-- Mobile Controls Wrapper -->
-  <div class="mobile-bottom-controls hidden-desktop hidden">
-    <!-- Mobile Command Input Bar -->
-    <div class="mobile-input-bar" id="mobileInputBar">
-      <button id="mobileMicBtn" class="mobile-mic-btn" title="语音输入"><i data-lucide="mic"></i></button>
-      <textarea id="mobileCommandInput" class="mobile-cmd-input" rows="1" placeholder="请输入或口述命令..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send"></textarea>
-      <button id="mobileSendBtn" class="mobile-send-btn" title="发送至终端">
-        <i data-lucide="send"></i>
-      </button>
-    </div>
-
-    <!-- Mobile Keyboard Helper Bar -->
-    <div class="mobile-keyboard-bar" id="mobileKeyboardBar">
-      <button class="helper-key" data-key="esc">ESC</button>
-      <button class="helper-key" data-key="tab">TAB</button>
-      <button class="helper-key" data-key="pgup" title="Page Up">PgUp</button>
-      <button class="helper-key" data-key="pgdn" title="Page Down">PgDn</button>
-      <button class="helper-key" data-key="clear" title="Send /clear to Agent">/clear</button>
-      <button class="helper-key modifier-key" data-key="paste" title="Paste"><i data-lucide="clipboard-paste"></i></button>
-      <button class="helper-key" data-key="ctrl-c">C-c</button>
-      <button class="helper-key arrow-key" data-key="up"><i data-lucide="chevron-up"></i></button>
-      <button class="helper-key arrow-key" data-key="down"><i data-lucide="chevron-down"></i></button>
-      <button class="helper-key arrow-key" data-key="left"><i data-lucide="chevron-left"></i></button>
-      <button class="helper-key arrow-key" data-key="right"><i data-lucide="chevron-right"></i></button>
-      <button class="helper-key keyboard-toggle" id="keyboardToggleBtn" data-key="keyboard-toggle" title="Show Keyboard">
-        <i data-lucide="keyboard"></i>
-      </button>
-    </div>
-  </div>
 
   <!-- Directory Picker Modal -->
   <div class="modal-overlay hidden" id="dirPickerModal" style="z-index: 1000;">

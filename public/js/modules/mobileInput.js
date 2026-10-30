@@ -34,6 +34,53 @@ export function autoResizeMobileInput(textarea) {
 }
 
 /**
+ * Detect if running inside iOS PWA standalone mode (Add to Home Screen)
+ */
+export function isIosStandalone() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(
+    (window.navigator && window.navigator.standalone) ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+  );
+}
+
+/**
+ * Synchronize viewport height to CSS custom properties and force WebKit layout reflow.
+ * Resolves the notorious iOS Safari & PWA standalone landscape desync and stuck viewport bugs.
+ */
+export function syncAppViewportHeight() {
+  if (typeof window === 'undefined') return;
+
+  const active = document.activeElement;
+  const isInputFocused = active && (
+    active.id === 'mobileCommandInput' ||
+    active.id === 'chatComposerTextarea' ||
+    active.tagName === 'INPUT' ||
+    active.tagName === 'TEXTAREA'
+  );
+
+  let currentHeight = window.innerHeight;
+  const visualHeight = window.visualViewport ? window.visualViewport.height : currentHeight;
+
+  if (isInputFocused) {
+    document.documentElement.style.setProperty('--app-height', `${currentHeight}px`);
+    document.documentElement.style.setProperty('--app-visual-height', `${visualHeight}px`);
+  } else {
+    // When keyboard is closed, naturally use 100dvh so layout is NEVER locked to stale pixel dimensions
+    document.documentElement.style.setProperty('--app-height', '100dvh');
+    document.documentElement.style.setProperty('--app-visual-height', '100dvh');
+    document.documentElement.style.setProperty('--keyboard-offset', '0px');
+  }
+
+  // Clear any stale inline pixel height locks so CSS 100% / 100dvh applies cleanly
+  if (document.documentElement.style.height) document.documentElement.style.height = '';
+  if (document.body.style.height) document.body.style.height = '';
+
+  // Force synchronous reflow
+  void document.body.offsetHeight;
+}
+
+/**
  * Link visualViewport with mobile bottom controls to prevent soft keyboard occlusion
  * Handles iOS Safari / Android Chrome virtual keyboard events dynamically
  */
@@ -41,24 +88,44 @@ export function initVisualViewportLinkage() {
   if (typeof window === 'undefined' || !window.visualViewport) return;
 
   const mobileControls = document.querySelector('.mobile-bottom-controls');
-  const mobileInput = document.getElementById('mobileCommandInput');
   const chatComposer = document.getElementById('chatComposerTextarea');
 
   let resizeTimer = null;
+
+  // Initial sync on mount
+  syncAppViewportHeight();
 
   const handleViewportChange = () => {
     const vv = window.visualViewport;
     if (!vv) return;
 
+    // Strict window scroll guard: keep window.scrollY at 0 so Safari never shifts the layout viewport
+    if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0 || document.body.scrollTop !== 0) {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+
+    syncAppViewportHeight();
+
     const layoutHeight = window.innerHeight;
     const visualHeight = vv.height;
-    const offsetTop = vv.offsetTop || 0;
 
-    // Calculate keyboard overlap height at the bottom of the layout viewport
-    const rawBottomOffset = Math.max(0, layoutHeight - (visualHeight + offsetTop));
-    // Threshold to differentiate virtual keyboard vs browser URL bar expansion
-    const isKeyboardOpen = rawBottomOffset > 80;
-    const bottomOffset = isKeyboardOpen ? Math.round(rawBottomOffset) : 0;
+    // The true software keyboard height is the difference between layout height and visual viewport height
+    const keyboardDiff = Math.max(0, layoutHeight - visualHeight);
+
+    const activeEl = document.activeElement;
+    const isInputFocused = activeEl && (
+      activeEl.id === 'mobileCommandInput' ||
+      activeEl.id === 'chatComposerTextarea' ||
+      activeEl.tagName === 'INPUT' ||
+      activeEl.tagName === 'TEXTAREA'
+    );
+
+    // Virtual keyboard is ONLY open when an input is actively focused AND height difference > 45px!
+    // If no input has focus, keyboard is GUARANTEED closed (never leave residual offset / blank space).
+    const isKeyboardOpen = Boolean(isInputFocused && keyboardDiff > 45);
+    const bottomOffset = isKeyboardOpen ? Math.round(keyboardDiff) : 0;
 
     document.documentElement.style.setProperty('--keyboard-offset', `${bottomOffset}px`);
 
@@ -66,16 +133,18 @@ export function initVisualViewportLinkage() {
       document.body.classList.add('keyboard-active');
     } else {
       document.body.classList.remove('keyboard-active');
+      if (window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
     }
 
     if (mobileControls) {
       if (isKeyboardOpen) {
         mobileControls.classList.add('keyboard-open');
-        mobileControls.style.bottom = `${bottomOffset}px`;
       } else {
         mobileControls.classList.remove('keyboard-open');
-        mobileControls.style.bottom = '0px';
       }
+      mobileControls.style.bottom = '0px';
 
       // Sync measured height to CSS variable
       document.documentElement.style.setProperty(
@@ -84,41 +153,18 @@ export function initVisualViewportLinkage() {
       );
     }
 
-    // Agent chat container linkage: shrink container above virtual keyboard so messages are never occluded
+    // Agent chat container: page lifts up as a whole on Duo & mobile
     const agentChatContainer = document.getElementById('agentChatContainer');
     const agentComposer = document.querySelector('.agent-chat-composer');
     if (agentComposer) {
       agentComposer.style.transform = '';
     }
     if (agentChatContainer && !agentChatContainer.classList.contains('hidden')) {
-      if (isKeyboardOpen) {
-        agentChatContainer.style.paddingBottom = `${bottomOffset}px`;
-      } else {
-        agentChatContainer.style.paddingBottom = '0px';
-      }
+      agentChatContainer.style.paddingBottom = '0px';
       const msgStream = document.getElementById('agentChatMessages');
       if (msgStream && isKeyboardOpen) {
-        const dist = msgStream.scrollHeight - msgStream.scrollTop - msgStream.clientHeight;
-        if (dist <= 180) {
-          msgStream.scrollTop = msgStream.scrollHeight;
-        }
+        msgStream.scrollTop = msgStream.scrollHeight;
       }
-    }
-
-    // Scroll active element into view smoothly if user is typing
-    const activeEl = document.activeElement;
-    if (
-      activeEl &&
-      (activeEl === mobileInput ||
-        activeEl === chatComposer ||
-        (mobileControls && mobileControls.contains(activeEl)))
-    ) {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        try {
-          activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        } catch (e) {}
-      }, 50);
     }
 
     // Ensure terminal view is pinned to bottom when keyboard toggles
@@ -140,25 +186,221 @@ export function initVisualViewportLinkage() {
     }
   };
 
-  window.visualViewport.addEventListener('resize', handleViewportChange);
+  const triggerViewportSync = () => {
+    handleViewportChange();
+    [40, 100, 200, 320, 480].forEach((delay) => {
+      setTimeout(handleViewportChange, delay);
+    });
+  };
 
-  // Focus and blur hooks for rapid keyboard transition
-  if (mobileInput) {
-    mobileInput.addEventListener('focus', () => {
-      if (state.currentSession) {
+  window.visualViewport.addEventListener('resize', handleViewportChange);
+  window.visualViewport.addEventListener('scroll', handleViewportChange);
+
+  const handleOrientationOrResize = () => {
+    // When orientation flips or changes, dismiss virtual keyboard if still focused to prevent geometry lock
+    const active = document.activeElement;
+    const wasInput =
+      active &&
+      (active.id === 'mobileCommandInput' ||
+        active.id === 'chatComposerTextarea' ||
+        active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA');
+
+    if (wasInput) {
+      active.blur();
+    }
+
+    document.body.classList.remove('keyboard-active');
+    document.documentElement.style.setProperty('--keyboard-offset', '0px');
+    if (mobileControls) {
+      mobileControls.classList.remove('keyboard-open');
+    }
+
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
+    // Clear any inline height overrides
+    if (document.documentElement.style.height) document.documentElement.style.height = '';
+    if (document.body.style.height) document.body.style.height = '';
+
+    // iOS PWA standalone WebKit layout flush trick:
+    if (isIosStandalone()) {
+      const appBody = document.querySelector('.dashboard-body') || document.body;
+      if (appBody) {
+        const origDisplay = appBody.style.display;
+        appBody.style.display = 'none';
+        void appBody.offsetHeight;
+        appBody.style.display = origDisplay || '';
+      }
+    }
+
+    syncAppViewportHeight();
+    handleViewportChange();
+    fitTerminal();
+  };
+
+  window.addEventListener('resize', () => {
+    handleOrientationOrResize();
+    [50, 150, 300].forEach((delay) => {
+      setTimeout(handleOrientationOrResize, delay);
+    });
+  });
+
+  window.addEventListener('orientationchange', () => {
+    handleOrientationOrResize();
+    // Multi-stage cadence matching Safari toolbar collapse and rotation animations
+    [30, 80, 150, 250, 400, 600, 900, 1200].forEach((delay) => {
+      setTimeout(handleOrientationOrResize, delay);
+    });
+  });
+
+  // Lifecycle hooks for PWA resume / reopen / tab switch to eradicate top whitespace
+  const handlePwaReopen = () => {
+    const active = document.activeElement;
+    const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+    if (!isInput) {
+      document.body.classList.remove('keyboard-active');
+      document.documentElement.style.setProperty('--keyboard-offset', '0px');
+      document.documentElement.style.setProperty('--app-height', '100dvh');
+      document.documentElement.style.setProperty('--app-visual-height', '100dvh');
+    }
+
+    // 1. Force window scroll to top immediately
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
+    // 2. Force WebKit to purge stale composited backing store / layer offset
+    const appBody = document.querySelector('.dashboard-body') || document.body;
+    if (appBody) {
+      const origDisplay = appBody.style.display;
+      appBody.style.display = 'none';
+      void appBody.offsetHeight; // synchronous layout reflow
+      appBody.style.display = origDisplay || '';
+    }
+
+    // 3. Dual-rAF schedule to guarantee WebKit post-resume frame is fully normalized
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        syncAppViewportHeight();
+        handleViewportChange();
+        fitTerminal();
+        window.dispatchEvent(new Event('resize'));
+      });
+    });
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      handlePwaReopen();
+      [30, 100, 250, 500, 800].forEach((delay) => setTimeout(handlePwaReopen, delay));
+    }
+  });
+
+  window.addEventListener('pageshow', () => {
+    handlePwaReopen();
+    [30, 100, 250, 500, 800].forEach((delay) => setTimeout(handlePwaReopen, delay));
+  });
+
+  window.addEventListener('focus', () => {
+    handlePwaReopen();
+  });
+
+  // Strict scroll lock: in this single-page dashboard, window scroll should ALWAYS be 0
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0 || document.body.scrollTop !== 0) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+    },
+    { passive: true }
+  );
+
+  // Focus and blur hooks for rapid, bulletproof keyboard transition on any input
+  document.addEventListener('focusin', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+      if (e.target.id === 'mobileCommandInput' && state.currentSession) {
         const cached = state.sessionCache.get(state.currentSession);
         if (cached && cached.socket) {
           cached.socket.emit('exit-copy-mode');
         }
       }
-      setTimeout(handleViewportChange, 60);
-      setTimeout(handleViewportChange, 260);
-    });
-    mobileInput.addEventListener('blur', () => {
-      setTimeout(handleViewportChange, 60);
-      setTimeout(handleViewportChange, 260);
-    });
-  }
+      triggerViewportSync();
+    }
+  });
+
+  document.addEventListener('focusout', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+      setTimeout(() => {
+        const active = document.activeElement;
+        const stillInput =
+          active &&
+          (active.id === 'mobileCommandInput' ||
+            active.id === 'chatComposerTextarea' ||
+            active.tagName === 'INPUT' ||
+            active.tagName === 'TEXTAREA');
+
+        if (!stillInput) {
+          // Immediately tear down keyboard active state to avoid ghost space
+          document.body.classList.remove('keyboard-active');
+          document.documentElement.style.setProperty('--keyboard-offset', '0px');
+          if (mobileControls) {
+            mobileControls.classList.remove('keyboard-open');
+          }
+
+          // Clear any inline height overrides
+          if (document.documentElement.style.height) document.documentElement.style.height = '';
+          if (document.body.style.height) document.body.style.height = '';
+
+          window.scrollTo(0, 0);
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+
+          syncAppViewportHeight();
+
+          // Deferred WebKit Snap-Back Reflow:
+          // Wait 300ms for iOS virtual keyboard slide-down animation to fully finish,
+          // then trigger layout reflow to eliminate WebKit's ghost canvas shift / blank gap.
+          setTimeout(() => {
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+
+            const appBody = document.querySelector('.dashboard-body') || document.body;
+            if (appBody) {
+              const origDisplay = appBody.style.display;
+              appBody.style.display = 'none';
+              void appBody.offsetHeight; // Force reflow
+              appBody.style.display = origDisplay || '';
+            }
+
+            syncAppViewportHeight();
+            handleViewportChange();
+            fitTerminal();
+          }, 320);
+
+          // Multi-stage recovery during and after keyboard collapse animation
+          [30, 80, 160, 480, 750].forEach((delay) => {
+            setTimeout(() => {
+              window.scrollTo(0, 0);
+              document.documentElement.scrollTop = 0;
+              document.body.scrollTop = 0;
+              syncAppViewportHeight();
+              handleViewportChange();
+              fitTerminal();
+            }, delay);
+          });
+        }
+      }, 20);
+    }
+  });
 
   // Set initial measured controls height
   if (mobileControls) {
@@ -245,6 +487,19 @@ export function initMobileInput() {
     });
   }
 
+  // Tag standalone iOS PWA mode if detected
+  if (isIosStandalone()) {
+    document.body.classList.add('is-ios-pwa');
+  }
+
+  // Initial viewport dimension synchronization
+  syncAppViewportHeight();
+
   // Initialize visualViewport event listeners
   initVisualViewportLinkage();
+
+  // Render Lucide icons for mobile controls
+  if (typeof window !== 'undefined' && window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
 }

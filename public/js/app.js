@@ -419,7 +419,8 @@ if (sidebar && sidebarOverlay) {
   }, { passive: true });
 
   document.addEventListener('touchend', (e) => {
-    if (window.innerWidth > 768) return;
+    const isTouch = window.innerWidth <= 768 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+    if (!isTouch && window.innerWidth > 1024) return;
 
     const touchEndX = e.changedTouches[0].clientX;
     const touchEndY = e.changedTouches[0].clientY;
@@ -429,30 +430,45 @@ if (sidebar && sidebarOverlay) {
 
     // Horizontal swipe threshold of 60px, must be mostly horizontal
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
-      const isSidebarOpen = sidebar.classList.contains('open');
+      if (window.innerWidth <= 768) {
+        const isSidebarOpen = sidebar.classList.contains('open');
 
-      if (deltaX > 0) {
-        // Swipe Right (Left-to-right) -> Open Sidebar
-        // Only trigger if starting from the left edge of the screen (< 50px)
-        if (!isSidebarOpen && touchStartX < 50) {
-          sidebar.classList.add('open');
-          sidebarOverlay.classList.remove('hidden');
+        if (deltaX > 0) {
+          // Swipe Right (Left-to-right) -> Open Sidebar
+          // Only trigger if starting from the left edge of the screen (< 50px)
+          if (!isSidebarOpen && touchStartX < 50) {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.remove('hidden');
+          }
+        } else {
+          // Swipe Left (Right-to-left) -> Close Sidebar
+          if (isSidebarOpen) {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.add('hidden');
+          }
         }
       } else {
-        // Swipe Left (Right-to-left) -> Close Sidebar
-        if (isSidebarOpen) {
-          sidebar.classList.remove('open');
-          sidebarOverlay.classList.add('hidden');
+        // Foldable / iPhone Duo wide mode: swipe to collapse or expand sidebar
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        if (deltaX > 0 && isCollapsed && touchStartX < 60) {
+          sidebar.classList.remove('collapsed');
+          setTimeout(fitTerminal, 350);
+        } else if (deltaX < 0 && !isCollapsed) {
+          sidebar.classList.add('collapsed');
+          setTimeout(fitTerminal, 350);
         }
       }
     }
   }, { passive: true });
 }
 
-// Prevent bouncing drag scrolls
+// Prevent bouncing drag scrolls without suppressing clicks on interactive elements
 const cyberHeader = document.querySelector('.cyber-header');
 if (cyberHeader) {
   cyberHeader.addEventListener('touchmove', (e) => {
+    if (e.target.closest('button, .header-btn, .sidebar-toggle-btn, #sidebarToggle, #deckControlToggleBtn, .deck-control-dropdown, a, input, select')) {
+      return;
+    }
     if (window.innerWidth <= 768) e.preventDefault();
   }, { passive: false });
 }
@@ -468,7 +484,12 @@ if (terminalWorkspace) {
           e.target.closest('#workspaceTabs') ||
           e.target.closest('#projectPanel') ||
           e.target.closest('#projectPanelContainer') ||
-          e.target.closest('#projectAgyDrawer')) {
+          e.target.closest('#projectAgyDrawer') ||
+          e.target.closest('.deck-mode-switcher') ||
+          e.target.closest('.deck-mode-btn') ||
+          e.target.closest('#modeBtnTerminal') ||
+          e.target.closest('#modeBtnChat') ||
+          e.target.closest('button, a, input, textarea, select')) {
         return;
       }
       e.preventDefault();
@@ -1297,7 +1318,7 @@ loadWorkspaces().then(async () => {
     });
 
     document.addEventListener('click', (e) => {
-      if (!deckControlDropdownMenu.contains(e.target) && e.target !== deckControlToggleBtn) {
+      if (!deckControlDropdownMenu.contains(e.target) && !deckControlToggleBtn.contains(e.target)) {
         deckControlDropdownMenu.classList.add('hidden');
       }
     });

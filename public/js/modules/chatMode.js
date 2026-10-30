@@ -6,7 +6,7 @@
 
 import { state } from './state.js';
 import { fitTerminal, attachSession, isTouchDevice } from './terminal.js';
-import { stopVoiceInput } from './voice.js';
+import { stopVoiceInput, bindChatVoiceInput } from './voice.js';
 
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
@@ -14,10 +14,10 @@ const expandedAccordions = new Set();  // Set of `${sessionName}::${accordionKey
 let currentPollTimer = null;
 let activePollSession = null;
 
-// Scroll Pinning Physics State (open-claude-ui 150ms cooldown + 40px bottom tolerance)
+// Scroll Pinning Physics State (open-claude-ui cooldown + bottom anchor tracking)
 const SCROLL_COOL_DOWN_MS = 150;
 let lastUserScrollAt = 0;
-let programmaticScroll = false;
+let programmaticScrollUntil = 0;
 let isScrollPinned = true;
 
 // Slash Commands Registry for Composer Popover
@@ -244,8 +244,11 @@ export function initChatMode() {
                 </button>
               </div>
               <div class="chat-composer-actions">
-                <button class="chat-icon-btn" id="chatInterruptBtn" type="button" title="停止执行 (Ctrl+C)">
-                  <i data-lucide="square" style="width: 14px; height: 14px;"></i>
+                <button class="chat-mic-btn" id="chatMicBtn" type="button" title="语音输入 (按住或点击口述消息)">
+                  <i data-lucide="mic"></i>
+                </button>
+                <button class="chat-icon-btn chat-interrupt-btn hidden" id="chatInterruptBtn" type="button" title="停止执行 (Ctrl+C)" style="display: none;">
+                  <i data-lucide="square" style="width: 12px; height: 12px; fill: currentColor;"></i>
                 </button>
                 <button class="chat-send-btn" id="chatSendMsgBtn" type="button" title="发送 (Enter)">
                   <i data-lucide="arrow-up" style="width: 15px; height: 15px;"></i>
@@ -289,7 +292,10 @@ function bindScrollPinningEvents() {
   if (!msgContainer) return;
 
   const markUserManualScroll = () => {
-    lastUserScrollAt = performance.now();
+    // Only mark user manual scroll if NOT currently in programmatic scrolling window
+    if (performance.now() >= programmaticScrollUntil) {
+      lastUserScrollAt = performance.now();
+    }
   };
 
   ['wheel', 'touchmove', 'pointerdown'].forEach(evt => {
@@ -299,8 +305,10 @@ function bindScrollPinningEvents() {
   msgContainer.addEventListener('scroll', () => {
     updateScrollFadeMask(msgContainer);
 
-    if (programmaticScroll) {
-      programmaticScroll = false;
+    const isProgrammatic = performance.now() < programmaticScrollUntil;
+    if (isProgrammatic) {
+      isScrollPinned = true;
+      if (jumpBtn) jumpBtn.classList.remove('visible');
       return;
     }
 
@@ -317,10 +325,21 @@ function bindScrollPinningEvents() {
   }, { passive: true });
 
   if (jumpBtn) {
-    jumpBtn.addEventListener('click', (e) => {
+    const handleJumpBottom = (e) => {
       e.preventDefault();
+      e.stopPropagation();
+      lastUserScrollAt = 0;
+      isScrollPinned = true;
+      programmaticScrollUntil = performance.now() + 500;
+      jumpBtn.classList.remove('visible');
       scrollToChatBottom(true);
-    });
+    };
+
+    jumpBtn.addEventListener('click', handleJumpBottom);
+    jumpBtn.addEventListener('touchend', handleJumpBottom);
+    jumpBtn.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
   }
 }
 
@@ -340,6 +359,43 @@ function updateScrollFadeMask(el) {
 }
 
 /**
+ * Rock-solid JavaScript requestAnimationFrame smooth scrolling
+ * Bypasses all WebKit native smooth scroll bugs, inertia stalls, and flex-container glitches
+ */
+function smoothScrollToBottom(container, duration = 240) {
+  if (!container) return;
+  const startY = container.scrollTop;
+  const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+  if (maxScroll <= startY) {
+    container.scrollTop = maxScroll;
+    updateScrollFadeMask(container);
+    return;
+  }
+
+  const startTime = performance.now();
+
+  function animate(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    // Snappy ease-out cubic curve (0.16, 1, 0.3, 1)
+    const ease = 1 - Math.pow(1 - progress, 3);
+
+    // Dynamically query current bounds in case items expand during scroll
+    const currentMax = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTop = startY + (currentMax - startY) * ease;
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      container.scrollTop = container.scrollHeight;
+      updateScrollFadeMask(container);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+/**
  * Scroll chat stream to bottom respecting programmatic flag
  */
 export function scrollToChatBottom(smooth = false) {
@@ -347,15 +403,26 @@ export function scrollToChatBottom(smooth = false) {
   const jumpBtn = document.getElementById('chatJumpBottomBtn');
   if (!msgContainer) return;
 
-  programmaticScroll = true;
+  lastUserScrollAt = 0;
   isScrollPinned = true;
+  programmaticScrollUntil = performance.now() + (smooth ? 450 : 120);
   if (jumpBtn) jumpBtn.classList.remove('visible');
 
-  msgContainer.scrollTo({
-    top: msgContainer.scrollHeight,
-    behavior: smooth ? 'smooth' : 'auto'
-  });
-  updateScrollFadeMask(msgContainer);
+  const maxScroll = Math.max(0, msgContainer.scrollHeight - msgContainer.clientHeight);
+
+  if (!smooth) {
+    msgContainer.scrollTop = maxScroll;
+    updateScrollFadeMask(msgContainer);
+  } else {
+    smoothScrollToBottom(msgContainer, 240);
+    // Double assurance after animation completes
+    setTimeout(() => {
+      if (isScrollPinned && msgContainer) {
+        msgContainer.scrollTop = msgContainer.scrollHeight;
+        updateScrollFadeMask(msgContainer);
+      }
+    }, 280);
+  }
 }
 
 /**
@@ -868,7 +935,9 @@ function bindComposerEvents() {
 
     textarea.addEventListener('input', () => {
       textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+      const isKeyboardActive = document.body.classList.contains('keyboard-active');
+      const maxHeight = isKeyboardActive ? 80 : 150;
+      textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
 
       const val = textarea.value;
       if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
@@ -878,10 +947,26 @@ function bindComposerEvents() {
       }
     });
 
+    textarea.addEventListener('focus', () => {
+      // Prevent iOS WebKit window scroll and pin messages to bottom
+      window.scrollTo(0, 0);
+      setTimeout(() => {
+        window.scrollTo(0, 0);
+        scrollToChatBottom(true);
+      }, 100);
+      setTimeout(() => {
+        window.scrollTo(0, 0);
+      }, 300);
+    });
+
     textarea.addEventListener('blur', () => {
+      window.scrollTo(0, 0);
       setTimeout(() => updateSlashPopover(null), 180);
     });
   }
+
+  // Bind microphone voice input for chat
+  bindChatVoiceInput();
 
   if (slashTriggerBtn && textarea) {
     slashTriggerBtn.addEventListener('click', (e) => {
@@ -1439,6 +1524,9 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     updateStatusBadge('就绪', 'ready');
   }
 
+  // Dedicated invisible bottom anchor for precise scrollIntoView alignment
+  html += `<div id="chatBottomAnchor" class="chat-bottom-anchor" style="height: 1px; width: 100%; flex-shrink: 0; pointer-events: none; margin: 0; padding: 0;"></div>`;
+
   container.innerHTML = html;
   bindDecisionCardEvents(data.pendingAction);
 
@@ -1447,11 +1535,12 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   }
 
   // Apply open-claude-ui Scroll Pinning Physics:
-  // Only auto-scroll to bottom if pinned (or forced on session switch) AND user hasn't scrolled in last 150ms
-  if (forceScrollBottom || (isScrollPinned && !userRecentlyScrolled)) {
+  // Only auto-scroll to bottom if forced, actively in programmatic scroll window, or pinned (and user didn't scroll manually recently)
+  const isProgrammatic = performance.now() < programmaticScrollUntil;
+  if (forceScrollBottom || isProgrammatic || (isScrollPinned && !userRecentlyScrolled)) {
     scrollToChatBottom(false);
   } else {
-    programmaticScroll = true;
+    programmaticScrollUntil = performance.now() + 100;
     container.scrollTop = prevScrollTop;
     updateScrollFadeMask(container);
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
@@ -1912,10 +2001,21 @@ function appendUserMessageToUI(text, attachments = []) {
 function updateStatusBadge(text, stateType) {
   const dot = document.getElementById('chatStatusDot');
   const statusText = document.getElementById('chatStatusText');
+  const interruptBtn = document.getElementById('chatInterruptBtn');
   if (!dot || !statusText) return;
 
   statusText.textContent = text;
   dot.className = 'agent-status-dot ' + (stateType || 'ready');
+
+  if (interruptBtn) {
+    if (stateType === 'working') {
+      interruptBtn.classList.remove('hidden');
+      interruptBtn.style.display = 'inline-flex';
+    } else {
+      interruptBtn.classList.add('hidden');
+      interruptBtn.style.display = 'none';
+    }
+  }
 }
 
 /**
