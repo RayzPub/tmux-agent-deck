@@ -323,11 +323,21 @@ export function renderSessions(sessions) {
       }
     }
 
+    let modeBadgeHtml = '';
+    if (session.sessionMode === 'chat_only') {
+      modeBadgeHtml = '<span class="session-mode-badge mode-chat" title="纯会话模式 (OAR 统一运行时驱动)">💬 OAR</span>';
+    } else if (session.sessionMode === 'terminal_only') {
+      modeBadgeHtml = '<span class="session-mode-badge mode-terminal" title="纯终端模式 (原生 ANSI 命令行)">💻 终端</span>';
+    } else {
+      modeBadgeHtml = '<span class="session-mode-badge mode-hybrid" title="混合双模 (支持在聊天与终端间平滑切换)">⚡ 双模</span>';
+    }
+
     card.innerHTML = `
       <div class="session-info">
         <div class="session-name-wrapper">
           <span class="session-status-dot ${session.attached ? 'attached' : 'detached'}" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}"></span>
           <div class="session-name" title="${session.name}">${session.name}</div>
+          ${modeBadgeHtml}
         </div>
         <div class="session-workspace" title="${session.path || '默认工作区'}${session.agentModel ? ` (模型: ${session.agentModel})` : ''}">
           <i data-lucide="folder"></i>
@@ -944,7 +954,7 @@ newSessionBtn.addEventListener('click', () => {
   renderSessionFlatModels(agent);
 });
 
-// Update suggested name when user switches agent options if the name wasn't customized
+// Update suggested name and auto-recommend session mode when user switches agent options
 document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
   radio.addEventListener('change', () => {
     const curVal = newSessionNameInput.value.trim();
@@ -953,6 +963,18 @@ document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
       newSessionNameInput.value = suggestedSessionName;
     }
     renderSessionFlatModels(radio.value);
+
+    // Smart mode suggestion
+    if (radio.value === 'default') {
+      const termModeRadio = document.querySelector('input[name="sessionMode"][value="terminal_only"]');
+      if (termModeRadio) termModeRadio.checked = true;
+    } else {
+      const currentModeRadio = document.querySelector('input[name="sessionMode"]:checked');
+      if (currentModeRadio && currentModeRadio.value === 'terminal_only') {
+        const hybridRadio = document.querySelector('input[name="sessionMode"][value="hybrid"]');
+        if (hybridRadio) hybridRadio.checked = true;
+      }
+    }
   });
 });
 
@@ -1010,13 +1032,16 @@ createSessionForm.addEventListener('submit', async (e) => {
   const modelName = selectedModelRadio ? (selectedModelRadio.dataset.model || '') : '';
   const modelLabel = selectedModelRadio ? (selectedModelRadio.dataset.displayName || '') : '';
 
+  const selectedModeRadio = document.querySelector('input[name="sessionMode"]:checked');
+  const sessionMode = selectedModeRadio ? selectedModeRadio.value : 'hybrid';
+
   try {
     const response = await fetch('/api/sessions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel })
+      body: JSON.stringify({ name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode })
     });
 
     if (response.ok) {
@@ -1025,6 +1050,11 @@ createSessionForm.addEventListener('submit', async (e) => {
       await loadSessions();
       const actualName = (data && data.name) ? data.name : name;
       attachSession(actualName);
+      if (sessionMode === 'chat_only') {
+        setSessionViewMode(actualName, 'chat');
+      } else if (sessionMode === 'terminal_only') {
+        setSessionViewMode(actualName, 'terminal');
+      }
       if (data && data.renamed && data.originalName) {
         showTipToast(`会话 "${data.originalName}" 已存在，已自动命名为 "${actualName}"`, 3500);
       }

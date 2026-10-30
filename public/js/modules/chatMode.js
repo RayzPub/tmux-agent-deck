@@ -446,6 +446,12 @@ export function setSessionViewMode(sessionName, mode) {
 }
 
 const sessionSupportCache = new Map(); // sessionName -> boolean
+export const sessionModeCache = new Map(); // sessionName -> 'chat_only' | 'hybrid' | 'terminal_only'
+
+export function getSessionMode(sessionName) {
+  const current = getCurrentSessionName(sessionName);
+  return sessionModeCache.get(current) || 'hybrid';
+}
 
 /**
  * Check if a session supports Claude Code Agent Chat Mode
@@ -459,6 +465,9 @@ export async function checkSessionSupport(sessionName) {
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history`);
     if (res.ok) {
       const data = await res.json();
+      if (data.sessionMode) {
+        sessionModeCache.set(sessionName, data.sessionMode);
+      }
       const isSupp = data.supported === true;
       sessionSupportCache.set(sessionName, isSupp);
       return isSupp;
@@ -538,13 +547,14 @@ export async function applySessionViewMode(sessionName, forceMode) {
   }
 
   const isSupported = await checkSessionSupport(currentSess);
+  const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
 
   const activeSessNow = getCurrentSessionName();
   if (activeSessNow && activeSessNow !== currentSess) {
     return;
   }
 
-  if (!isSupported) {
+  if (sessMode === 'terminal_only' || !isSupported) {
     if (switcher) switcher.style.display = 'none';
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
@@ -566,6 +576,18 @@ export async function applySessionViewMode(sessionName, forceMode) {
     stopChatPolling();
     fitTerminal();
     return;
+  }
+
+  // Pure Chat Mode: Lock to Chat Mode and show OAR branding in switcher
+  if (sessMode === 'chat_only') {
+    targetMode = 'chat';
+    btnTerminal.style.opacity = '0.5';
+    btnTerminal.title = '纯会话模式 (由 OAR 运行时驱动，无需终端物理按键)';
+    btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>纯会话 (OAR)</span>';
+  } else {
+    btnTerminal.style.opacity = '1';
+    btnTerminal.title = '切换至终端交互界面';
+    btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>智能体会话</span>';
   }
 
   if (switcher) switcher.style.display = 'inline-flex';
@@ -1090,8 +1112,15 @@ function bindComposerEvents() {
 
   if (interruptBtn) {
     interruptBtn.addEventListener('click', () => {
-      sendRawToTmux('\x03');
-      updateStatusBadge('已中断当前任务', 'waiting');
+      const currentSess = getCurrentSessionName();
+      const sessMode = currentSess ? (sessionModeCache.get(currentSess) || 'hybrid') : 'hybrid';
+      if (sessMode === 'chat_only') {
+        fetch(`/api/sessions/${encodeURIComponent(currentSess)}/oar-abort`, { method: 'POST' }).catch(() => {});
+        updateStatusBadge('已请求中止 OAR 生成', 'waiting');
+      } else {
+        sendRawToTmux('\x03');
+        updateStatusBadge('已中断当前任务', 'waiting');
+      }
     });
   }
 
@@ -1285,18 +1314,52 @@ export function sendChatMessage(overrideText) {
   }
   clearCurrentAttachments();
 
-  // 3. Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
-  sendRawToTmux(fullPrompt + '\r');
+  // 3. Pipe to tmux or dispatch to OAR engine
+  const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
+  if (sessMode === 'chat_only') {
+    sendToOarEngine(currentSess, fullPrompt);
+  } else {
+    // Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
+    sendRawToTmux(fullPrompt + '\r');
+  }
 
   // 4. Update status indicator
   updateStatusBadge('思考与执行中...', 'working');
 
   // 5. Trigger quick update
-  setTimeout(() => {
-    if (getCurrentSessionName() === currentSess) {
-      loadAndRenderChatHistory(currentSess, false);
+  if (sessMode !== 'chat_only') {
+    setTimeout(() => {
+      if (getCurrentSessionName() === currentSess) {
+        loadAndRenderChatHistory(currentSess, false);
+      }
+    }, 1200);
+  }
+}
+
+/**
+ * Dispatch message directly to OAR Pure Chat Engine API
+ */
+async function sendToOarEngine(sessionName, content) {
+  updateStatusBadge('OAR 智能体推理与工具调度中...', 'working');
+  try {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/oar-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    if (res.ok) {
+      updateStatusBadge('就绪', 'ready');
+      loadAndRenderChatHistory(sessionName, false);
+    } else {
+      const err = await res.json();
+      updateStatusBadge('异常', 'idle');
+      console.error('[OAR] Send message error:', err);
+      loadAndRenderChatHistory(sessionName, false);
     }
-  }, 1200);
+  } catch (e) {
+    updateStatusBadge('网络错误', 'idle');
+    console.error('[OAR] Send message fetch failed:', e);
+  }
 }
 
 /**

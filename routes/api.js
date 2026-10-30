@@ -561,7 +561,7 @@ router.get('/llm-models', requireAuth, (req, res) => {
 // API: Tmux Commands (Protected)
 // List sessions
 router.get('/sessions', requireAuth, (req, res) => {
-  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}'], (err, stdout, stderr) => {
+  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}'], (err, stdout, stderr) => {
     if (err) {
       const errMsg = (stderr || '').toLowerCase();
       const isNoSessions = err.code === 1 || 
@@ -582,7 +582,8 @@ router.get('/sessions', requireAuth, (req, res) => {
 
     const sessions = [];
     for (const line of rawSessions) {
-      const [fullName, attached, created, sessionPath, workspaceName, agentType, agentModel] = line.split('|');
+      const [fullName, attached, created, sessionPath, workspaceName, agentType, agentModel, rawSessionMode] = line.split('|');
+      const sessionMode = rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
       
       // If MULTI_USER_ENABLED is true, filter by prefix and strip it
       if (MULTI_USER_ENABLED) {
@@ -597,7 +598,8 @@ router.get('/sessions', requireAuth, (req, res) => {
           path: sessionPath || '',
           workspaceName: workspaceName || '',
           agentType: agentType || '',
-          agentModel: agentModel || ''
+          agentModel: agentModel || '',
+          sessionMode: sessionMode
         });
       } else {
         sessions.push({
@@ -607,7 +609,8 @@ router.get('/sessions', requireAuth, (req, res) => {
           path: sessionPath || '',
           workspaceName: workspaceName || '',
           agentType: agentType || '',
-          agentModel: agentModel || ''
+          agentModel: agentModel || '',
+          sessionMode: sessionMode
         });
       }
     }
@@ -617,7 +620,8 @@ router.get('/sessions', requireAuth, (req, res) => {
 
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel } = req.body;
+  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode } = req.body;
+  const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
   
   // Validate allowed agents
   const settings = db.getSettings();
@@ -824,7 +828,9 @@ router.post('/sessions', requireAuth, async (req, res) => {
 
   let shellCmd = 'exec bash';
   let agentSessionId = null;
-  if (agent === 'agy') {
+  if (targetMode === 'chat_only') {
+    shellCmd = `echo -e "\\033[1;36m[OAR Pure Chat Session]\\033[0m\\n此会话由 Open Agent Runtime 规范直接驱动（纯会话模式）。\\n所有消息收发与推理已由 OAR 接口接管，无需终端物理按键输入。\\n保持后台运行中..."; exec sleep infinity`;
+  } else if (agent === 'agy') {
     const agyPath = getAgentPath('agy');
     const finalAgy = agyPath || 'agy';
     shellCmd = `${finalAgy} --dangerously-skip-permissions; exec bash`;
@@ -870,7 +876,8 @@ router.post('/sessions', requireAuth, async (req, res) => {
 
       const optionsToSet = [
         ['set-option', '-t', physicalSession, 'status', 'off'],
-        ['set-option', '-t', physicalSession, 'mouse', 'on']
+        ['set-option', '-t', physicalSession, 'mouse', 'on'],
+        ['set-option', '-t', physicalSession, '@session_mode', targetMode]
       ];
       if (workspaceName) {
         optionsToSet.push(['set-option', '-t', physicalSession, '@workspace_name', workspaceName]);
@@ -898,12 +905,25 @@ router.post('/sessions', requireAuth, async (req, res) => {
         }));
       });
 
-      chain.then(() => {
+      chain.then(async () => {
+        if (targetMode === 'chat_only') {
+          try {
+            const oarService = require('../services/oarService');
+            await oarService.getOrCreateSession(req.user ? req.user.username : null, sessionNameToCreate, {
+              agentType: agent,
+              workspacePath: resolvedPath,
+              model: finalModelTag
+            });
+          } catch (e) {
+            console.error('[OAR] Error initializing pure chat session:', e);
+          }
+        }
         res.json({
           success: true,
           name: sessionNameToCreate,
           originalName: rawName,
-          renamed: sessionNameToCreate !== rawName
+          renamed: sessionNameToCreate !== rawName,
+          sessionMode: targetMode
         });
       });
     }, req.user.username);
@@ -926,6 +946,10 @@ router.delete('/sessions/:name', requireAuth, (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to kill session', details: stderr });
     }
+    try {
+      const oarService = require('../services/oarService');
+      oarService.deleteOarSession(req.user ? req.user.username : null, name);
+    } catch (e) {}
     res.json({ success: true });
   }, req.user.username);
 });
@@ -1760,8 +1784,8 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
   const user = req.user ? req.user.username : null;
   const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
 
-  // Query tmux metadata including pane_pid
-  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}'], async (err, stdout) => {
+  // Query tmux metadata including pane_pid and session_mode
+  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}'], async (err, stdout) => {
     if (err) {
       return res.status(404).json({ error: 'Session not found', details: err.message });
     }
@@ -1772,6 +1796,8 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     const agentType = parts[2] || '';
     const agentSessionId = (parts[3] && parts[3].trim()) ? parts[3].trim() : null;
     const panePid = (parts[4] && parts[4].trim()) ? parts[4].trim() : null;
+    const rawSessionMode = (parts[5] && parts[5].trim()) ? parts[5].trim() : '';
+    const sessionMode = rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
 
     const userHome = getUserHomeDir(user);
     const sysHome = getHomeDir();
@@ -1779,6 +1805,43 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     // Determine target workspace path
     const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
 
+    // 1. Pure Chat Mode (OAR Driven Engine)
+    if (sessionMode === 'chat_only') {
+      try {
+        const oarService = require('../services/oarService');
+        const oarSess = await oarService.getOrCreateSession(user, name, {
+          agentType: agentType || 'claude',
+          workspacePath: targetWorkspace
+        });
+        return res.json({
+          supported: true,
+          hasHistory: (oarSess.messages && oarSess.messages.length > 0),
+          sessionName: name,
+          agentType: agentType || 'oar',
+          sessionMode: 'chat_only',
+          workspacePath: targetWorkspace,
+          messages: oarSess.messages || [],
+          pendingAction: null,
+          isGenerating: oarSess.isGenerating || false
+        });
+      } catch (oarErr) {
+        console.error('[OAR] Error reading pure chat session:', oarErr);
+      }
+    }
+
+    // 2. Terminal Only Mode
+    if (sessionMode === 'terminal_only') {
+      return res.json({
+        supported: false,
+        hasHistory: false,
+        sessionName: name,
+        agentType: agentType || 'terminal',
+        sessionMode: 'terminal_only',
+        messages: []
+      });
+    }
+
+    // 3. Hybrid Mode (Tmux + Agent Shadow Inspection)
     // Locate the matching .jsonl session file strictly
     const sessionFileInfo = findAgentSessionFile(agentType, targetWorkspace, agentSessionId, panePid, userHome, sysHome);
 
@@ -1867,6 +1930,39 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
       return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
     }
   }, user);
+});
+
+// API: Send user message to OAR Pure Chat Session
+router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const { content } = req.body;
+  const user = req.user ? req.user.username : null;
+
+  if (!content || !content.trim()) {
+    return res.status(400).json({ error: 'Message content is required' });
+  }
+
+  try {
+    const oarService = require('../services/oarService');
+    const reply = await oarService.sendUserMessage(user, name, content);
+    res.json({ success: true, message: reply });
+  } catch (err) {
+    console.error('[OAR] sendUserMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Abort generation in OAR Pure Chat Session
+router.post('/sessions/:name/oar-abort', requireAuth, (req, res) => {
+  const { name } = req.params;
+  const user = req.user ? req.user.username : null;
+  try {
+    const oarService = require('../services/oarService');
+    const aborted = oarService.abortSession(user, name);
+    res.json({ success: true, aborted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Upload attachments for Chat Mode (saved in <workspace>/.deck/uploads to prevent agent outside-workspace permission prompts)

@@ -588,6 +588,44 @@
 
         <div class="input-group">
           <label>
+            <span class="label-tech-text">// 会话运行模式</span>
+          </label>
+          <div class="agent-cards-container session-mode-cards-container">
+            <label class="agent-card-option">
+              <input type="radio" name="sessionMode" value="hybrid" checked>
+              <div class="agent-card-inner">
+                <i data-lucide="split"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">会话与终端</span>
+                  <span class="agent-desc">双模随时平滑切换 (推荐)</span>
+                </div>
+              </div>
+            </label>
+            <label class="agent-card-option">
+              <input type="radio" name="sessionMode" value="chat_only">
+              <div class="agent-card-inner">
+                <i data-lucide="messages-square"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">纯会话 (OAR)</span>
+                  <span class="agent-desc">原生流式对话，免终端干扰</span>
+                </div>
+              </div>
+            </label>
+            <label class="agent-card-option">
+              <input type="radio" name="sessionMode" value="terminal_only">
+              <div class="agent-card-inner">
+                <i data-lucide="terminal"></i>
+                <div class="agent-card-info">
+                  <span class="agent-title">纯终端</span>
+                  <span class="agent-desc">原生 ANSI 命令行专注操控</span>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>
             <span class="label-tech-text">// 初始智能体环境</span>
           </label>
           <div class="agent-cards-container">
