@@ -1243,6 +1243,53 @@ body.light-minimalist .remote-agent-send-btn {
   background: rgba(0, 240, 255, 0.1);
 }
 
+/* Responsive adaptation for Top-Left Device Switcher on Mobile */
+@media (max-width: 768px) {
+  .device-switcher-container {
+    margin-left: 6px;
+  }
+
+  .device-switcher-btn {
+    padding: 3px 8px;
+    gap: 5px;
+    font-size: 11px;
+  }
+
+  .device-switcher-name {
+    max-width: 80px;
+  }
+
+  .device-switcher-dropdown {
+    width: min(220px, calc(100vw - 20px));
+    max-width: calc(100vw - 20px);
+  }
+
+  .device-dropdown-item {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .device-dropdown-action-btn {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .device-switcher-container {
+    margin-left: 4px;
+  }
+
+  .device-switcher-name {
+    max-width: 60px;
+  }
+
+  .device-switcher-dropdown {
+    width: min(200px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+  }
+}
+
 /* Remote Device Panel in Main Deck */
 .remote-device-panel {
   display: flex;

@@ -405,10 +405,40 @@ export async function initDeviceManager(socket) {
   const switcherDropdown = document.getElementById('deviceSwitcherDropdown');
   const pairBtn = document.getElementById('deviceDropdownPairBtn');
 
+  // Reposition dropdown dynamically to prevent right-edge viewport overflow on mobile/narrow screens
+  function repositionSwitcherDropdown() {
+    if (!switcherDropdown || switcherDropdown.classList.contains('hidden')) return;
+
+    // Reset styles to calculate natural geometry
+    switcherDropdown.style.left = '0px';
+    switcherDropdown.style.right = 'auto';
+
+    const rect = switcherDropdown.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const padding = 8; // Margin from right edge of viewport
+
+    if (rect.right > viewportWidth - padding) {
+      const overflow = rect.right - (viewportWidth - padding);
+      const container = switcherBtn ? switcherBtn.parentElement : null;
+      const containerLeft = container ? container.getBoundingClientRect().left : 0;
+      // Prevent left edge from moving past left screen padding
+      const clampedLeft = Math.max(-overflow, -(containerLeft - padding));
+      switcherDropdown.style.left = `${clampedLeft}px`;
+    }
+  }
+
   if (switcherBtn && switcherDropdown) {
     switcherBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      const isOpening = switcherDropdown.classList.contains('hidden');
       switcherDropdown.classList.toggle('hidden');
+      if (isOpening) {
+        repositionSwitcherDropdown();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      repositionSwitcherDropdown();
     });
 
     document.addEventListener('click', (e) => {

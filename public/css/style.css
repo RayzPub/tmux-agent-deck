@@ -2021,7 +2021,13 @@ body.light-minimalist .session-mode-badge.mode-terminal {
   
   .sidebar-toggle-btn {
     display: flex;
-    margin-right: 10px;
+    margin-right: 6px;
+  }
+
+  .logo-area {
+    gap: 8px;
+    min-width: 0;
+    flex-shrink: 1;
   }
   
   .logo-text {
