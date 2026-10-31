@@ -3,6 +3,173 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { PROJECT_ROOT } = require('../config');
 const { getRunUser } = require('./tmuxService');
+const { getUserHomeDir, getHomeDir } = require('./fileService');
+
+function getAgentPath(agentName, sysHome) {
+  const nodeBinDir = path.dirname(process.execPath);
+  const localNodePath = path.join(nodeBinDir, agentName);
+  if (fs.existsSync(localNodePath)) return localNodePath;
+
+  const candidates = [
+    `${sysHome || '/home/ubuntu'}/.local/bin/${agentName}`,
+    `/usr/local/bin/${agentName}`,
+    `/usr/bin/${agentName}`
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return agentName;
+}
+
+/**
+ * Execute native Antigravity CLI directly using the official Antigravity/Google account quota
+ */
+function runAgyCli(prompt, conversationId, workspacePath, username, abortSignal) {
+  return new Promise((resolve, reject) => {
+    const userHome = getUserHomeDir(username);
+    const sysHome = getHomeDir();
+
+    const agyBin = getAgentPath('agy', sysHome);
+    const args = [
+      '--output-format', 'json',
+      '--dangerously-skip-permissions',
+      '--print', prompt
+    ];
+    if (conversationId) {
+      args.push('--conversation', conversationId);
+    }
+
+    const runUser = getRunUser();
+    let finalCmd = agyBin;
+    let finalArgs = args;
+
+    if (runUser && process.getuid && process.getuid() === 0) {
+      finalCmd = 'sudo';
+      finalArgs = ['-u', runUser, agyBin, ...args];
+    }
+
+    const binDir = path.resolve(PROJECT_ROOT, 'bin');
+    const nodeBinDir = path.dirname(process.execPath);
+    const sysLocalBin = path.join(sysHome, '.local', 'bin');
+
+    const env = {
+      ...process.env,
+      HOME: userHome,
+      PATH: `${binDir}:${nodeBinDir}:${sysLocalBin}:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}`
+    };
+
+    const cwd = (workspacePath && fs.existsSync(workspacePath)) ? workspacePath : process.cwd();
+
+    const proc = spawn(finalCmd, finalArgs, {
+      cwd,
+      env,
+      signal: abortSignal
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    proc.on('error', err => {
+      if (err.name === 'AbortError') {
+        return resolve({ aborted: true, response: '(已中止当前生成)' });
+      }
+      reject(err);
+    });
+
+    proc.on('close', code => {
+      try {
+        const json = JSON.parse(stdout.trim());
+        resolve(json);
+      } catch (e) {
+        if (stdout.trim()) {
+          resolve({ response: stdout.trim(), raw: stdout, stderr, code });
+        } else {
+          resolve({ response: `[Antigravity 进程退出码 ${code}]: ${stderr || '未收到输出'}`, code, stderr });
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Execute native Claude Code CLI directly using the official Claude Code account/token quota
+ */
+function runClaudeCli(prompt, sessionId, workspacePath, username, abortSignal) {
+  return new Promise((resolve, reject) => {
+    const userHome = getUserHomeDir(username);
+    const sysHome = getHomeDir();
+
+    const claudeBin = getAgentPath('claude', sysHome);
+    const targetSessionId = sessionId || require('crypto').randomUUID();
+
+    const args = [
+      '-p', prompt,
+      '--output-format', 'json',
+      '--dangerously-skip-permissions',
+      '--resume', targetSessionId
+    ];
+
+    const runUser = getRunUser();
+    let finalCmd = claudeBin;
+    let finalArgs = args;
+
+    if (runUser && process.getuid && process.getuid() === 0) {
+      finalCmd = 'sudo';
+      finalArgs = ['-u', runUser, claudeBin, ...args];
+    }
+
+    const binDir = path.resolve(PROJECT_ROOT, 'bin');
+    const nodeBinDir = path.dirname(process.execPath);
+    const sysLocalBin = path.join(sysHome, '.local', 'bin');
+
+    const env = {
+      ...process.env,
+      HOME: userHome,
+      PATH: `${binDir}:${nodeBinDir}:${sysLocalBin}:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}`
+    };
+
+    const cwd = (workspacePath && fs.existsSync(workspacePath)) ? workspacePath : process.cwd();
+
+    const proc = spawn(finalCmd, finalArgs, {
+      cwd,
+      env,
+      signal: abortSignal
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    proc.on('error', err => {
+      if (err.name === 'AbortError') {
+        return resolve({ aborted: true, response: '(已中止当前生成)', session_id: targetSessionId });
+      }
+      reject(err);
+    });
+
+    proc.on('close', code => {
+      try {
+        const json = JSON.parse(stdout.trim());
+        resolve({
+          ...json,
+          session_id: json.session_id || targetSessionId,
+          response: json.result || json.response || stdout.trim()
+        });
+      } catch (e) {
+        if (stdout.trim()) {
+          resolve({ response: stdout.trim(), session_id: targetSessionId, raw: stdout, stderr, code });
+        } else {
+          resolve({ response: `[Claude 进程退出码 ${code}]: ${stderr || '未收到输出'}`, session_id: targetSessionId, code, stderr });
+        }
+      }
+    });
+  });
+}
 
 // In-memory active OAR sessions map: sessionKey -> sessionState
 const activeOarSessions = new Map();
@@ -249,15 +416,17 @@ async function getOrCreateSession(username, sessionName, options = {}) {
   const sessionData = persisted || {
     sessionName,
     username: username || 'default',
-    agentType: options.agentType || 'claude',
+    agentType: options.agentType || 'agy',
     workspacePath: options.workspacePath || process.cwd(),
     model: options.model || '',
+    conversationId: null,
+    claudeSessionId: null,
     createdAt: Date.now(),
     messages: [
       {
         id: 'msg-welcome',
         role: 'assistant',
-        content: `👋 您好！已进入 **OAR 纯会话模式**。\n当前智能体：\`${options.agentType || 'claude'}\`\n工作区：\`${options.workspacePath || process.cwd()}\`\n本模式由 Open Agent Runtime 规范直接驱动，无终端黑盒按键盲发与错位，享受零干扰的结构化对话与工具调用。`,
+        content: `👋 您好！已进入 **OAR 纯会话模式**。\n当前智能体：\`${options.agentType || 'agy'}\`\n工作区：\`${options.workspacePath || process.cwd()}\`\n本模式由 Open Agent Runtime 规范直接驱动，无终端黑盒按键盲发与错位，享受零干扰的结构化对话与工具调用。`,
         timestamp: Date.now()
       }
     ]
@@ -265,6 +434,8 @@ async function getOrCreateSession(username, sessionName, options = {}) {
 
   const oarSession = {
     ...sessionData,
+    conversationId: (persisted && persisted.conversationId) || null,
+    claudeSessionId: (persisted && persisted.claudeSessionId) || null,
     isGenerating: false,
     currentController: null,
     subscribers: new Set()
@@ -307,18 +478,22 @@ async function sendUserMessage(username, sessionName, userText, onChunk = null) 
   sess.messages.push(assistantMsg);
   sess.isGenerating = true;
 
-  savePersistedSession(username, sessionName, {
-    sessionName: sess.sessionName,
-    username: sess.username,
-    agentType: sess.agentType,
-    workspacePath: sess.workspacePath,
-    model: sess.model,
-    createdAt: sess.createdAt,
-    messages: sess.messages
-  });
+  const updatePersistence = () => {
+    savePersistedSession(username, sessionName, {
+      sessionName: sess.sessionName,
+      username: sess.username,
+      agentType: sess.agentType,
+      workspacePath: sess.workspacePath,
+      model: sess.model,
+      conversationId: sess.conversationId,
+      claudeSessionId: sess.claudeSessionId,
+      createdAt: sess.createdAt,
+      messages: sess.messages
+    });
+  };
 
-  const oar = await getOarModule();
-  
+  updatePersistence();
+
   // AbortController for cancellation
   const abortCtrl = new AbortController();
   sess.currentController = abortCtrl;
@@ -326,25 +501,67 @@ async function sendUserMessage(username, sessionName, userText, onChunk = null) 
   try {
     let handled = false;
 
-    // Check if OAR Claude installation is available
-    if (oar && sess.agentType === 'claude' && oar.claudeInstallation) {
+    // 1. Native Antigravity (agy) Official Quota & Models
+    const isAgy = (sess.agentType === 'agy' || sess.agentType === 'antigravity');
+    const hasCustomGatewayModel = sess.model && sess.model !== 'default';
+
+    if (isAgy && !hasCustomGatewayModel) {
       try {
-        const inst = await oar.claudeInstallation();
-        if (inst && inst.kind === 'available') {
-          // OAR supports launching Claude in headless/stream-json mode!
-          // We can use OAR's session adapter or fallback to llm gateway if needed
-          console.log('[OAR] Found Claude installation via OAR:', inst.command);
+        console.log(`[OAR] Dispatching directly to native Antigravity CLI for session "${sessionName}" (using official Antigravity quota)...`);
+        const agyRes = await runAgyCli(userText.trim(), sess.conversationId, sess.workspacePath, sess.username, abortCtrl.signal);
+        
+        if (agyRes && agyRes.conversation_id) {
+          sess.conversationId = agyRes.conversation_id;
         }
-      } catch (checkErr) {
-        console.warn('[OAR] Claude probe failed:', checkErr.message);
+
+        const reply = (agyRes && (agyRes.response || agyRes.result)) || (typeof agyRes === 'string' ? agyRes : '');
+        if (reply) {
+          assistantMsg.content = reply;
+          if (agyRes.usage) {
+            assistantMsg.usage = agyRes.usage;
+          }
+          handled = true;
+        } else if (agyRes && agyRes.aborted) {
+          assistantMsg.content = '(已中止当前生成)';
+          handled = true;
+        }
+      } catch (agyErr) {
+        console.warn('[OAR] Native agy execution failed, falling back to gateway:', agyErr.message);
       }
     }
 
-    // Call LLM Gateway / Mock Engine with OAR structured protocol
-    const llmGatewayService = require('./llmGatewayService');
-    const gwConfig = llmGatewayService.loadConfig();
+    // 2. Native Claude Code Official Quota & Models
+    if (!handled && sess.agentType === 'claude' && !hasCustomGatewayModel) {
+      try {
+        console.log(`[OAR] Dispatching directly to native Claude Code CLI for session "${sessionName}" (using official Claude quota)...`);
+        const claudeRes = await runClaudeCli(userText.trim(), sess.claudeSessionId, sess.workspacePath, sess.username, abortCtrl.signal);
 
-    if (gwConfig && gwConfig.enabled && gwConfig.providers) {
+        if (claudeRes && claudeRes.session_id) {
+          sess.claudeSessionId = claudeRes.session_id;
+        }
+
+        const reply = (claudeRes && (claudeRes.response || claudeRes.result)) || (typeof claudeRes === 'string' ? claudeRes : '');
+        if (reply) {
+          assistantMsg.content = reply;
+          if (claudeRes.usage) {
+            assistantMsg.usage = claudeRes.usage;
+          }
+          handled = true;
+        } else if (claudeRes && claudeRes.aborted) {
+          assistantMsg.content = '(已中止当前生成)';
+          handled = true;
+        }
+      } catch (claudeErr) {
+        console.warn('[OAR] Native claude execution failed, falling back to gateway:', claudeErr.message);
+      }
+    }
+
+    // 3. Fallback: LLM Gateway / Custom Provider with ReAct multi-turn loop
+    if (!handled) {
+      const llmGatewayService = require('./llmGatewayService');
+      const gwConfig = llmGatewayService.loadConfig();
+
+      if (gwConfig && gwConfig.enabled && gwConfig.providers) {
       const { PORT } = require('../config');
       const localPort = PORT || 3000;
       const gwBaseUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1/v1' : `http://127.0.0.1:${localPort}/v1`;
@@ -453,6 +670,7 @@ Critical Operating Guidelines:
         handled = true;
       }
     }
+  }
 
     if (!handled) {
       // Fallback response with OAR confirmation
@@ -475,15 +693,7 @@ Critical Operating Guidelines:
   } finally {
     sess.isGenerating = false;
     sess.currentController = null;
-    savePersistedSession(username, sessionName, {
-      sessionName: sess.sessionName,
-      username: sess.username,
-      agentType: sess.agentType,
-      workspacePath: sess.workspacePath,
-      model: sess.model,
-      createdAt: sess.createdAt,
-      messages: sess.messages
-    });
+    updatePersistence();
   }
 
   return assistantMsg;
