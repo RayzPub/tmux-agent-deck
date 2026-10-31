@@ -2247,7 +2247,7 @@ router.get('/sessions/:session/chat-attachments/:filename', requireAuth, (req, r
 router.post('/devices/pair-token', requireAuth, (req, res) => {
   const user = req.user.username;
   const pairData = deviceService.createPairToken(user);
-  const host = req.get('host');
+  const host = process.env.DOMAIN_NAME || req.get('host');
   const protocol = req.protocol;
   const serverUrl = `${protocol}://${host}`;
 
@@ -2329,6 +2329,30 @@ router.post('/devices/:deviceId/agent/interrupt', requireAuth, (req, res) => {
   }
 
   res.json({ success: true, message: 'Interrupt signal dispatched' });
+});
+
+// API: Trigger remote agent update / self-reload on edge device
+router.post('/devices/:deviceId/update', requireAuth, async (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const device = deviceService.getDeviceById(deviceId);
+  if (!device || device.userId !== user) {
+    return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+  }
+
+  const host = process.env.DOMAIN_NAME || req.get('host');
+  const protocol = req.protocol;
+  const serverUrl = `${protocol}://${host}`;
+
+  try {
+    const result = await deviceService.remoteSystemUpdate(deviceId, serverUrl);
+    if (result && result.error) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 module.exports = router;

@@ -252,6 +252,24 @@ async function runTest() {
   assert.strictEqual(newSessRes.success, true);
   console.log('✅ Remote Tmux New Session RPC verified successfully!');
 
+  // 11. Test Remote System Update RPC
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.action === 'system:update') {
+      ws.send(JSON.stringify({
+        action: 'system:update_success',
+        reqId: msg.reqId,
+        oldVersion: '1.0.0',
+        newVersion: '1.2.0',
+        success: true
+      }));
+    }
+  };
+
+  const updateRes = await deviceService.remoteSystemUpdate(pairedDeviceId, 'http://127.0.0.1:3999');
+  assert.strictEqual(updateRes.newVersion, '1.2.0');
+  console.log('✅ Remote System Update RPC verified successfully!');
+
   // Cleanup
   ws.close();
   server.close();

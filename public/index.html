@@ -85,6 +85,13 @@
         </button>
         <div id="deckControlDropdownMenu" class="deck-dropdown-menu hidden">
           <div class="deck-dropdown-header">// 控制面板设置</div>
+          <div id="deckDropdownDeviceBanner" class="deck-dropdown-device-banner hidden">
+            <div class="device-banner-row">
+              <span class="device-banner-badge">边缘端</span>
+              <span class="device-banner-name" id="deckDropdownDeviceName">设备名称</span>
+            </div>
+            <div class="device-banner-tip">当前 Deck 操作上下文作用于此边缘设备</div>
+          </div>
           <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
             <i data-lucide="bell"></i>
             <span>消息推送: 关闭</span>
@@ -94,9 +101,10 @@
             <span>设备互联</span>
           </button>
           <!-- IM BOT will be inserted here dynamically -->
-          <button id="adminPanelBtn" class="header-btn hidden" title="系统管理面板">
+          <button id="adminPanelBtn" class="header-btn hidden" title="系统管理面板（云端全局）">
             <i data-lucide="shield"></i>
             <span>系统管理</span>
+            <span class="scope-tag-cloud" title="仅作用于云端服务端">云端</span>
           </button>
           <button id="themeToggleBtn" class="header-btn" title="切换界面主题">
             <i data-lucide="moon"></i>
@@ -952,6 +960,12 @@
       <div class="modal-header invite-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px;">
         <h3 class="invite-modal-title" style="font-family: var(--font-title); font-size: 16px; text-transform: uppercase; margin: 0; letter-spacing: 2px;">// 系统管理与设置</h3>
         <button id="closeAdminPanelModalBtn" class="modal-close" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px;"><i data-lucide="x"></i></button>
+      </div>
+
+      <!-- Cloud Scope Notice Banner -->
+      <div class="admin-scope-banner" id="adminScopeBanner">
+        <i data-lucide="info"></i>
+        <span><strong>云端控制面管理项</strong>：此处设置（邀请码、全局智能体准入、应用图标、LLM 网关）属于云端服务器全局配置（Cloud Host），不覆盖已接入边缘设备的本地环境变量与凭据。</span>
       </div>
 
       <!-- Tabs Navigation -->

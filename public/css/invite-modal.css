@@ -592,6 +592,78 @@ body.light-minimalist .admin-oauth-card-desc code {
   border-color: #ef4444;
 }
 
+.device-version-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--neon-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+}
+
+.device-btn-secondary {
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--neon-cyan);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.device-btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+}
+
+.device-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.device-btn-active {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid #10b981;
+  color: #10b981;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+
+.admin-scope-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.admin-scope-banner i {
+  width: 16px;
+  height: 16px;
+  color: var(--neon-cyan);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 /* Device Pair Command Box */
 .device-pair-box {
   background: rgba(10, 14, 25, 0.9);
@@ -714,6 +786,40 @@ body.light-minimalist .device-copy-btn {
 body.light-minimalist .device-copy-btn:hover {
   background: #4f46e5;
   color: #ffffff;
+}
+
+body.light-minimalist .device-version-pill {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+body.light-minimalist .device-btn-secondary {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #2563eb;
+}
+
+body.light-minimalist .device-btn-secondary:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #2563eb;
+  box-shadow: none;
+}
+
+body.light-minimalist .device-btn-active {
+  background: #f0fdf4;
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+body.light-minimalist .admin-scope-banner {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #334155;
+}
+
+body.light-minimalist .admin-scope-banner i {
+  color: #2563eb;
 }
 
 

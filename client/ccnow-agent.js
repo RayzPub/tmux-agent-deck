@@ -11,6 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 
+// Client Version
+const CLIENT_VERSION = '1.2.0';
+
 // Configuration directory & file
 const CONFIG_DIR = path.join(os.homedir(), '.ccnow');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'device.json');
@@ -105,6 +108,7 @@ function getLocalDeviceInfo(customName) {
   agentTypes.push('local-terminal');
 
   return {
+    version: CLIENT_VERSION,
     name: customName || os.hostname(),
     hostname: os.hostname(),
     platform: os.platform(),
@@ -186,14 +190,17 @@ class AgentClient {
         this.send({
           action: 'pair',
           token: this.credentials.token,
+          version: CLIENT_VERSION,
           deviceInfo: getLocalDeviceInfo(this.credentials.customName)
         });
       } else if (this.credentials.deviceId && this.credentials.deviceSecret) {
-        console.log(`🛡️ Authenticating device ${this.credentials.deviceId}...`);
+        console.log(`🛡️ Authenticating device ${this.credentials.deviceId} (v${CLIENT_VERSION})...`);
         this.send({
           action: 'auth',
           deviceId: this.credentials.deviceId,
-          deviceSecret: this.credentials.deviceSecret
+          deviceSecret: this.credentials.deviceSecret,
+          version: CLIENT_VERSION,
+          deviceInfo: getLocalDeviceInfo()
         });
       }
     };
@@ -296,6 +303,12 @@ class AgentClient {
 
     // Heartbeat reply
     if (action === 'pong') {
+      return;
+    }
+
+    // Remote System Update & Self-Reload
+    if (action === 'system:update') {
+      this.handleSystemUpdate(msg.reqId, msg);
       return;
     }
 
@@ -912,6 +925,300 @@ pty.spawn(${JSON.stringify(fullCmdList)})
       });
     });
   }
+
+  /**
+   * Handle remote system update triggered by control plane
+   */
+  async handleSystemUpdate(reqId, msg) {
+    const serverUrl = msg.serverUrl || this.serverUrl;
+    console.log(`🔄 Remote system update requested from ${serverUrl}...`);
+
+    try {
+      const updateResult = await downloadAndApplyUpdate(serverUrl);
+      this.send({
+        reqId,
+        action: 'system:update_success',
+        oldVersion: CLIENT_VERSION,
+        newVersion: updateResult.version,
+        targetPath: updateResult.path,
+        message: 'Agent script updated successfully. Initiating auto-restart...'
+      });
+
+      console.log(`✨ Agent updated to ${updateResult.version}. Restarting daemon in 1s...`);
+      setTimeout(() => {
+        restartSelf();
+      }, 1000);
+    } catch (err) {
+      console.error('❌ Remote system update failed:', err.message);
+      this.send({
+        reqId,
+        action: 'system:update_error',
+        error: err.message
+      });
+    }
+  }
+}
+
+/**
+ * Simple HTTP / HTTPS GET requester with redirection support
+ */
+function fetchUrl(targetUrl) {
+  return new Promise((resolve, reject) => {
+    let urlObj;
+    try {
+      urlObj = new URL(targetUrl);
+    } catch (e) {
+      return reject(new Error('Invalid URL: ' + targetUrl));
+    }
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? require('https') : require('http');
+    const agent = isHttps ? new lib.Agent({ rejectUnauthorized: false }) : undefined;
+
+    const req = lib.get(targetUrl, {
+      timeout: 15000,
+      agent,
+      headers: { 'User-Agent': `ccnow-agent/${CLIENT_VERSION}` }
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location, targetUrl).toString();
+        return fetchUrl(redirectUrl).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Server returned HTTP ${res.statusCode}`));
+      }
+      let rawData = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { rawData += chunk; });
+      res.on('end', () => resolve(rawData));
+    });
+
+    req.on('error', (e) => reject(new Error(`Network error: ${e.message}`)));
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Connection timed out'));
+    });
+  });
+}
+
+/**
+ * Download latest ccnow-agent from server and update local file
+ */
+async function downloadAndApplyUpdate(serverUrl) {
+  const cleanServer = serverUrl.trim().replace(/\/+$/, '');
+  const agentUrl = `${cleanServer}/agent.js`;
+  const code = await fetchUrl(agentUrl);
+
+  if (!code.includes('ccnow-agent') || (!code.startsWith('#!') && !code.includes('CLIENT_VERSION'))) {
+    throw new Error('Downloaded file does not appear to be a valid ccnow-agent script.');
+  }
+
+  const match = code.match(/CLIENT_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  const newVersion = match ? match[1] : 'unknown';
+
+  let targetPath = process.argv[1];
+  if (!targetPath || targetPath === '-' || targetPath.includes('[eval]') || !fs.existsSync(targetPath)) {
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    targetPath = path.join(CONFIG_DIR, 'ccnow-agent.js');
+  }
+
+  const tmpPath = targetPath + '.tmp.' + Date.now();
+  fs.writeFileSync(tmpPath, code, { mode: 0o755 });
+  fs.renameSync(tmpPath, targetPath);
+
+  return {
+    path: targetPath,
+    version: newVersion
+  };
+}
+
+/**
+ * Restart current process safely
+ */
+function restartSelf() {
+  let targetPath = process.argv[1];
+  if (!targetPath || targetPath === '-' || targetPath.includes('[eval]') || !fs.existsSync(targetPath)) {
+    targetPath = path.join(CONFIG_DIR, 'ccnow-agent.js');
+  }
+
+  const child = spawn(process.execPath, [targetPath, ...process.argv.slice(2)], {
+    detached: true,
+    stdio: 'inherit'
+  });
+  child.unref();
+  process.exit(0);
+}
+
+/**
+ * Handle system background service (LaunchAgent / Systemd)
+ */
+function handleServiceCommand(action, options) {
+  const platform = os.platform();
+  const config = readConfig();
+
+  // Ensure executable script exists at ~/.ccnow/ccnow-agent.js
+  const scriptPath = path.join(CONFIG_DIR, 'ccnow-agent.js');
+  if (!fs.existsSync(CONFIG_DIR)) {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+
+  if (action === 'install') {
+    if (!config || !config.deviceId || !config.deviceSecret) {
+      console.error('❌ Error: Device is not paired yet. Please run `connect` first before installing service.');
+      process.exit(1);
+    }
+
+    // Copy current script to ~/.ccnow/ccnow-agent.js if running from another location
+    try {
+      const currentScript = process.argv[1];
+      if (currentScript && fs.existsSync(currentScript) && currentScript !== scriptPath) {
+        fs.copyFileSync(currentScript, scriptPath);
+        fs.chmodSync(scriptPath, 0o755);
+      }
+    } catch (e) {}
+
+    if (platform === 'darwin') {
+      const launchDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
+      if (!fs.existsSync(launchDir)) fs.mkdirSync(launchDir, { recursive: true });
+      const plistPath = path.join(launchDir, 'com.ccnow.agent.plist');
+
+      const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ccnow.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${process.execPath}</string>
+    <string>${scriptPath}</string>
+    <string>start</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${path.join(CONFIG_DIR, 'agent.log')}</string>
+  <key>StandardErrorPath</key>
+  <string>${path.join(CONFIG_DIR, 'agent-err.log')}</string>
+  <key>WorkingDirectory</key>
+  <string>${os.homedir()}</string>
+</dict>
+</plist>`;
+
+      fs.writeFileSync(plistPath, plistContent, 'utf8');
+      console.log(`✅ macOS LaunchAgent created: ${plistPath}`);
+      try {
+        execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`);
+        execSync(`launchctl load -w "${plistPath}"`);
+        console.log('🚀 Service started and set to run on login via launchd!');
+        console.log(`📜 Logs: tail -f ~/.ccnow/agent.log`);
+      } catch (err) {
+        console.error('⚠️ Failed to load launchd service:', err.message);
+      }
+    } else if (platform === 'linux') {
+      const unitDir = path.join(os.homedir(), '.config', 'systemd', 'user');
+      if (!fs.existsSync(unitDir)) fs.mkdirSync(unitDir, { recursive: true });
+      const servicePath = path.join(unitDir, 'ccnow-agent.service');
+
+      const serviceContent = `[Unit]
+Description=ccnow Edge Agent Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${process.execPath} ${scriptPath} start
+Restart=always
+RestartSec=5
+StandardOutput=append:${path.join(CONFIG_DIR, 'agent.log')}
+StandardError=append:${path.join(CONFIG_DIR, 'agent-err.log')}
+WorkingDirectory=${os.homedir()}
+
+[Install]
+WantedBy=default.target
+`;
+      fs.writeFileSync(servicePath, serviceContent, 'utf8');
+      console.log(`✅ systemd user service created: ${servicePath}`);
+      try {
+        execSync('systemctl --user daemon-reload');
+        execSync('systemctl --user enable --now ccnow-agent.service');
+        console.log('🚀 Service started and enabled via systemd user unit!');
+        console.log(`📜 Status: systemctl --user status ccnow-agent.service`);
+      } catch (err) {
+        console.error('⚠️ Failed to enable systemd service:', err.message);
+      }
+    } else {
+      console.log('ℹ️ Service auto-install currently supports macOS (launchd) and Linux (systemd).');
+      console.log(`You can run ccnow-agent in background using: nohup node "${scriptPath}" start > ~/.ccnow/agent.log 2>&1 &`);
+    }
+    return;
+  }
+
+  if (action === 'uninstall') {
+    if (platform === 'darwin') {
+      const plistPath = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.ccnow.agent.plist');
+      try { execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`); } catch (e) {}
+      if (fs.existsSync(plistPath)) fs.unlinkSync(plistPath);
+      console.log('✅ macOS LaunchAgent stopped and removed.');
+    } else if (platform === 'linux') {
+      const servicePath = path.join(os.homedir(), '.config', 'systemd', 'user', 'ccnow-agent.service');
+      try {
+        execSync('systemctl --user stop ccnow-agent.service 2>/dev/null || true');
+        execSync('systemctl --user disable ccnow-agent.service 2>/dev/null || true');
+      } catch (e) {}
+      if (fs.existsSync(servicePath)) fs.unlinkSync(servicePath);
+      try { execSync('systemctl --user daemon-reload'); } catch (e) {}
+      console.log('✅ systemd user service stopped and removed.');
+    }
+    return;
+  }
+
+  if (action === 'status') {
+    if (platform === 'darwin') {
+      try {
+        const out = execSync('launchctl list | grep com.ccnow.agent || true', { encoding: 'utf8' });
+        if (out.trim()) {
+          console.log('🟢 ccnow-agent service is registered in launchd:\n' + out);
+        } else {
+          console.log('⚪ ccnow-agent service is not currently running in launchd.');
+        }
+      } catch (e) {
+        console.log('⚠️ Could not check launchctl status.');
+      }
+    } else if (platform === 'linux') {
+      try {
+        execSync('systemctl --user status ccnow-agent.service', { stdio: 'inherit' });
+      } catch (e) {
+        // systemctl status exits non-zero if inactive/failed
+      }
+    }
+    return;
+  }
+
+  if (action === 'restart') {
+    if (platform === 'darwin') {
+      const plistPath = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.ccnow.agent.plist');
+      try {
+        execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`);
+        execSync(`launchctl load -w "${plistPath}"`);
+        console.log('🔄 macOS LaunchAgent service restarted.');
+      } catch (e) {
+        console.error('❌ Failed to restart service:', e.message);
+      }
+    } else if (platform === 'linux') {
+      try {
+        execSync('systemctl --user restart ccnow-agent.service');
+        console.log('🔄 systemd user service restarted.');
+      } catch (e) {
+        console.error('❌ Failed to restart service:', e.message);
+      }
+    }
+    return;
+  }
+
+  console.log(`Unknown service action: ${action}. Available: install, uninstall, status, restart`);
 }
 
 /**
@@ -919,17 +1226,26 @@ pty.spawn(${JSON.stringify(fullCmdList)})
  */
 function printHelp() {
   console.log(`
-ccnow-agent - Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
+ccnow-agent (v${CLIENT_VERSION}) - Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
 
 Usage:
   curl -fsSL https://<server>/agent.js | node - connect --server <url> --token <token> [--name <name>]
       Pair and connect this device to the ccnow Web Control Plane
 
   npx ccnow-agent start [--server <url>]
-      Start daemon using saved credentials from ~/.ccnow/device.json
+      Start daemon in foreground using saved credentials from ~/.ccnow/device.json
+
+  npx ccnow-agent update [--server <url>]
+      Download latest ccnow-agent from server and apply self-update
+
+  npx ccnow-agent service <install|uninstall|status|restart>
+      Manage background daemon service via macOS LaunchAgent or Linux systemd user unit
 
   npx ccnow-agent status
       Show currently paired device details
+
+  npx ccnow-agent version
+      Show client daemon version
 
   npx ccnow-agent unpair
       Remove local pairing configuration
@@ -940,6 +1256,39 @@ Usage:
 const parsed = parseArgs(process.argv.slice(2));
 
 switch (parsed.command) {
+  case 'version':
+  case '-v':
+  case '--version': {
+    console.log(`ccnow-agent v${CLIENT_VERSION}`);
+    break;
+  }
+
+  case 'update': {
+    const config = readConfig();
+    const server = parsed.options.server || config?.server;
+    if (!server) {
+      console.error('❌ Error: No server URL specified. Provide --server <url> or pair first.');
+      process.exit(1);
+    }
+    console.log(`⬇️ Checking for updates and downloading from ${server}...`);
+    downloadAndApplyUpdate(server).then((res) => {
+      console.log(`🎉 Update applied successfully!`);
+      console.log(`📁 Target:  ${res.path}`);
+      console.log(`🏷️ Version: ${CLIENT_VERSION} ➔ ${res.version}`);
+      process.exit(0);
+    }).catch((err) => {
+      console.error(`❌ Update failed: ${err.message}`);
+      process.exit(1);
+    });
+    break;
+  }
+
+  case 'service': {
+    const subcommand = parsed.options._subcommand || process.argv[3] || 'status';
+    handleServiceCommand(subcommand, parsed.options);
+    break;
+  }
+
   case 'connect': {
     const server = parsed.options.server;
     const token = parsed.options.token;

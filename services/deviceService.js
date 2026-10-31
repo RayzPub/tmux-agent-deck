@@ -125,6 +125,7 @@ function registerDevice(username, deviceInfo = {}) {
     hostname: deviceInfo.hostname || 'unknown-host',
     platform: deviceInfo.platform || 'unknown',
     arch: deviceInfo.arch || 'unknown',
+    clientVersion: deviceInfo.version || '1.0.0',
     agentTypes: deviceInfo.agentTypes || ['claude-code', 'custom-cli'],
     secretHash,
     createdAt: Date.now(),
@@ -186,6 +187,7 @@ function getUserDevices(username) {
     hostname: d.hostname,
     platform: d.platform,
     arch: d.arch,
+    clientVersion: d.clientVersion || '1.0.0',
     agentTypes: d.agentTypes,
     createdAt: d.createdAt,
     lastSeen: d.lastSeen,
@@ -540,11 +542,39 @@ function remoteChatHistory(deviceId, sessionName) {
   return sendDeviceRpc(deviceId, 'agent:chat_history', { sessionName });
 }
 
+/**
+ * Remote Trigger: System Update on Edge Device
+ */
+function remoteSystemUpdate(deviceId, serverUrl) {
+  return sendDeviceRpc(deviceId, 'system:update', { serverUrl }, 30000);
+}
+
+/**
+ * Update device metadata (version, agent types, etc.)
+ */
+function updateDeviceInfo(deviceId, info = {}) {
+  const devices = readDevices();
+  const target = devices.find(d => d.deviceId === deviceId);
+  if (!target) return false;
+
+  if (info.version) target.clientVersion = info.version;
+  if (info.name && !target.name) target.name = info.name;
+  if (info.hostname) target.hostname = info.hostname;
+  if (info.platform) target.platform = info.platform;
+  if (info.arch) target.arch = info.arch;
+  if (Array.isArray(info.agentTypes)) target.agentTypes = info.agentTypes;
+  target.lastSeen = Date.now();
+
+  writeDevices(devices);
+  return true;
+}
+
 module.exports = {
   createPairToken,
   verifyAndConsumePairToken,
   registerDevice,
   authenticateDevice,
+  updateDeviceInfo,
   isDeviceOnline,
   getDeviceById,
   getUserDevices,
@@ -576,6 +606,7 @@ module.exports = {
   remoteGitStatus,
   remoteGitDiff,
   remoteChatHistory,
+  remoteSystemUpdate,
   sendDeviceRpc,
   resolveDeviceRpc,
   __getActiveConnections: () => activeConnections.entries()

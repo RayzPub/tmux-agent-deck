@@ -4350,6 +4350,63 @@ body.light-minimalist .workspace-tech-header .pulse-dot {
   margin: 4px 0;
 }
 
+.deck-dropdown-device-banner {
+  padding: 8px 10px;
+  background: rgba(0, 240, 255, 0.06);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.deck-dropdown-device-banner.hidden {
+  display: none !important;
+}
+
+.deck-dropdown-device-banner .device-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.deck-dropdown-device-banner .device-banner-badge {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: rgba(0, 240, 255, 0.2);
+  color: var(--neon-cyan);
+}
+
+.deck-dropdown-device-banner .device-banner-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deck-dropdown-device-banner .device-banner-tip {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.scope-tag-cloud {
+  margin-left: auto;
+  font-size: 9px;
+  font-family: var(--font-mono);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--neon-cyan);
+  border: 0.5px solid rgba(0, 240, 255, 0.3);
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+
 /* Light theme overrides */
 body.light-minimalist .deck-dropdown-menu {
   background: #ffffff;
@@ -4424,6 +4481,30 @@ body.light-minimalist .deck-dropdown-menu #logoutBtn:hover {
 
 body.light-minimalist .deck-dropdown-divider {
   background: #e2e8f0;
+}
+
+body.light-minimalist .deck-dropdown-device-banner {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+body.light-minimalist .deck-dropdown-device-banner .device-banner-badge {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+body.light-minimalist .deck-dropdown-device-banner .device-banner-name {
+  color: #0f172a;
+}
+
+body.light-minimalist .deck-dropdown-device-banner .device-banner-tip {
+  color: #64748b;
+}
+
+body.light-minimalist .scope-tag-cloud {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
 }
 
 /* Markdown Preview Panel */

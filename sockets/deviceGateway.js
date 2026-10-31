@@ -112,6 +112,13 @@ function initDeviceGateway(servers, io) {
         boundDeviceId = deviceId;
         isAuthenticated = true;
 
+        if (msg.version || msg.deviceInfo) {
+          deviceService.updateDeviceInfo(deviceId, {
+            version: msg.version || msg.deviceInfo?.version,
+            ...(msg.deviceInfo || {})
+          });
+        }
+
         deviceService.registerConnection(boundDeviceId, ws, deviceRecord, io);
 
         ws.send(JSON.stringify({

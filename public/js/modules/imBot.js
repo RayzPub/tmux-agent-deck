@@ -13,6 +13,7 @@ export function initImBot() {
     imBotBtn.innerHTML = `
       <i data-lucide="message-square"></i>
       <span>IM BOT</span>
+      <span class="scope-tag-cloud" title="仅作用于云端服务端">云端</span>
     `;
     pushToggleBtn.parentNode.insertBefore(imBotBtn, pushToggleBtn.nextSibling);
 

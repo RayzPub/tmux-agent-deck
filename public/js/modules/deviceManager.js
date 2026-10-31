@@ -68,6 +68,21 @@ export function switchToDevice(deviceId) {
     console.log(`[DeviceManager] Context switched to Remote Device: ${devName} (${deviceId})`);
   }
 
+  // Update top-right system dropdown banner
+  const dropdownBanner = document.getElementById('deckDropdownDeviceBanner');
+  const dropdownDevName = document.getElementById('deckDropdownDeviceName');
+  if (dropdownBanner) {
+    if (deviceId === 'cloud') {
+      dropdownBanner.classList.add('hidden');
+    } else {
+      const dev = state.remoteDevices.find(d => d.deviceId === deviceId);
+      if (dropdownDevName) {
+        dropdownDevName.textContent = dev?.name || dev?.hostname || '边缘设备';
+      }
+      dropdownBanner.classList.remove('hidden');
+    }
+  }
+
   if (window.lucide) window.lucide.createIcons();
   updateSwitcherDropdownItems();
 
@@ -172,6 +187,8 @@ export async function loadDeviceList() {
 
       const statusClass = d.isOnline ? 'online' : 'offline';
       const statusLabel = d.isOnline ? '在线' : '离线';
+      const isCurrent = (state.currentDeviceId || 'cloud') === d.deviceId;
+      const clientVersion = d.clientVersion || '1.0.0';
 
       return `
         <div class="device-card" data-device-id="${d.deviceId}">
@@ -183,6 +200,7 @@ export async function loadDeviceList() {
               <div class="device-name-row">
                 <span class="device-name">${escapeHtml(d.name || d.hostname)}</span>
                 <span class="device-status-pill ${statusClass}">${statusLabel}</span>
+                <span class="device-version-pill" title="ccnow-agent 客户端版本">v${escapeHtml(clientVersion)}</span>
               </div>
               <div class="device-meta-sub">
                 ${escapeHtml(d.hostname)} (${d.platform} ${d.arch || ''}) · ${agentsText}
@@ -190,10 +208,14 @@ export async function loadDeviceList() {
             </div>
           </div>
           <div class="device-action-col">
-            <button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换控制台到此设备">
-              <i data-lucide="external-link"></i>
-              <span>切换设备</span>
-            </button>
+            ${isCurrent 
+              ? `<button class="device-btn-active" disabled title="当前控制台绑定的设备"><i data-lucide="check"></i><span>操作中</span></button>` 
+              : `<button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换控制台到此设备"><i data-lucide="external-link"></i><span>切换设备</span></button>`
+            }
+            ${d.isOnline 
+              ? `<button class="device-btn-secondary update-device-btn" data-device-id="${d.deviceId}" title="远程通知此设备 Agent 执行升级并热重启"><i data-lucide="refresh-cw"></i><span>升级</span></button>` 
+              : ''
+            }
             <button class="device-btn-danger remove-device-btn" data-device-id="${d.deviceId}" title="解除绑定">
               <i data-lucide="trash-2"></i>
               <span>解绑</span>
@@ -211,6 +233,39 @@ export async function loadDeviceList() {
         const devId = e.currentTarget.getAttribute('data-device-id');
         closeDeviceModal();
         switchToDevice(devId);
+      });
+    });
+
+    // Bind update buttons
+    container.querySelectorAll('.update-device-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const devId = e.currentTarget.getAttribute('data-device-id');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader" class="spin"></i><span>升级中...</span>`;
+        if (window.lucide) window.lucide.createIcons();
+
+        try {
+          const res = await fetch(`/api/devices/${devId}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          const json = await res.json();
+          if (json.success) {
+            alert(`🎉 远程升级指令执行成功！\n客户端已完成热重启。\n版本: ${json.oldVersion || ''} ➔ ${json.newVersion || '最新'}`);
+            await loadDeviceList();
+          } else {
+            alert(`❌ 升级失败: ${json.error || '未知错误'}`);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            if (window.lucide) window.lucide.createIcons();
+          }
+        } catch (err) {
+          alert(`❌ 升级请求失败: ${err.message}`);
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+          if (window.lucide) window.lucide.createIcons();
+        }
       });
     });
 
