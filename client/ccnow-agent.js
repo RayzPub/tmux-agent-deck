@@ -305,6 +305,30 @@ class AgentClient {
       return;
     }
 
+    // 1.1 Remote Filesystem Workspaces Query
+    if (action === 'fs:workspaces') {
+      this.handleFsWorkspaces(msg.reqId);
+      return;
+    }
+
+    // 1.2 Remote Filesystem List Directory
+    if (action === 'fs:list') {
+      this.handleFsList(msg.reqId, msg.workspacePath, msg.relativePath);
+      return;
+    }
+
+    // 1.3 Remote Filesystem Read File
+    if (action === 'fs:read') {
+      this.handleFsRead(msg.reqId, msg.workspacePath, msg.filePath);
+      return;
+    }
+
+    // 1.4 Remote Filesystem Write File
+    if (action === 'fs:write') {
+      this.handleFsWrite(msg.reqId, msg.workspacePath, msg.filePath, msg.content);
+      return;
+    }
+
     // 2. Interactive Terminal Open
     if (action === 'term:open') {
       this.handleOpenTerminal(msg);
@@ -414,6 +438,120 @@ class AgentClient {
       reqId,
       sessions
     });
+  }
+
+  /**
+   * Resolve a workspace base directory on local host
+   */
+  resolveBaseDir(wsPath) {
+    if (!wsPath || wsPath === '~') return os.homedir();
+    if (wsPath.startsWith('~/')) return path.join(os.homedir(), wsPath.substring(2));
+    if (path.isAbsolute(wsPath) && fs.existsSync(wsPath)) return wsPath;
+    return process.cwd();
+  }
+
+  handleFsWorkspaces(reqId) {
+    const list = [
+      { name: 'Home (~)', path: os.homedir(), isDefault: true },
+      { name: 'Current Working Dir', path: process.cwd() }
+    ];
+    this.send({ action: 'fs:workspaces_result', reqId, workspaces: list });
+  }
+
+  handleFsList(reqId, workspacePath, relativePath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const targetDir = relativePath ? path.resolve(baseDir, relativePath) : baseDir;
+
+      if (!fs.existsSync(targetDir)) {
+        return this.send({ action: 'fs:list_result', reqId, error: 'Directory not found' });
+      }
+
+      const stat = fs.statSync(targetDir);
+      if (!stat.isDirectory()) {
+        return this.send({ action: 'fs:list_result', reqId, error: 'Target is not a directory' });
+      }
+
+      const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+      const items = entries
+        .filter(e => e.name !== '.git' && e.name !== 'node_modules' && !e.name.startsWith('.DS_Store'))
+        .map(e => {
+          const fullPath = path.join(targetDir, e.name);
+          const relPath = path.relative(baseDir, fullPath);
+          let size = null;
+          let mtime = null;
+          try {
+            const s = fs.statSync(fullPath);
+            size = s.size;
+            mtime = s.mtime.toISOString();
+          } catch (err) {}
+
+          return {
+            name: e.name,
+            path: relPath,
+            isDirectory: e.isDirectory(),
+            size,
+            mtime
+          };
+        });
+
+      this.send({
+        action: 'fs:list_result',
+        reqId,
+        rootDir: baseDir,
+        items
+      });
+    } catch (err) {
+      this.send({ action: 'fs:list_result', reqId, error: err.message });
+    }
+  }
+
+  handleFsRead(reqId, workspacePath, filePath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const targetPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+
+      if (!fs.existsSync(targetPath)) {
+        return this.send({ action: 'fs:read_result', reqId, error: 'File not found' });
+      }
+
+      const stat = fs.statSync(targetPath);
+      if (!stat.isFile()) {
+        return this.send({ action: 'fs:read_result', reqId, error: 'Path is not a file' });
+      }
+
+      if (stat.size > 2 * 1024 * 1024) {
+        return this.send({ action: 'fs:read_result', reqId, error: 'File is too large (>2MB)' });
+      }
+
+      const content = fs.readFileSync(targetPath, 'utf8');
+      this.send({
+        action: 'fs:read_result',
+        reqId,
+        path: filePath,
+        content,
+        size: stat.size
+      });
+    } catch (err) {
+      this.send({ action: 'fs:read_result', reqId, error: err.message });
+    }
+  }
+
+  handleFsWrite(reqId, workspacePath, filePath, content) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const targetPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+      const parentDir = path.dirname(targetPath);
+
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+
+      fs.writeFileSync(targetPath, content || '', 'utf8');
+      this.send({ action: 'fs:write_result', reqId, success: true });
+    } catch (err) {
+      this.send({ action: 'fs:write_result', reqId, error: err.message });
+    }
   }
 
   /**

@@ -24,6 +24,8 @@ initPreventZoom();
 window.applySessionViewMode = applySessionViewMode;
 window.loadSessions = loadSessions;
 window.attachSession = attachSession;
+window.loadWorkspaces = loadWorkspaces;
+window.refreshFileTree = refreshFileTree;
 
 // Elements
 const sessionList = document.getElementById('sessionList');
@@ -1330,7 +1332,8 @@ function updateDeleteWorkspaceBtnState() {
 
 async function loadWorkspaces() {
   try {
-    const response = await fetch('/api/workspaces');
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/workspaces${devParam}`);
     if (response.status === 401) {
       window.location.href = '/login';
       return;

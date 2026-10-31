@@ -100,7 +100,8 @@ export async function loadEditorFile(path) {
   editorStatusMsg.textContent = '加载中...';
   
   try {
-    const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}${devParam}`);
     if (response.status === 401) {
       window.location.href = '/login';
       return;
@@ -386,7 +387,12 @@ export async function saveEditorFile() {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ workspacePath: state.currentWorkspacePath, filePath: path, content })
+      body: JSON.stringify({
+        workspacePath: state.currentWorkspacePath,
+        filePath: path,
+        content,
+        deviceId: state.currentDeviceId || 'cloud'
+      })
     });
 
     if (response.status === 401) {

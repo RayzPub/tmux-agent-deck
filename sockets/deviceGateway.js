@@ -179,6 +179,12 @@ function initDeviceGateway(servers, io) {
         return;
       }
 
+      // 7. Remote Filesystem RPC Responses
+      if (action.startsWith('fs:') && action.endsWith('_result')) {
+        deviceService.resolveFsRequest(msg.reqId, msg);
+        return;
+      }
+
       // Unknown action
       console.warn(`[DeviceGateway] Unknown action '${action}' from device ${boundDeviceId}`);
     });

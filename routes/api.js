@@ -978,7 +978,19 @@ router.delete('/sessions/:name', requireAuth, (req, res) => {
 });
 
 // Workspaces Endpoints
-router.get('/workspaces', requireAuth, (req, res) => {
+router.get('/workspaces', requireAuth, async (req, res) => {
+  const deviceId = req.query.deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsWorkspaces(deviceId);
+      if (result && result.workspaces && result.workspaces.length > 0) {
+        return res.json(result.workspaces);
+      }
+      return res.json([{ name: 'Remote Home (~)', path: '~', isDefault: true }]);
+    } catch (e) {
+      return res.json([{ name: 'Remote Home (~)', path: '~', isDefault: true }]);
+    }
+  }
   res.json(readWorkspaces(req.user.username));
 });
 
@@ -1157,7 +1169,20 @@ router.get('/directories', requireAuth, (req, res) => {
 });
 
 // List files/folders in a path
-router.get('/files/list', requireAuth, (req, res) => {
+router.get('/files/list', requireAuth, async (req, res) => {
+  const deviceId = req.query.deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsList(deviceId, req.query.workspacePath, req.query.path);
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json(result.items || []);
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   try {
     const workspacePath = req.query.workspacePath || '';
     const relativePath = req.query.path || '';
@@ -1210,7 +1235,24 @@ router.get('/files/list', requireAuth, (req, res) => {
 });
 
 // Read file contents
-router.get('/files/content', requireAuth, (req, res) => {
+router.get('/files/content', requireAuth, async (req, res) => {
+  const deviceId = req.query.deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsRead(deviceId, req.query.workspacePath, req.query.path);
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({
+        path: result.path || req.query.path,
+        content: result.content,
+        size: result.size
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   try {
     const workspacePath = req.query.workspacePath || '';
     const relativePath = req.query.path;
@@ -1244,9 +1286,21 @@ router.get('/files/content', requireAuth, (req, res) => {
 });
 
 // Save file contents
-router.post('/files/save', requireAuth, (req, res) => {
+router.post('/files/save', requireAuth, async (req, res) => {
+  const { workspacePath, filePath, content, deviceId } = req.body;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsWrite(deviceId, workspacePath, filePath, content);
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   try {
-    const { workspacePath, filePath, content } = req.body;
     if (!filePath) {
       return res.status(400).json({ error: 'filePath is required' });
     }

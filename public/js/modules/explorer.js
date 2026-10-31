@@ -283,7 +283,8 @@ export async function loadDirectory(dirPath, containerEl) {
   `;
 
   try {
-    const response = await fetch(`/api/files/list?path=${encodeURIComponent(dirPath)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/files/list?path=${encodeURIComponent(dirPath)}&workspacePath=${encodeURIComponent(state.currentWorkspacePath)}${devParam}`);
     if (response.status === 401) {
       window.location.href = '/login';
       return;

@@ -193,6 +193,39 @@ async function runTest() {
   assert.ok(termOutputReceived, 'Terminal output should have been relayed to web socket');
   console.log('✅ Remote Terminal PTY Relay verified successfully!');
 
+  // 9. Test Remote Filesystem RPC (fs:list & fs:read)
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.action === 'fs:list') {
+      ws.send(JSON.stringify({
+        action: 'fs:list_result',
+        reqId: msg.reqId,
+        rootDir: '/home/user/project',
+        items: [
+          { name: 'src', path: 'src', isDirectory: true, size: null },
+          { name: 'package.json', path: 'package.json', isDirectory: false, size: 512 }
+        ]
+      }));
+    } else if (msg.action === 'fs:read') {
+      ws.send(JSON.stringify({
+        action: 'fs:read_result',
+        reqId: msg.reqId,
+        path: msg.filePath,
+        content: '{"name": "remote-app"}',
+        size: 22
+      }));
+    }
+  };
+
+  const listRes = await deviceService.remoteFsList(pairedDeviceId, '~', '');
+  assert.strictEqual(listRes.items.length, 2, 'Should list 2 items');
+  assert.strictEqual(listRes.items[1].name, 'package.json');
+  console.log('✅ Remote FS List RPC verified successfully!');
+
+  const readRes = await deviceService.remoteFsRead(pairedDeviceId, '~', 'package.json');
+  assert.strictEqual(readRes.content, '{"name": "remote-app"}');
+  console.log('✅ Remote FS Read RPC verified successfully!');
+
   // Cleanup
   ws.close();
   server.close();

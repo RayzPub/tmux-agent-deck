@@ -26,6 +26,9 @@ const activeTerminals = new Map();
 // Pending session list requests: reqId -> { resolve, timer }
 const pendingSessionRequests = new Map();
 
+// Pending remote filesystem RPC requests: reqId -> { resolve, timer }
+const pendingFsRequests = new Map();
+
 /**
  * Read all registered devices from disk
  */
@@ -488,6 +491,56 @@ function resolveRemoteSessions(reqId, sessions) {
   }
 }
 
+/**
+ * Send an FS RPC request with timeout
+ */
+function sendFsRpc(deviceId, action, payload, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    if (!isDeviceOnline(deviceId)) {
+      return resolve({ error: 'Device is offline' });
+    }
+
+    const reqId = 'fs_' + generateRandomHex(8);
+    const timer = setTimeout(() => {
+      pendingFsRequests.delete(reqId);
+      resolve({ error: 'Remote filesystem request timed out' });
+    }, timeoutMs);
+
+    pendingFsRequests.set(reqId, { resolve, timer });
+
+    sendToDevice(deviceId, {
+      action,
+      reqId,
+      ...payload
+    });
+  });
+}
+
+function resolveFsRequest(reqId, result) {
+  const pending = pendingFsRequests.get(reqId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingFsRequests.delete(reqId);
+    pending.resolve(result);
+  }
+}
+
+function remoteFsList(deviceId, workspacePath, relativePath) {
+  return sendFsRpc(deviceId, 'fs:list', { workspacePath, relativePath });
+}
+
+function remoteFsRead(deviceId, workspacePath, filePath) {
+  return sendFsRpc(deviceId, 'fs:read', { workspacePath, filePath });
+}
+
+function remoteFsWrite(deviceId, workspacePath, filePath, content) {
+  return sendFsRpc(deviceId, 'fs:write', { workspacePath, filePath, content });
+}
+
+function remoteFsWorkspaces(deviceId) {
+  return sendFsRpc(deviceId, 'fs:workspaces', {});
+}
+
 module.exports = {
   createPairToken,
   verifyAndConsumePairToken,
@@ -514,5 +567,10 @@ module.exports = {
   handleRemoteTerminalExit,
   getRemoteSessions,
   resolveRemoteSessions,
+  remoteFsList,
+  remoteFsRead,
+  remoteFsWrite,
+  remoteFsWorkspaces,
+  resolveFsRequest,
   __getActiveConnections: () => activeConnections.entries()
 };

@@ -125,6 +125,15 @@ export function switchToDevice(deviceId) {
   if (typeof window.loadSessions === 'function') {
     window.loadSessions();
   }
+
+  // Refresh workspaces & file tree for the newly selected device
+  if (typeof window.loadWorkspaces === 'function') {
+    window.loadWorkspaces().then(() => {
+      if (typeof window.refreshFileTree === 'function') {
+        window.refreshFileTree();
+      }
+    });
+  }
 }
 
 /**
