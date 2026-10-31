@@ -162,6 +162,23 @@ function initDeviceGateway(servers, io) {
         return;
       }
 
+      // 5. Remote Terminal PTY Output & Exit
+      if (action === 'term:output') {
+        deviceService.handleRemoteTerminalOutput(boundDeviceId, msg.termId, msg.data);
+        return;
+      }
+
+      if (action === 'term:exit') {
+        deviceService.handleRemoteTerminalExit(boundDeviceId, msg.termId);
+        return;
+      }
+
+      // 6. Remote Tmux Sessions List Response
+      if (action === 'tmux:sessions_list') {
+        deviceService.resolveRemoteSessions(msg.reqId, msg.sessions);
+        return;
+      }
+
       // Unknown action
       console.warn(`[DeviceGateway] Unknown action '${action}' from device ${boundDeviceId}`);
     });

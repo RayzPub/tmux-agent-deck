@@ -144,6 +144,55 @@ async function runTest() {
   assert.ok(doneReceived, 'Done should have been received');
   console.log('✅ Agent task dispatch and stream back verified successfully!');
 
+  // 7. Test Remote Tmux List Sessions RPC
+  const remoteSessionsPromise = deviceService.getRemoteSessions(pairedDeviceId);
+  // Client simulates tmux:list_sessions reply
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.action === 'tmux:list_sessions') {
+      ws.send(JSON.stringify({
+        action: 'tmux:sessions_list',
+        reqId: msg.reqId,
+        sessions: [
+          { name: 'main', windows: 1, created: Date.now(), attached: true },
+          { name: 'code-dev', windows: 2, created: Date.now(), attached: false }
+        ]
+      }));
+    }
+  };
+
+  const fetchedSessions = await remoteSessionsPromise;
+  assert.strictEqual(fetchedSessions.length, 2, 'Should receive 2 remote sessions');
+  assert.strictEqual(fetchedSessions[0].name, 'main');
+  assert.strictEqual(fetchedSessions[1].name, 'code-dev');
+  console.log('✅ Remote Tmux List Sessions RPC verified successfully!');
+
+  // 8. Test Remote Terminal PTY Relay
+  let termOutputReceived = false;
+  const mockTerminalSocket = {
+    emit: (event, data) => {
+      if (event === 'terminal-output') {
+        termOutputReceived = true;
+      }
+    }
+  };
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.action === 'term:open') {
+      ws.send(JSON.stringify({
+        action: 'term:output',
+        termId: msg.termId,
+        data: 'Welcome to Remote Shell!\r\n'
+      }));
+    }
+  };
+
+  deviceService.initRemoteTerminal(pairedDeviceId, mockTerminalSocket, 'term_test_1', 'main', 80, 24);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(termOutputReceived, 'Terminal output should have been relayed to web socket');
+  console.log('✅ Remote Terminal PTY Relay verified successfully!');
+
   // Cleanup
   ws.close();
   server.close();

@@ -398,7 +398,8 @@ export function attachSession(sessionName) {
           sessionSocket.emit('init-terminal', {
             sessionName: sessionName,
             cols: cols,
-            rows: rows
+            rows: rows,
+            deviceId: state.currentDeviceId || 'cloud'
           });
           if (!isTouchDevice() && sessionName === state.currentSession) {
             sessionTerm.focus();
@@ -710,7 +711,8 @@ export function attachSession(sessionName) {
       sessionSocket.emit('init-terminal', {
         sessionName: sessionName,
         cols: cols,
-        rows: rows
+        rows: rows,
+        deviceId: state.currentDeviceId || 'cloud'
       });
       setTimeout(loadSessions, 200);
 

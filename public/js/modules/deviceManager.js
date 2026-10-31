@@ -120,6 +120,11 @@ export function switchToDevice(deviceId) {
 
   if (window.lucide) window.lucide.createIcons();
   updateSwitcherDropdownItems();
+
+  // Refresh sessions list for the newly selected device
+  if (typeof window.loadSessions === 'function') {
+    window.loadSessions();
+  }
 }
 
 /**
@@ -518,8 +523,19 @@ export async function initDeviceManager(socket) {
   }
 
   // 3. Workspace Panel Controls Binding
+  const openTerminalBtn = document.getElementById('deckRemoteOpenTerminalBtn');
   const clearChatBtn = document.getElementById('deckRemoteClearChatBtn');
   const switchToCloudBtn = document.getElementById('deckSwitchToCloudBtn');
+
+  if (openTerminalBtn) {
+    openTerminalBtn.addEventListener('click', () => {
+      const remotePanel = document.getElementById('remoteDeviceWorkspacePanel');
+      if (remotePanel) remotePanel.classList.add('hidden');
+      if (typeof window.attachSession === 'function') {
+        window.attachSession('main');
+      }
+    });
+  }
   const sendBtn = document.getElementById('deckRemoteSendBtn');
   const interruptBtn = document.getElementById('deckRemoteInterruptBtn');
   const promptInput = document.getElementById('deckRemotePromptInput');

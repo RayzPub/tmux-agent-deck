@@ -5,6 +5,7 @@ const path = require('path');
 const { getRunUser, getTmuxCommandForUser, execTmux } = require('../services/tmuxService');
 const { getHomeDir, getUserWorkspaceRoot, getDefaultWorkspacePath, getUserHomeDir } = require('../services/fileService');
 const { JWT_SECRET, MULTI_USER_ENABLED, PROJECT_ROOT } = require('../config');
+const deviceService = require('../services/deviceService');
 
 
 
@@ -53,7 +54,7 @@ const initSocket = (io) => {
       socket.activeSession = activeSession;
     });
 
-    socket.on('init-terminal', ({ sessionName, cols, rows }) => {
+    socket.on('init-terminal', ({ sessionName, cols, rows, deviceId }) => {
       socket.sessionName = sessionName;
       if (ptyProcess) {
         console.log('Cleaning up existing PTY before re-init for socket:', socket.id);
@@ -67,6 +68,23 @@ const initSocket = (io) => {
         lastCols = null;
         lastRows = null;
       }
+
+      // If targeting a remote edge device (e.g. Mac/Linux workstation)
+      if (deviceId && deviceId !== 'cloud') {
+        socket.remoteDeviceId = deviceId;
+        socket.remoteTermId = socket.id;
+        console.log(`[Terminal] Routing terminal socket ${socket.id} to remote edge device: ${deviceId} (Session: ${sessionName})`);
+
+        const initRes = deviceService.initRemoteTerminal(deviceId, socket, socket.id, sessionName, cols || 80, rows || 24);
+        if (!initRes || !initRes.success) {
+          socket.emit('terminal-output', `\r\n\x1b[31;1mError connecting to remote device: ${initRes?.error || 'Device offline'}\x1b[0m\r\n`);
+        }
+        return;
+      }
+
+      // Clear any remote device tracking on cloud fallback
+      socket.remoteDeviceId = null;
+      socket.remoteTermId = null;
 
       if (!sessionName || !/^[a-zA-Z0-9_-]+$/.test(sessionName)) {
         console.error('Invalid sessionName requested for terminal:', sessionName);
@@ -272,6 +290,12 @@ const initSocket = (io) => {
     });
 
     socket.on('terminal-input', (data, opts) => {
+      // Forward keystroke to remote edge device if connected to one
+      if (socket.remoteDeviceId && socket.remoteTermId) {
+        deviceService.sendRemoteTerminalInput(socket.remoteDeviceId, socket.remoteTermId, data);
+        return;
+      }
+
       if (!ptyProcess) return;
 
       const needsExitCopyMode = Boolean(
@@ -291,6 +315,12 @@ const initSocket = (io) => {
     });
 
     socket.on('resize', ({ cols, rows }) => {
+      // Forward resize to remote edge device if connected to one
+      if (socket.remoteDeviceId && socket.remoteTermId && cols > 0 && rows > 0) {
+        deviceService.sendRemoteTerminalResize(socket.remoteDeviceId, socket.remoteTermId, cols, rows);
+        return;
+      }
+
       if (ptyProcess && cols > 0 && rows > 0) {
         if (cols === lastCols && rows === lastRows) {
           return;
@@ -307,6 +337,11 @@ const initSocket = (io) => {
 
     socket.on('disconnect', () => {
       console.log('Client disconnected from terminal socket:', socket.id);
+      if (socket.remoteDeviceId && socket.remoteTermId) {
+        deviceService.closeRemoteTerminal(socket.remoteDeviceId, socket.remoteTermId);
+        socket.remoteDeviceId = null;
+        socket.remoteTermId = null;
+      }
       if (ptyProcess) {
         try {
           ptyProcess.kill();

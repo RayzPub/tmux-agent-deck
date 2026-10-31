@@ -22,6 +22,8 @@ initPreventZoom();
 
 // Expose immediately for terminal and tab operations
 window.applySessionViewMode = applySessionViewMode;
+window.loadSessions = loadSessions;
+window.attachSession = attachSession;
 
 // Elements
 const sessionList = document.getElementById('sessionList');
@@ -237,7 +239,8 @@ if (typeof require !== 'undefined') {
 
 export async function loadSessions() {
   try {
-    const response = await fetch('/api/sessions');
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/sessions${devParam}`);
     if (response.status === 401) {
       window.location.href = '/login';
       return;

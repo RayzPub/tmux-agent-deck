@@ -562,6 +562,28 @@ router.get('/llm-models', requireAuth, (req, res) => {
 // API: Tmux Commands (Protected)
 // List sessions
 router.get('/sessions', requireAuth, (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    deviceService.getRemoteSessions(targetDeviceId).then((sessions) => {
+      const mapped = (sessions || []).map(s => ({
+        name: s.name,
+        attached: s.attached ? '1' : '0',
+        created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
+        workspace: s.workspace || s.name,
+        agentType: s.agentType || 'shell',
+        agentModel: '',
+        sessionMode: 'terminal',
+        isRemote: true,
+        deviceId: targetDeviceId
+      }));
+      res.json(mapped);
+    }).catch(err => {
+      console.error('[API] Error getting remote sessions:', err);
+      res.json([]);
+    });
+    return;
+  }
+
   execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}'], (err, stdout, stderr) => {
     if (err) {
       const errMsg = (stderr || '').toLowerCase();

@@ -20,6 +20,12 @@ const activeConnections = new Map();
 // Event listeners for agent responses: sessionId -> callback(msg)
 const agentStreamListeners = new Map();
 
+// Active remote terminals relay: termKey -> { deviceId, socket, termId }
+const activeTerminals = new Map();
+
+// Pending session list requests: reqId -> { resolve, timer }
+const pendingSessionRequests = new Map();
+
 /**
  * Read all registered devices from disk
  */
@@ -370,6 +376,118 @@ function emitAgentEvent(sessionId, eventData) {
   }
 }
 
+/**
+ * Initialize a remote terminal session on an edge device
+ */
+function initRemoteTerminal(deviceId, socket, termId, sessionName, cols = 80, rows = 24) {
+  const termKey = `${deviceId}:${termId}`;
+  activeTerminals.set(termKey, { deviceId, socket, termId });
+
+  return sendToDevice(deviceId, {
+    action: 'term:open',
+    termId,
+    sessionName: sessionName || 'main',
+    cols,
+    rows
+  });
+}
+
+/**
+ * Send user terminal keystroke input to an edge device
+ */
+function sendRemoteTerminalInput(deviceId, termId, data) {
+  return sendToDevice(deviceId, {
+    action: 'term:input',
+    termId,
+    data
+  });
+}
+
+/**
+ * Send resize signal to an edge device terminal
+ */
+function sendRemoteTerminalResize(deviceId, termId, cols, rows) {
+  return sendToDevice(deviceId, {
+    action: 'term:resize',
+    termId,
+    cols,
+    rows
+  });
+}
+
+/**
+ * Close a remote terminal session on an edge device
+ */
+function closeRemoteTerminal(deviceId, termId) {
+  const termKey = `${deviceId}:${termId}`;
+  activeTerminals.delete(termKey);
+
+  return sendToDevice(deviceId, {
+    action: 'term:close',
+    termId
+  });
+}
+
+/**
+ * Handle incoming terminal output chunk from edge device and pipe to web socket
+ */
+function handleRemoteTerminalOutput(deviceId, termId, data) {
+  const termKey = `${deviceId}:${termId}`;
+  const term = activeTerminals.get(termKey);
+  if (term && term.socket) {
+    term.socket.emit('terminal-output', data);
+  }
+}
+
+/**
+ * Handle terminal exit event from edge device
+ */
+function handleRemoteTerminalExit(deviceId, termId) {
+  const termKey = `${deviceId}:${termId}`;
+  const term = activeTerminals.get(termKey);
+  if (term && term.socket) {
+    term.socket.emit('terminal-exit');
+    activeTerminals.delete(termKey);
+  }
+}
+
+/**
+ * Query active tmux / terminal sessions running on a remote edge device
+ */
+function getRemoteSessions(deviceId, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    if (!isDeviceOnline(deviceId)) {
+      return resolve([]);
+    }
+
+    const reqId = 'req_' + generateRandomHex(6);
+    const timer = setTimeout(() => {
+      pendingSessionRequests.delete(reqId);
+      // Fallback default session if device is alive
+      resolve([{ name: 'main', windows: 1, created: Date.now(), active: true, isRemote: true }]);
+    }, timeoutMs);
+
+    pendingSessionRequests.set(reqId, { resolve, timer });
+
+    sendToDevice(deviceId, {
+      action: 'tmux:list_sessions',
+      reqId
+    });
+  });
+}
+
+/**
+ * Handle response for tmux:list_sessions from edge device
+ */
+function resolveRemoteSessions(reqId, sessions) {
+  const pending = pendingSessionRequests.get(reqId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingSessionRequests.delete(reqId);
+    pending.resolve(Array.isArray(sessions) ? sessions : []);
+  }
+}
+
 module.exports = {
   createPairToken,
   verifyAndConsumePairToken,
@@ -388,5 +506,13 @@ module.exports = {
   subscribeAgentStream,
   unsubscribeAgentStream,
   emitAgentEvent,
+  initRemoteTerminal,
+  sendRemoteTerminalInput,
+  sendRemoteTerminalResize,
+  closeRemoteTerminal,
+  handleRemoteTerminalOutput,
+  handleRemoteTerminalExit,
+  getRemoteSessions,
+  resolveRemoteSessions,
   __getActiveConnections: () => activeConnections.entries()
 };

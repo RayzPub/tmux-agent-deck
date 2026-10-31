@@ -3,6 +3,7 @@
 /**
  * ccnow-agent: Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
  * Connects your local machine to the ccnow Web Control Plane via WebSocket.
+ * Supports Remote Tmux, Full PTY Terminal, and Edge Agent execution.
  */
 
 const os = require('os');
@@ -28,6 +29,9 @@ if (!WSClient) {
 
 // Active agent child processes: sessionId -> childProcess
 const runningTasks = new Map();
+
+// Active interactive PTY / terminal sessions: termId -> { child, write, resize, kill }
+const activeTerminals = new Map();
 
 /**
  * Read stored device configuration
@@ -75,25 +79,30 @@ function parseArgs(args) {
 }
 
 /**
+ * Check if a command is installed on host
+ */
+function hasCommand(cmd) {
+  try {
+    execSync(`which ${cmd}`, { stdio: 'ignore' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Collect local device system info
  */
 function getLocalDeviceInfo(customName) {
-  let hasClaude = false;
-  try {
-    execSync('which claude', { stdio: 'ignore' });
-    hasClaude = true;
-  } catch (e) {}
-
-  let hasCodex = false;
-  try {
-    execSync('which codex', { stdio: 'ignore' });
-    hasCodex = true;
-  } catch (e) {}
+  const hasClaude = hasCommand('claude');
+  const hasCodex = hasCommand('codex');
+  const hasTmux = hasCommand('tmux');
 
   const agentTypes = [];
   if (hasClaude) agentTypes.push('claude-code');
   if (hasCodex) agentTypes.push('codex-cli');
-  agentTypes.push('local-shell');
+  if (hasTmux) agentTypes.push('tmux');
+  agentTypes.push('local-terminal');
 
   return {
     name: customName || os.hostname(),
@@ -102,7 +111,8 @@ function getLocalDeviceInfo(customName) {
     arch: os.arch(),
     agentTypes,
     hasClaude,
-    hasCodex
+    hasCodex,
+    hasTmux
   };
 }
 
@@ -146,6 +156,11 @@ class AgentClient {
     if (this.ws) {
       try { this.ws.close(); } catch (e) {}
     }
+    // Cleanup active terminals
+    for (const [termId, term] of activeTerminals.entries()) {
+      try { term.kill(); } catch (e) {}
+    }
+    activeTerminals.clear();
   }
 
   connect() {
@@ -166,7 +181,6 @@ class AgentClient {
       console.log(`✨ Connected to ${wsUrl}! Sending handshake...`);
       this.reconnectAttempts = 0;
 
-      // Check if we need to pair or auth
       if (this.credentials.token) {
         console.log(`🔑 Performing initial pairing with token ${this.credentials.token.substring(0, 8)}...`);
         this.send({
@@ -245,7 +259,6 @@ class AgentClient {
       console.log(`💻 Device Name: ${msg.device?.name || 'Local Device'}`);
       console.log('==========================================');
 
-      // Save credentials for permanent auto-reconnect
       saveConfig({
         server: this.serverUrl,
         deviceId: msg.deviceId,
@@ -253,7 +266,6 @@ class AgentClient {
         name: msg.device?.name || 'Local Device'
       });
 
-      // Update in-memory credentials so subsequent connects will use auth
       this.credentials = {
         deviceId: msg.deviceId,
         deviceSecret: msg.deviceSecret
@@ -265,7 +277,6 @@ class AgentClient {
 
     if (action === 'pair_failed') {
       console.error(`❌ Pairing failed: ${msg.error}`);
-      console.error('Please generate a fresh pair token on the ccnow web interface and try again.');
       this.stop();
       process.exit(1);
     }
@@ -279,23 +290,62 @@ class AgentClient {
 
     if (action === 'auth_failed') {
       console.error(`❌ Authentication failed: ${msg.error}`);
-      console.error('Credentials may be invalid or revoked. Please re-pair this device.');
       this.stop();
       process.exit(1);
     }
 
     // Heartbeat reply
     if (action === 'pong') {
-      return; // Quietly accept pong
+      return;
     }
 
-    // Agent Chat Task Dispatched from Control Plane
+    // 1. Tmux List Sessions RPC
+    if (action === 'tmux:list_sessions') {
+      this.handleListSessions(msg.reqId);
+      return;
+    }
+
+    // 2. Interactive Terminal Open
+    if (action === 'term:open') {
+      this.handleOpenTerminal(msg);
+      return;
+    }
+
+    // 3. Interactive Terminal Input
+    if (action === 'term:input') {
+      const term = activeTerminals.get(msg.termId);
+      if (term && term.write) {
+        term.write(msg.data);
+      }
+      return;
+    }
+
+    // 4. Interactive Terminal Resize
+    if (action === 'term:resize') {
+      const term = activeTerminals.get(msg.termId);
+      if (term && term.resize) {
+        term.resize(msg.cols, msg.rows);
+      }
+      return;
+    }
+
+    // 5. Interactive Terminal Close
+    if (action === 'term:close') {
+      const term = activeTerminals.get(msg.termId);
+      if (term) {
+        term.kill();
+        activeTerminals.delete(msg.termId);
+      }
+      return;
+    }
+
+    // 6. Agent Chat Task
     if (action === 'agent:chat') {
       this.executeAgentTask(msg);
       return;
     }
 
-    // Agent Interrupt Task
+    // 7. Agent Interrupt Task
     if (action === 'agent:interrupt') {
       const { sessionId } = msg;
       if (sessionId && runningTasks.has(sessionId)) {
@@ -312,6 +362,190 @@ class AgentClient {
   }
 
   /**
+   * Handle Tmux / Terminal Sessions Query
+   */
+  handleListSessions(reqId) {
+    const hasTmux = hasCommand('tmux');
+    let sessions = [];
+
+    if (hasTmux) {
+      try {
+        const out = execSync('tmux list-sessions -F "#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const lines = out.trim().split('\n').filter(Boolean);
+        for (const line of lines) {
+          const parts = line.split('|');
+          if (parts.length >= 1 && parts[0]) {
+            sessions.push({
+              name: parts[0],
+              windows: parseInt(parts[1], 10) || 1,
+              created: parseInt(parts[2], 10) * 1000 || Date.now(),
+              attached: parts[3] === '1',
+              isRemote: true
+            });
+          }
+        }
+      } catch (e) {
+        // Tmux server might not be running yet, auto-ensure default session
+        try {
+          execSync('tmux new-session -d -s main', { stdio: 'ignore' });
+          sessions.push({
+            name: 'main',
+            windows: 1,
+            created: Date.now(),
+            attached: false,
+            isRemote: true
+          });
+        } catch (err) {}
+      }
+    }
+
+    if (sessions.length === 0) {
+      sessions.push({
+        name: 'default',
+        windows: 1,
+        created: Date.now(),
+        attached: true,
+        isRemote: true
+      });
+    }
+
+    this.send({
+      action: 'tmux:sessions_list',
+      reqId,
+      sessions
+    });
+  }
+
+  /**
+   * Spawn a real PTY or Shell session for web terminal relay
+   */
+  handleOpenTerminal(msg) {
+    const { termId, sessionName, cols = 80, rows = 24 } = msg;
+
+    // Clean up existing term if same termId
+    if (activeTerminals.has(termId)) {
+      try { activeTerminals.get(termId).kill(); } catch (e) {}
+      activeTerminals.delete(termId);
+    }
+
+    console.log(`🖥️ [Terminal PTY] Spawning session '${sessionName}' for termId: ${termId} (${cols}x${rows})`);
+
+    const hasTmux = hasCommand('tmux');
+    const hasPython = hasCommand('python3');
+    const userShell = process.env.SHELL || (os.platform() === 'darwin' ? '/bin/zsh' : '/bin/bash');
+
+    // Determine target command to execute
+    let targetCmd = userShell;
+    let targetArgs = [];
+
+    if (hasTmux && sessionName) {
+      targetCmd = 'tmux';
+      targetArgs = ['new-session', '-A', '-s', sessionName];
+    }
+
+    let ptyHandler = null;
+
+    // Method 1: node-pty (if installed locally)
+    try {
+      const nodePty = require('node-pty');
+      const ptyProcess = nodePty.spawn(targetCmd, targetArgs, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color', FORCE_COLOR: '1' }
+      });
+
+      ptyProcess.onData((data) => {
+        this.send({ action: 'term:output', termId, data });
+      });
+
+      ptyProcess.onExit(() => {
+        activeTerminals.delete(termId);
+        this.send({ action: 'term:exit', termId });
+      });
+
+      ptyHandler = {
+        write: (d) => ptyProcess.write(d),
+        resize: (c, r) => ptyProcess.resize(c, r),
+        kill: () => ptyProcess.kill()
+      };
+    } catch (e) {
+      // node-pty not available, fallback to Method 2 or 3
+    }
+
+    // Method 2: Python 3 POSIX PTY Bridge (100% native on macOS & Linux)
+    if (!ptyHandler && hasPython) {
+      const fullCmdList = [targetCmd, ...targetArgs];
+      const pyScript = `import pty, os, sys
+pty.spawn(${JSON.stringify(fullCmdList)})
+`;
+      const pyProcess = spawn('python3', ['-c', pyScript], {
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color', FORCE_COLOR: '1' }
+      });
+
+      pyProcess.stdout.on('data', (chunk) => {
+        this.send({ action: 'term:output', termId, data: chunk.toString() });
+      });
+
+      pyProcess.stderr.on('data', (chunk) => {
+        this.send({ action: 'term:output', termId, data: chunk.toString() });
+      });
+
+      pyProcess.on('close', () => {
+        activeTerminals.delete(termId);
+        this.send({ action: 'term:exit', termId });
+      });
+
+      ptyHandler = {
+        write: (d) => {
+          if (pyProcess.stdin.writable) {
+            pyProcess.stdin.write(d);
+          }
+        },
+        resize: () => {},
+        kill: () => {
+          try { pyProcess.kill('SIGTERM'); } catch (err) {}
+        }
+      };
+    }
+
+    // Method 3: Standard ChildProcess Spawn Fallback
+    if (!ptyHandler) {
+      const shProcess = spawn(targetCmd, targetArgs, {
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color' }
+      });
+
+      shProcess.stdout.on('data', (chunk) => {
+        this.send({ action: 'term:output', termId, data: chunk.toString() });
+      });
+
+      shProcess.stderr.on('data', (chunk) => {
+        this.send({ action: 'term:output', termId, data: chunk.toString() });
+      });
+
+      shProcess.on('close', () => {
+        activeTerminals.delete(termId);
+        this.send({ action: 'term:exit', termId });
+      });
+
+      ptyHandler = {
+        write: (d) => {
+          if (shProcess.stdin.writable) shProcess.stdin.write(d);
+        },
+        resize: () => {},
+        kill: () => {
+          try { shProcess.kill('SIGKILL'); } catch (err) {}
+        }
+      };
+    }
+
+    activeTerminals.set(termId, ptyHandler);
+  }
+
+  /**
    * Execute an Agent task locally and stream outputs back
    */
   executeAgentTask(msg) {
@@ -319,22 +553,12 @@ class AgentClient {
     const targetDir = workDir && fs.existsSync(workDir) ? workDir : process.cwd();
 
     console.log(`🤖 [Agent Task] Session: ${sessionId} | Type: ${agentType || 'claude-code'}`);
-    console.log(`📝 Prompt: "${prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt}"`);
 
-    // Determine command to run
     let cmd = 'claude';
     let args = ['--print', prompt];
 
-    // Check if claude exists
-    let hasClaude = false;
-    try {
-      execSync('which claude', { stdio: 'ignore' });
-      hasClaude = true;
-    } catch (e) {}
-
+    const hasClaude = hasCommand('claude');
     if (!hasClaude) {
-      // Fallback: Inform user and run via basic bash / mock response
-      console.warn('⚠️ `claude` CLI not detected on this machine. Running command in shell mode...');
       cmd = 'bash';
       args = ['-c', `echo "🤖 [ccnow-agent on ${os.hostname()}] Claude Code is not installed in PATH. (Install with: npm i -g @anthropic-ai/claude-code)\n\nRunning prompt as test command:"; echo "Prompt received: ${prompt.replace(/"/g, '\\"')}"`];
     }
@@ -380,7 +604,6 @@ class AgentClient {
 
     child.on('close', (code) => {
       runningTasks.delete(sessionId);
-      console.log(`🏁 Task ${sessionId} finished with exit code ${code}`);
       this.send({
         action: 'agent:done',
         sessionId,
@@ -391,7 +614,6 @@ class AgentClient {
 
     child.on('error', (err) => {
       runningTasks.delete(sessionId);
-      console.error(`❌ Task ${sessionId} process error:`, err);
       this.send({
         action: 'agent:error',
         sessionId,
@@ -409,7 +631,7 @@ function printHelp() {
 ccnow-agent - Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
 
 Usage:
-  npx ccnow-agent connect --server <url> --token <token> [--name <custom-name>]
+  curl -fsSL https://<server>/agent.js | node - connect --server <url> --token <token> [--name <name>]
       Pair and connect this device to the ccnow Web Control Plane
 
   npx ccnow-agent start [--server <url>]
@@ -420,9 +642,6 @@ Usage:
 
   npx ccnow-agent unpair
       Remove local pairing configuration
-
-Examples:
-  npx ccnow-agent connect --server https://outshine.cloud --token pt_abcd1234
 `);
 }
 
@@ -445,7 +664,6 @@ switch (parsed.command) {
     const client = new AgentClient(server, { token, customName: name });
     client.start();
 
-    // Handle graceful shutdown
     process.on('SIGINT', () => {
       console.log('\n👋 Disconnecting ccnow-agent...');
       client.stop();
