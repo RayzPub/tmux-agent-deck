@@ -68,6 +68,10 @@
             <i data-lucide="bell"></i>
             <span>消息推送: 关闭</span>
           </button>
+          <button id="deviceManagerBtn" class="header-btn" title="多设备互联与远程 Agent 管理">
+            <i data-lucide="laptop"></i>
+            <span>设备互联</span>
+          </button>
           <!-- IM BOT will be inserted here dynamically -->
           <button id="adminPanelBtn" class="header-btn hidden" title="系统管理面板">
             <i data-lucide="shield"></i>
@@ -859,6 +863,57 @@
         <div class="modal-actions" style="margin-top: 15px;">
           <button type="button" class="cyber-btn-outline" id="cancelDirPickerBtn">取消</button>
           <button type="button" class="cyber-btn" id="confirmDirPickerBtn">选择当前目录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Device Manager Modal (Multi-Device Interconnect) -->
+  <div id="deviceManagerModal" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-card device-modal-card" style="position: relative;">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      
+      <div class="device-modal-header">
+        <h3 class="device-modal-title">
+          <i data-lucide="laptop"></i>
+          // 多设备互联与远程 Agent
+        </h3>
+        <button id="closeDeviceManagerModalBtn" class="modal-close"><i data-lucide="x"></i></button>
+      </div>
+
+      <!-- Device List Section -->
+      <div class="device-section-title">// 已绑定的个人设备列表</div>
+      <div id="deviceListContainer" class="device-list">
+        <!-- Rendered dynamically -->
+        <div class="device-empty-state">
+          <i data-lucide="cpu" style="width: 28px; height: 28px; margin-bottom: 8px; opacity: 0.5;"></i>
+          <span>暂无绑定的本地设备</span>
+        </div>
+      </div>
+
+      <!-- Add Device / Pair Section -->
+      <div class="device-section-title">// 添加新设备 (配对绑定)</div>
+      <div class="device-pair-box">
+        <div class="device-pair-desc">
+          在你的个人电脑（Mac/Linux/Windows）终端中运行下方的一键启动命令，客户端将通过 WebSocket 反向连入此控制面并自动完成配对：
+        </div>
+        <div class="device-cmd-container">
+          <div id="devicePairCmdText" class="device-cmd-text">点击生成启动命令...</div>
+          <button id="deviceCopyPairCmdBtn" class="device-copy-btn">
+            <i data-lucide="copy"></i>
+            <span>复制</span>
+          </button>
+        </div>
+        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <button id="deviceRefreshPairBtn" class="cyber-btn-outline" style="font-size: 11px; padding: 4px 10px;">
+            <i data-lucide="refresh-cw"></i> 重新生成命令
+          </button>
+          <span id="devicePairExpireText" style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">
+            命令 10 分钟内有效
+          </span>
         </div>
       </div>
     </div>

@@ -26,6 +26,7 @@ const iconService = require('../services/iconService');
 const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid, getAgySessionIdFromPanePid } = require('../services/agentChatService');
 const llmGatewayService = require('../services/llmGatewayService');
 const projectService = require('../services/projectService');
+const deviceService = require('../services/deviceService');
 
 // Shell escape utility for safe command interpolation
 const shellescape = (s) => {
@@ -2073,6 +2074,98 @@ router.get('/sessions/:session/chat-attachments/:filename', requireAuth, (req, r
 
     res.sendFile(filePath, { dotfiles: 'allow' });
   }, user);
+});
+
+// ==========================================
+// Multi-Device Agent Remote Control APIs
+// ==========================================
+
+// API: Generate a one-time pair token and startup command for adding a local device
+router.post('/devices/pair-token', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const pairData = deviceService.createPairToken(user);
+  const host = req.get('host');
+  const protocol = req.protocol;
+  const serverUrl = `${protocol}://${host}`;
+
+  const command = `npx ccnow-agent connect --server ${serverUrl} --token ${pairData.token}`;
+
+  res.json({
+    success: true,
+    token: pairData.token,
+    expireAt: pairData.expireAt,
+    ttlSeconds: pairData.ttlSeconds,
+    serverUrl,
+    command
+  });
+});
+
+// API: List all devices bound to the current logged-in user
+router.get('/devices', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const devices = deviceService.getUserDevices(user);
+  res.json({
+    success: true,
+    devices
+  });
+});
+
+// API: Unbind / Remove a device
+router.delete('/devices/:deviceId', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const removed = deviceService.removeDevice(user, deviceId);
+  if (!removed) {
+    return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+  }
+  res.json({ success: true, message: 'Device successfully removed' });
+});
+
+// API: Dispatch Agent task / prompt to a remote device
+router.post('/devices/:deviceId/agent/chat', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const { sessionId, prompt, agentType, workDir } = req.body;
+
+  if (!prompt || !prompt.trim()) {
+    return res.status(400).json({ success: false, error: 'Prompt cannot be empty' });
+  }
+
+  const sId = sessionId || `remote_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const result = deviceService.dispatchAgentChat(deviceId, user, {
+    sessionId: sId,
+    prompt,
+    agentType,
+    workDir
+  });
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    sessionId: sId,
+    message: 'Task successfully dispatched to remote device'
+  });
+});
+
+// API: Interrupt Agent task on a remote device
+router.post('/devices/:deviceId/agent/interrupt', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const { sessionId } = req.body;
+
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+
+  const result = deviceService.dispatchAgentInterrupt(deviceId, user, { sessionId });
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({ success: true, message: 'Interrupt signal dispatched' });
 });
 
 module.exports = router;

@@ -15,6 +15,7 @@ import { initProjectOverviewEvents, openProjectTab } from './modules/projectOver
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
 import { initMobileInput, initPreventZoom } from './modules/mobileInput.js';
+import { initDeviceManager } from './modules/deviceManager.js';
 
 // Lock zoom immediately at script evaluation
 initPreventZoom();
@@ -1431,6 +1432,8 @@ loadWorkspaces().then(async () => {
   initQrCode();
   initImBot();
   initShareModal();
+  const controlSocket = typeof io !== 'undefined' ? io() : null;
+  initDeviceManager(controlSocket);
   window.openHelpDocTab = openHelpDocTab;
   initHelpDocEvents();
   window.openProjectTab = openProjectTab;

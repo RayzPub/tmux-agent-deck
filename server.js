@@ -12,6 +12,7 @@ const { requireAuth, verifyToken } = require('./middlewares/auth');
 const { execTmux, getRunUser } = require('./services/tmuxService');
 const { startMonitoring } = require('./services/monitorService');
 const { initSocket } = require('./sockets/terminal');
+const { initDeviceGateway } = require('./sockets/deviceGateway');
 const { runMigration } = require('./services/dbService');
 const { initClaudeConfig } = require('./services/fileService');
 const { initActiveIcon } = require('./services/iconService');
@@ -260,6 +261,9 @@ startMonitoring(io);
 
 // Start Socket.io connections
 initSocket(io);
+
+// Initialize Device Gateway WebSocket tunnel for remote edge agents
+initDeviceGateway([httpServer, httpsServer], io);
 
 // Enable mouse mode globally in tmux on startup to support mouse wheel scrolling
 execTmux(['set-option', '-g', 'mouse', 'on'], (err) => {
