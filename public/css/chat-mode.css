@@ -193,10 +193,8 @@
   white-space: nowrap;
 }
 
-/* 4. Smooth Scrolling Messages Stream + 7-Stop Non-Linear Alpha Fade Mask */
+/* 4. Smooth Scrolling Messages Stream */
 .agent-chat-messages {
-  --cds-scroll-fade-top: 0px;
-  --cds-scroll-fade-bottom: 0px;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: scroll !important;
@@ -1721,7 +1719,9 @@ body.light-minimalist .agent-chat-container {
 }
 
 body.light-minimalist .agent-chat-statusbar {
-  background: rgba(255, 255, 255, 0.9);
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid #e2e8f0;
 }
 

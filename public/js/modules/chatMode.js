@@ -346,18 +346,10 @@ function bindScrollPinningEvents() {
 }
 
 /**
- * Update 7-Stop Non-Linear Alpha Mask CSS Variables on Scroll
+ * Update scroll fade mask (no-op as alpha mask haze is disabled for crisp font rendering)
  */
 function updateScrollFadeMask(el) {
-  if (!el) return;
-  const scrollTop = el.scrollTop;
-  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-
-  const topFade = scrollTop > 4 ? '24px' : '0px';
-  const bottomFade = distanceFromBottom > 4 ? '24px' : '0px';
-
-  el.style.setProperty('--cds-scroll-fade-top', topFade);
-  el.style.setProperty('--cds-scroll-fade-bottom', bottomFade);
+  // Alpha mask haze disabled: crisp font rendering and artifact-free scrolling
 }
 
 /**

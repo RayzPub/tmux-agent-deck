@@ -30,15 +30,23 @@ export function updateMetaThemeColor(isLight) {
     // In dark mode, match surface-0 (#141a29) to seamlessly blend PWA titlebar/window frame with the top header
     meta.setAttribute('content', isLight ? '#ffffff' : '#141a29');
   }
+  const statusBarMeta = document.getElementById('appleStatusBarMeta') || document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+  if (statusBarMeta) {
+    // In light mode, use 'default' so iOS uses dark icons/text without rendering dark gradient scrim overlay
+    // In dark mode, use 'black-translucent' so the dark space theme blends with system status bar
+    statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
+  }
 }
 
 export function initTheme() {
   const savedTheme = localStorage.getItem('theme-style');
   const isLight = savedTheme === 'light-minimalist';
   if (isLight) {
+    document.documentElement.classList.add('light-minimalist');
     document.body.classList.add('light-minimalist');
     updateThemeButtonUI(true);
   } else {
+    document.documentElement.classList.remove('light-minimalist');
     document.body.classList.remove('light-minimalist');
     updateThemeButtonUI(false);
   }
@@ -47,6 +55,7 @@ export function initTheme() {
 
 export function toggleTheme() {
   const isLight = document.body.classList.toggle('light-minimalist');
+  document.documentElement.classList.toggle('light-minimalist', isLight);
   localStorage.setItem('theme-style', isLight ? 'light-minimalist' : 'dark-cyberpunk');
   updateThemeButtonUI(isLight);
   updateMetaThemeColor(isLight);

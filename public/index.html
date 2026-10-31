@@ -7,8 +7,23 @@
   <!-- iOS & Android PWA Standalone Optimization -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="default">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
+  <script>
+    (function() {
+      try {
+        const savedTheme = localStorage.getItem('theme-style');
+        const isLight = savedTheme === 'light-minimalist';
+        if (isLight) {
+          document.documentElement.classList.add('light-minimalist');
+        }
+        const meta = document.getElementById('pwaThemeColor');
+        if (meta) meta.setAttribute('content', isLight ? '#ffffff' : '#141a29');
+        const statusBarMeta = document.getElementById('appleStatusBarMeta');
+        if (statusBarMeta) statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
+      } catch (e) {}
+    })();
+  </script>
   <title>CCNOW // AI 智能体后台控制中心</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
