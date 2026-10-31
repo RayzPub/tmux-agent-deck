@@ -1,5 +1,7 @@
 // Shared Frontend State Object
 export const state = {
+  currentDeviceId: 'cloud', // 'cloud' for local server host, or 'dev_xxxx' for remote edge device
+  remoteDevices: [],
   sessionCache: new Map(), // sessionName -> { socket, term, fitAddon, container }
   currentSession: null,
   workspacesList: [],
