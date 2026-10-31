@@ -305,6 +305,16 @@ class AgentClient {
       return;
     }
 
+    if (action === 'tmux:new_session') {
+      this.handleNewSession(msg.reqId, msg);
+      return;
+    }
+
+    if (action === 'tmux:kill_session') {
+      this.handleKillSession(msg.reqId, msg.sessionName);
+      return;
+    }
+
     // 1.1 Remote Filesystem Workspaces Query
     if (action === 'fs:workspaces') {
       this.handleFsWorkspaces(msg.reqId);
@@ -326,6 +336,35 @@ class AgentClient {
     // 1.4 Remote Filesystem Write File
     if (action === 'fs:write') {
       this.handleFsWrite(msg.reqId, msg.workspacePath, msg.filePath, msg.content);
+      return;
+    }
+
+    // 1.5 Remote Directories Picker
+    if (action === 'fs:directories') {
+      this.handleDirectories(msg.reqId, msg.targetPath);
+      return;
+    }
+
+    // 1.6 Remote Upload File
+    if (action === 'fs:upload_file') {
+      this.handleUploadFile(msg.reqId, msg);
+      return;
+    }
+
+    // 1.7 Remote Git Status & Diff
+    if (action === 'git:status') {
+      this.handleGitStatus(msg.reqId, msg.workspacePath);
+      return;
+    }
+
+    if (action === 'git:diff') {
+      this.handleGitDiff(msg.reqId, msg.workspacePath, msg.filePath);
+      return;
+    }
+
+    // 1.8 Remote Agent Chat History
+    if (action === 'agent:chat_history') {
+      this.handleChatHistory(msg.reqId, msg.sessionName);
       return;
     }
 
@@ -551,6 +590,120 @@ class AgentClient {
       this.send({ action: 'fs:write_result', reqId, success: true });
     } catch (err) {
       this.send({ action: 'fs:write_result', reqId, error: err.message });
+    }
+  }
+
+  handleNewSession(reqId, msg) {
+    const { sessionName, workspace } = msg;
+    const hasTmux = hasCommand('tmux');
+    if (hasTmux && sessionName) {
+      try {
+        const targetDir = this.resolveBaseDir(workspace);
+        execSync(`tmux new-session -d -s "${sessionName.replace(/"/g, '')}" -c "${targetDir.replace(/"/g, '')}"`, { stdio: 'ignore' });
+        this.send({ action: 'tmux:new_session_result', reqId, success: true });
+        return;
+      } catch (e) {
+        this.send({ action: 'tmux:new_session_result', reqId, error: e.message });
+        return;
+      }
+    }
+    this.send({ action: 'tmux:new_session_result', reqId, success: true });
+  }
+
+  handleKillSession(reqId, sessionName) {
+    const hasTmux = hasCommand('tmux');
+    if (hasTmux && sessionName) {
+      try {
+        execSync(`tmux kill-session -t "${sessionName.replace(/"/g, '')}"`, { stdio: 'ignore' });
+      } catch (e) {}
+    }
+    this.send({ action: 'tmux:kill_session_result', reqId, success: true });
+  }
+
+  handleDirectories(reqId, targetPath) {
+    try {
+      const baseDir = this.resolveBaseDir(targetPath);
+      const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+      const dirs = entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => ({ name: e.name, path: path.join(baseDir, e.name) }));
+      this.send({ action: 'fs:directories_result', reqId, currentPath: baseDir, directories: dirs });
+    } catch (e) {
+      this.send({ action: 'fs:directories_result', reqId, error: e.message });
+    }
+  }
+
+  handleUploadFile(reqId, msg) {
+    try {
+      const { workspacePath, filename, bufferBase64 } = msg;
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const targetPath = path.join(baseDir, filename);
+      const buf = Buffer.from(bufferBase64, 'base64');
+      fs.writeFileSync(targetPath, buf);
+      this.send({ action: 'fs:upload_file_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'fs:upload_file_result', reqId, error: e.message });
+    }
+  }
+
+  handleGitStatus(reqId, workspacePath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const branch = execSync('git branch --show-current 2>/dev/null || echo ""', { cwd: baseDir, encoding: 'utf8' }).trim();
+      const statusOut = execSync('git status --porcelain 2>/dev/null || echo ""', { cwd: baseDir, encoding: 'utf8' });
+      const files = statusOut.split('\n').filter(Boolean).map(line => ({
+        status: line.substring(0, 2).trim(),
+        path: line.substring(3).trim()
+      }));
+      this.send({
+        action: 'git:status_result',
+        reqId,
+        branch,
+        clean: files.length === 0,
+        files
+      });
+    } catch (e) {
+      this.send({ action: 'git:status_result', reqId, branch: '', clean: true, files: [] });
+    }
+  }
+
+  handleGitDiff(reqId, workspacePath, filePath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const fileArg = filePath ? ` -- "${filePath.replace(/"/g, '')}"` : '';
+      const diff = execSync(`git diff HEAD${fileArg} 2>/dev/null || git diff${fileArg} 2>/dev/null || echo ""`, { cwd: baseDir, encoding: 'utf8' });
+      this.send({ action: 'git:diff_result', reqId, diff });
+    } catch (e) {
+      this.send({ action: 'git:diff_result', reqId, diff: '' });
+    }
+  }
+
+  handleChatHistory(reqId, sessionName) {
+    try {
+      const dirs = [
+        path.join(os.homedir(), '.claude', 'projects'),
+        path.join(process.cwd(), '.claude', 'projects')
+      ];
+      let messages = [];
+      for (const d of dirs) {
+        if (fs.existsSync(d)) {
+          const files = fs.readdirSync(d).filter(f => f.endsWith('.jsonl'));
+          if (files.length > 0) {
+            const content = fs.readFileSync(path.join(d, files[files.length - 1]), 'utf8');
+            const lines = content.split('\n').filter(Boolean);
+            for (const line of lines) {
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.message) messages.push(parsed.message);
+              } catch (err) {}
+            }
+            break;
+          }
+        }
+      }
+      this.send({ action: 'agent:chat_history_result', reqId, messages });
+    } catch (e) {
+      this.send({ action: 'agent:chat_history_result', reqId, messages: [] });
     }
   }
 

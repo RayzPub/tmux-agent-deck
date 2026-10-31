@@ -23,11 +23,8 @@ const agentStreamListeners = new Map();
 // Active remote terminals relay: termKey -> { deviceId, socket, termId }
 const activeTerminals = new Map();
 
-// Pending session list requests: reqId -> { resolve, timer }
-const pendingSessionRequests = new Map();
-
-// Pending remote filesystem RPC requests: reqId -> { resolve, timer }
-const pendingFsRequests = new Map();
+// Pending general RPC requests: reqId -> { resolve, timer }
+const pendingRpcRequests = new Map();
 
 /**
  * Read all registered devices from disk
@@ -455,58 +452,21 @@ function handleRemoteTerminalExit(deviceId, termId) {
 }
 
 /**
- * Query active tmux / terminal sessions running on a remote edge device
+ * Send a generic RPC request to an edge device with timeout
  */
-function getRemoteSessions(deviceId, timeoutMs = 2500) {
-  return new Promise((resolve) => {
-    if (!isDeviceOnline(deviceId)) {
-      return resolve([]);
-    }
-
-    const reqId = 'req_' + generateRandomHex(6);
-    const timer = setTimeout(() => {
-      pendingSessionRequests.delete(reqId);
-      // Fallback default session if device is alive
-      resolve([{ name: 'main', windows: 1, created: Date.now(), active: true, isRemote: true }]);
-    }, timeoutMs);
-
-    pendingSessionRequests.set(reqId, { resolve, timer });
-
-    sendToDevice(deviceId, {
-      action: 'tmux:list_sessions',
-      reqId
-    });
-  });
-}
-
-/**
- * Handle response for tmux:list_sessions from edge device
- */
-function resolveRemoteSessions(reqId, sessions) {
-  const pending = pendingSessionRequests.get(reqId);
-  if (pending) {
-    clearTimeout(pending.timer);
-    pendingSessionRequests.delete(reqId);
-    pending.resolve(Array.isArray(sessions) ? sessions : []);
-  }
-}
-
-/**
- * Send an FS RPC request with timeout
- */
-function sendFsRpc(deviceId, action, payload, timeoutMs = 4000) {
+function sendDeviceRpc(deviceId, action, payload = {}, timeoutMs = 4500) {
   return new Promise((resolve) => {
     if (!isDeviceOnline(deviceId)) {
       return resolve({ error: 'Device is offline' });
     }
 
-    const reqId = 'fs_' + generateRandomHex(8);
+    const reqId = 'rpc_' + generateRandomHex(8);
     const timer = setTimeout(() => {
-      pendingFsRequests.delete(reqId);
-      resolve({ error: 'Remote filesystem request timed out' });
+      pendingRpcRequests.delete(reqId);
+      resolve({ error: `Remote request (${action}) timed out` });
     }, timeoutMs);
 
-    pendingFsRequests.set(reqId, { resolve, timer });
+    pendingRpcRequests.set(reqId, { resolve, timer });
 
     sendToDevice(deviceId, {
       action,
@@ -516,29 +476,68 @@ function sendFsRpc(deviceId, action, payload, timeoutMs = 4000) {
   });
 }
 
-function resolveFsRequest(reqId, result) {
-  const pending = pendingFsRequests.get(reqId);
+function resolveDeviceRpc(reqId, result) {
+  const pending = pendingRpcRequests.get(reqId);
   if (pending) {
     clearTimeout(pending.timer);
-    pendingFsRequests.delete(reqId);
+    pendingRpcRequests.delete(reqId);
     pending.resolve(result);
   }
 }
 
+/**
+ * Query active tmux / terminal sessions running on a remote edge device
+ */
+async function getRemoteSessions(deviceId) {
+  const res = await sendDeviceRpc(deviceId, 'tmux:list_sessions', {}, 2500);
+  if (res && Array.isArray(res.sessions)) {
+    return res.sessions;
+  }
+  return [{ name: 'main', windows: 1, created: Date.now(), active: true, isRemote: true }];
+}
+
+function remoteTmuxNewSession(deviceId, opts) {
+  return sendDeviceRpc(deviceId, 'tmux:new_session', opts);
+}
+
+function remoteTmuxKillSession(deviceId, sessionName) {
+  return sendDeviceRpc(deviceId, 'tmux:kill_session', { sessionName });
+}
+
 function remoteFsList(deviceId, workspacePath, relativePath) {
-  return sendFsRpc(deviceId, 'fs:list', { workspacePath, relativePath });
+  return sendDeviceRpc(deviceId, 'fs:list', { workspacePath, relativePath });
 }
 
 function remoteFsRead(deviceId, workspacePath, filePath) {
-  return sendFsRpc(deviceId, 'fs:read', { workspacePath, filePath });
+  return sendDeviceRpc(deviceId, 'fs:read', { workspacePath, filePath });
 }
 
 function remoteFsWrite(deviceId, workspacePath, filePath, content) {
-  return sendFsRpc(deviceId, 'fs:write', { workspacePath, filePath, content });
+  return sendDeviceRpc(deviceId, 'fs:write', { workspacePath, filePath, content });
 }
 
 function remoteFsWorkspaces(deviceId) {
-  return sendFsRpc(deviceId, 'fs:workspaces', {});
+  return sendDeviceRpc(deviceId, 'fs:workspaces', {});
+}
+
+function remoteDirectories(deviceId, targetPath) {
+  return sendDeviceRpc(deviceId, 'fs:directories', { targetPath });
+}
+
+function remoteUploadFile(deviceId, workspacePath, filename, bufferBase64) {
+  return sendDeviceRpc(deviceId, 'fs:upload_file', { workspacePath, filename, bufferBase64 });
+}
+
+function remoteGitStatus(deviceId, workspacePath) {
+  return sendDeviceRpc(deviceId, 'git:status', { workspacePath });
+}
+
+function remoteGitDiff(deviceId, workspacePath, filePath) {
+  return sendDeviceRpc(deviceId, 'git:diff', { workspacePath, filePath });
+}
+
+function remoteChatHistory(deviceId, sessionName) {
+  return sendDeviceRpc(deviceId, 'agent:chat_history', { sessionName });
 }
 
 module.exports = {
@@ -566,11 +565,18 @@ module.exports = {
   handleRemoteTerminalOutput,
   handleRemoteTerminalExit,
   getRemoteSessions,
-  resolveRemoteSessions,
+  remoteTmuxNewSession,
+  remoteTmuxKillSession,
   remoteFsList,
   remoteFsRead,
   remoteFsWrite,
   remoteFsWorkspaces,
-  resolveFsRequest,
+  remoteDirectories,
+  remoteUploadFile,
+  remoteGitStatus,
+  remoteGitDiff,
+  remoteChatHistory,
+  sendDeviceRpc,
+  resolveDeviceRpc,
   __getActiveConnections: () => activeConnections.entries()
 };

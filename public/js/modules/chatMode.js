@@ -462,7 +462,8 @@ export async function checkSessionSupport(sessionName) {
     return sessionSupportCache.get(sessionName);
   }
   try {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history`);
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history${devParam}`);
     if (res.ok) {
       const data = await res.json();
       if (data.sessionMode) {
@@ -1386,7 +1387,8 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
   }
 
   try {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history`);
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history${devParam}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 

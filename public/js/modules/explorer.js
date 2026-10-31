@@ -13,7 +13,8 @@ export async function loadDirPickerPath(dirPath) {
   `;
 
   try {
-    const response = await fetch(`/api/directories?path=${encodeURIComponent(dirPath)}`);
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/directories?path=${encodeURIComponent(dirPath)}${devParam}`);
     if (response.status === 401) {
       window.location.href = '/login';
       return;
@@ -98,7 +99,8 @@ export async function updateGitStatus() {
   state.gitStatusMap.clear();
   state.gitDirStatusMap.clear();
   try {
-    const response = await fetch(`/api/git/status?workspacePath=${encodeURIComponent(state.currentWorkspacePath)}`);
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/git/status?workspacePath=${encodeURIComponent(state.currentWorkspacePath)}${devParam}`);
     if (response.ok) {
       const data = await response.json();
       state.isGit = !!data.isGit;

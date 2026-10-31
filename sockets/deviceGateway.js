@@ -173,15 +173,9 @@ function initDeviceGateway(servers, io) {
         return;
       }
 
-      // 6. Remote Tmux Sessions List Response
-      if (action === 'tmux:sessions_list') {
-        deviceService.resolveRemoteSessions(msg.reqId, msg.sessions);
-        return;
-      }
-
-      // 7. Remote Filesystem RPC Responses
-      if (action.startsWith('fs:') && action.endsWith('_result')) {
-        deviceService.resolveFsRequest(msg.reqId, msg);
+      // 6. Generic Device RPC Response matching by reqId
+      if (msg.reqId) {
+        deviceService.resolveDeviceRpc(msg.reqId, msg);
         return;
       }
 

@@ -1,13 +1,14 @@
 /**
  * Device Manager Module
  * Handles multi-device interconnect, top-left device switcher, and full workspace deck integration.
+ * In this design, switching devices seamlessly transforms the entire Deck context (Workspaces,
+ * Sessions, Terminal, Files, Git, Editor) without requiring isolated panels.
  */
 
 import { state } from './state.js';
 
 let currentSocket = null;
 let currentPairCommand = '';
-let currentDeckSessionId = null;
 
 /**
  * Fetch devices list from server
@@ -35,9 +36,6 @@ export function switchToDevice(deviceId) {
   const currentIcon = document.getElementById('deviceCurrentIcon');
   const currentName = document.getElementById('deviceCurrentName');
   const currentDot = document.getElementById('deviceCurrentStatusDot');
-  const remotePanel = document.getElementById('remoteDeviceWorkspacePanel');
-  const terminalPanel = document.getElementById('terminalPanel');
-  const welcomePanel = document.getElementById('welcomePanel');
   const dropdown = document.getElementById('deviceSwitcherDropdown');
 
   if (dropdown) dropdown.classList.add('hidden');
@@ -50,17 +48,7 @@ export function switchToDevice(deviceId) {
       currentDot.className = 'device-switcher-dot online';
       currentDot.title = '在线';
     }
-
-    if (remotePanel) remotePanel.classList.add('hidden');
-
-    // Restore terminal or welcome panel
-    if (state.currentSession) {
-      if (terminalPanel) terminalPanel.classList.remove('hidden');
-    } else {
-      if (welcomePanel) welcomePanel.classList.remove('hidden');
-    }
-
-    console.log('[DeviceManager] Switched context to Cloud Server Host');
+    console.log('[DeviceManager] Context switched to Cloud Server Host');
   } else {
     // 2. Switch to Remote Edge Device
     const device = state.remoteDevices.find(d => d.deviceId === deviceId);
@@ -77,49 +65,14 @@ export function switchToDevice(deviceId) {
       currentDot.className = `device-switcher-dot ${isOnline ? 'online' : 'offline'}`;
       currentDot.title = isOnline ? '在线' : '离线';
     }
-
-    // Hide standard terminal/welcome panels and activate remote deck panel
-    if (terminalPanel) terminalPanel.classList.add('hidden');
-    if (welcomePanel) welcomePanel.classList.add('hidden');
-    if (remotePanel) remotePanel.classList.remove('hidden');
-
-    // Update remote deck header elements
-    const deckIcon = document.getElementById('deckRemoteHeaderIcon');
-    const deckTitle = document.getElementById('deckRemoteDeviceName');
-    const deckPill = document.getElementById('deckRemoteStatusPill');
-    const deckMeta = document.getElementById('deckRemoteMetaTag');
-    const welcomeTitle = document.getElementById('deckRemoteWelcomeTitle');
-    const textarea = document.getElementById('deckRemotePromptInput');
-
-    if (deckIcon) deckIcon.setAttribute('data-lucide', osIcon);
-    if (deckTitle) deckTitle.textContent = devName;
-    if (deckPill) {
-      deckPill.className = `device-status-pill ${isOnline ? 'online' : 'offline'}`;
-      deckPill.textContent = isOnline ? '在线' : '离线';
-    }
-    if (deckMeta) {
-      const agents = device?.agentTypes?.length ? device.agentTypes.join(', ') : 'Agent 就绪';
-      deckMeta.textContent = `${device?.platform || 'Edge'} ${device?.arch || ''} · ${agents}`;
-    }
-    if (welcomeTitle) {
-      welcomeTitle.textContent = `已连接至远程设备: ${devName}`;
-    }
-
-    if (textarea) {
-      textarea.disabled = !isOnline;
-      if (!isOnline) {
-        textarea.placeholder = '当前设备处于离线状态，等待重新连接中...';
-      } else {
-        textarea.placeholder = `给 ${devName} 上的 Agent 下发任务 (按 Enter 发送，Shift+Enter 换行)...`;
-        textarea.focus();
-      }
-    }
-
-    console.log(`[DeviceManager] Switched context to Remote Device: ${devName} (${deviceId})`);
+    console.log(`[DeviceManager] Context switched to Remote Device: ${devName} (${deviceId})`);
   }
 
   if (window.lucide) window.lucide.createIcons();
   updateSwitcherDropdownItems();
+
+  // Reset current session tracking to avoid session collision between nodes
+  state.currentSession = null;
 
   // Refresh sessions list for the newly selected device
   if (typeof window.loadSessions === 'function') {
@@ -237,9 +190,9 @@ export async function loadDeviceList() {
             </div>
           </div>
           <div class="device-action-col">
-            <button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换至此设备的工作区">
+            <button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换控制台到此设备">
               <i data-lucide="external-link"></i>
-              <span>切换操作</span>
+              <span>切换设备</span>
             </button>
             <button class="device-btn-danger remove-device-btn" data-device-id="${d.deviceId}" title="解除绑定">
               <i data-lucide="trash-2"></i>
@@ -274,121 +227,6 @@ export async function loadDeviceList() {
   } catch (err) {
     console.error('[DeviceManager] Error loading devices:', err);
     container.innerHTML = `<div class="device-empty-state" style="color: #ef4444;">加载设备列表失败: ${err.message}</div>`;
-  }
-}
-
-/**
- * Send Prompt to Remote Agent in the Main Deck Workspace Panel
- */
-async function sendDeckRemotePrompt(customPrompt) {
-  const textarea = document.getElementById('deckRemotePromptInput');
-  const streamContainer = document.getElementById('deckRemoteStream');
-  const sendBtn = document.getElementById('deckRemoteSendBtn');
-  const interruptBtn = document.getElementById('deckRemoteInterruptBtn');
-
-  if (!state.currentDeviceId || state.currentDeviceId === 'cloud') return;
-
-  const prompt = (customPrompt || (textarea ? textarea.value : '')).trim();
-  if (!prompt) return;
-
-  // Hide welcome box on first message
-  const welcome = document.getElementById('deckRemoteWelcomeBox');
-  if (welcome) welcome.style.display = 'none';
-
-  // Create User message
-  const userMsgEl = document.createElement('div');
-  userMsgEl.className = 'remote-msg-user';
-  userMsgEl.textContent = prompt;
-  streamContainer.appendChild(userMsgEl);
-
-  // Create Agent message (with typing cursor)
-  const agentMsgEl = document.createElement('div');
-  agentMsgEl.className = 'remote-msg-agent running';
-  agentMsgEl.textContent = '正在连接远程设备并启动本地 Agent 任务...';
-  streamContainer.appendChild(agentMsgEl);
-
-  // Scroll to bottom
-  streamContainer.scrollTop = streamContainer.scrollHeight;
-
-  // Toggle button state
-  if (textarea) textarea.value = '';
-  if (sendBtn) sendBtn.disabled = true;
-  if (interruptBtn) interruptBtn.classList.remove('hidden');
-
-  currentDeckSessionId = `remote_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  let hasReceivedFirstChunk = false;
-
-  // Listen for socket events
-  if (currentSocket) {
-    const eventName = `device:agent_event:${currentDeckSessionId}`;
-    const handleEvent = (data) => {
-      if (data.action === 'agent:stream') {
-        if (!hasReceivedFirstChunk) {
-          agentMsgEl.textContent = '';
-          hasReceivedFirstChunk = true;
-        }
-        agentMsgEl.textContent += data.delta;
-        streamContainer.scrollTop = streamContainer.scrollHeight;
-      } else if (data.action === 'agent:done') {
-        agentMsgEl.classList.remove('running');
-        currentSocket.off(eventName, handleEvent);
-        if (sendBtn) sendBtn.disabled = false;
-        if (interruptBtn) interruptBtn.classList.add('hidden');
-        if (textarea) textarea.focus();
-      } else if (data.action === 'agent:error') {
-        agentMsgEl.classList.remove('running');
-        agentMsgEl.textContent += `\n[错误] ${data.error || '执行异常'}`;
-        agentMsgEl.style.color = '#ef4444';
-        currentSocket.off(eventName, handleEvent);
-        if (sendBtn) sendBtn.disabled = false;
-        if (interruptBtn) interruptBtn.classList.add('hidden');
-        if (textarea) textarea.focus();
-      }
-    };
-
-    currentSocket.on(eventName, handleEvent);
-  }
-
-  try {
-    const res = await fetch(`/api/devices/${state.currentDeviceId}/agent/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: currentDeckSessionId,
-        prompt
-      })
-    });
-
-    const result = await res.json();
-    if (!result.success) {
-      agentMsgEl.classList.remove('running');
-      agentMsgEl.textContent = `❌ 下发任务失败: ${result.error || '未知错误'}`;
-      agentMsgEl.style.color = '#ef4444';
-      if (sendBtn) sendBtn.disabled = false;
-      if (interruptBtn) interruptBtn.classList.add('hidden');
-    }
-  } catch (err) {
-    agentMsgEl.classList.remove('running');
-    agentMsgEl.textContent = `❌ 网络错误: ${err.message}`;
-    agentMsgEl.style.color = '#ef4444';
-    if (sendBtn) sendBtn.disabled = false;
-    if (interruptBtn) interruptBtn.classList.add('hidden');
-  }
-}
-
-/**
- * Interrupt current active task on remote device
- */
-async function interruptDeckRemoteTask() {
-  if (!state.currentDeviceId || !currentDeckSessionId) return;
-  try {
-    await fetch(`/api/devices/${state.currentDeviceId}/agent/interrupt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: currentDeckSessionId })
-    });
-  } catch (err) {
-    console.error('[DeviceManager] Failed to interrupt task:', err);
   }
 }
 
@@ -531,79 +369,7 @@ export async function initDeviceManager(socket) {
     });
   }
 
-  // 3. Workspace Panel Controls Binding
-  const openTerminalBtn = document.getElementById('deckRemoteOpenTerminalBtn');
-  const clearChatBtn = document.getElementById('deckRemoteClearChatBtn');
-  const switchToCloudBtn = document.getElementById('deckSwitchToCloudBtn');
-
-  if (openTerminalBtn) {
-    openTerminalBtn.addEventListener('click', () => {
-      const remotePanel = document.getElementById('remoteDeviceWorkspacePanel');
-      if (remotePanel) remotePanel.classList.add('hidden');
-      if (typeof window.attachSession === 'function') {
-        window.attachSession('main');
-      }
-    });
-  }
-  const sendBtn = document.getElementById('deckRemoteSendBtn');
-  const interruptBtn = document.getElementById('deckRemoteInterruptBtn');
-  const promptInput = document.getElementById('deckRemotePromptInput');
-  const streamContainer = document.getElementById('deckRemoteStream');
-  const quickActions = document.getElementById('deckRemoteQuickActions');
-
-  if (clearChatBtn && streamContainer) {
-    clearChatBtn.addEventListener('click', () => {
-      streamContainer.innerHTML = `
-        <div class="remote-deck-welcome" id="deckRemoteWelcomeBox">
-          <div class="remote-deck-welcome-icon">
-            <i data-lucide="cpu"></i>
-          </div>
-          <div class="remote-deck-welcome-title">已连接至远程本地设备</div>
-          <div class="remote-deck-welcome-desc">
-            当前控制面已直连该受控端。在下方输入 Prompt 指令即可远程驱动本地 Agent（如 Claude Code CLI）执行任务。
-          </div>
-        </div>
-      `;
-      if (window.lucide) window.lucide.createIcons();
-    });
-  }
-
-  if (switchToCloudBtn) {
-    switchToCloudBtn.addEventListener('click', () => {
-      switchToDevice('cloud');
-    });
-  }
-
-  if (sendBtn) {
-    sendBtn.addEventListener('click', () => sendDeckRemotePrompt());
-  }
-
-  if (interruptBtn) {
-    interruptBtn.addEventListener('click', interruptDeckRemoteTask);
-  }
-
-  if (promptInput) {
-    promptInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
-        if (!e.shiftKey) {
-          e.preventDefault();
-          sendDeckRemotePrompt();
-        }
-      }
-    });
-  }
-
-  if (quickActions) {
-    quickActions.addEventListener('click', (e) => {
-      const btn = e.target.closest('.quick-action-pill');
-      if (btn) {
-        const prompt = btn.getAttribute('data-prompt');
-        sendDeckRemotePrompt(prompt);
-      }
-    });
-  }
-
-  // 4. Modal Bindings
+  // 3. Modal Bindings
   const triggerBtn = document.getElementById('deviceManagerBtn');
   const closeBtn = document.getElementById('closeDeviceManagerModalBtn');
   const modal = document.getElementById('deviceManagerModal');
@@ -627,7 +393,7 @@ export async function initDeviceManager(socket) {
   if (copyBtn) copyBtn.addEventListener('click', copyPairCommand);
   if (refreshBtn) refreshBtn.addEventListener('click', refreshPairToken);
 
-  // 5. Real-time Status Change via Socket.io
+  // 4. Real-time Status Change via Socket.io
   if (socket) {
     socket.on('device:status_change', async (payload) => {
       console.log('📡 [DeviceManager] Status change received:', payload);
@@ -642,24 +408,9 @@ export async function initDeviceManager(socket) {
       // If currently operating the changed device, update active indicators
       if (state.currentDeviceId === payload.deviceId) {
         const dot = document.getElementById('deviceCurrentStatusDot');
-        const pill = document.getElementById('deckRemoteStatusPill');
-        const textarea = document.getElementById('deckRemotePromptInput');
-
         if (dot) {
           dot.className = `device-switcher-dot ${payload.isOnline ? 'online' : 'offline'}`;
           dot.title = payload.isOnline ? '在线' : '离线';
-        }
-        if (pill) {
-          pill.className = `device-status-pill ${payload.isOnline ? 'online' : 'offline'}`;
-          pill.textContent = payload.isOnline ? '在线' : '离线';
-        }
-        if (textarea) {
-          textarea.disabled = !payload.isOnline;
-          if (!payload.isOnline) {
-            textarea.placeholder = '当前设备处于离线状态，等待重新连接中...';
-          } else {
-            textarea.placeholder = '给远程设备上的 Agent 下发任务 (按 Enter 发送，Shift+Enter 换行)...';
-          }
         }
       }
     });

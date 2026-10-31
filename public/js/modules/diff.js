@@ -15,7 +15,8 @@ export async function loadGitDiff(path = '') {
   diffStatusMsg.textContent = '加载中...';
   
   try {
-    const url = `/api/git/diff?workspacePath=${encodeURIComponent(state.currentWorkspacePath)}&path=${encodeURIComponent(path)}`;
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const url = `/api/git/diff?workspacePath=${encodeURIComponent(state.currentWorkspacePath)}&path=${encodeURIComponent(path)}${devParam}`;
     const response = await fetch(url);
     
     if (response.status === 401) {

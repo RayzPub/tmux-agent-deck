@@ -415,7 +415,8 @@ document.addEventListener('click', (e) => {
 
 async function killSession(name) {
   try {
-    const response = await fetch(`/api/sessions/${name}`, { method: 'DELETE' });
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/sessions/${encodeURIComponent(name)}${devParam}`, { method: 'DELETE' });
     if (response.ok) {
       removeSessionFromCache(name);
       if (state.currentSession === name) {
@@ -1047,7 +1048,17 @@ createSessionForm.addEventListener('submit', async (e) => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode })
+      body: JSON.stringify({
+        name,
+        agent,
+        workspacePath,
+        workspaceName,
+        modelProvider,
+        modelName,
+        modelLabel,
+        sessionMode,
+        deviceId: state.currentDeviceId || 'cloud'
+      })
     });
 
     if (response.ok) {

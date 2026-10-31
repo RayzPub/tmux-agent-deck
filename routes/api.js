@@ -643,8 +643,27 @@ router.get('/sessions', requireAuth, (req, res) => {
 
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode } = req.body;
+  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode, deviceId } = req.body;
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
+
+  if (deviceId && deviceId !== 'cloud') {
+    const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (agent || 'remote-agent');
+    try {
+      const result = await deviceService.remoteTmuxNewSession(deviceId, {
+        sessionName: rawName,
+        workspace: workspacePath || '~',
+        sessionMode: targetMode,
+        agentType: agent,
+        agentModel: modelName
+      });
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true, session: rawName });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
   
   // Validate allowed agents
   const settings = db.getSettings();
@@ -956,8 +975,22 @@ router.post('/sessions', requireAuth, async (req, res) => {
 });
 
 // Kill session
-router.delete('/sessions/:name', requireAuth, (req, res) => {
+router.delete('/sessions/:name', requireAuth, async (req, res) => {
   const { name } = req.params;
+  const targetDeviceId = req.query.deviceId;
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteTmuxKillSession(targetDeviceId, name);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
     return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
   }
@@ -1126,7 +1159,23 @@ router.post('/workspaces/:name/dispatch-task', requireAuth, async (req, res) => 
 });
 
 // List subdirectories only (for workspace directory picker)
-router.get('/directories', requireAuth, (req, res) => {
+router.get('/directories', requireAuth, async (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteDirectories(targetDeviceId, req.query.path);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({
+        currentPath: result.currentPath || req.query.path,
+        directories: result.directories || []
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   try {
     const rawPath = req.query.path || '~';
     const targetDir = resolveWorkspacePath(rawPath, req.user.username);
@@ -1549,7 +1598,20 @@ router.get(/^\/preview\/([^/]+)(?:\/(.*))?$/, requireAuth, (req, res) => {
 });
 
 // Git status endpoint
-router.get('/git/status', requireAuth, (req, res) => {
+router.get('/git/status', requireAuth, async (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteGitStatus(targetDeviceId, req.query.workspacePath);
+      if (result && result.status) {
+        return res.json({ isGit: true, ...result.status });
+      }
+      return res.json({ isGit: false, files: [] });
+    } catch (e) {
+      return res.json({ isGit: false, files: [] });
+    }
+  }
+
   try {
     const workspacePath = req.query.workspacePath || '';
     const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
@@ -1629,7 +1691,17 @@ router.get('/git/status', requireAuth, (req, res) => {
 });
 
 // Git diff endpoint
-router.get('/git/diff', requireAuth, (req, res) => {
+router.get('/git/diff', requireAuth, async (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteGitDiff(targetDeviceId, req.query.workspacePath, req.query.path);
+      return res.json({ diff: result?.diff || '' });
+    } catch (e) {
+      return res.json({ diff: '' });
+    }
+  }
+
   try {
     const workspacePath = req.query.workspacePath || '';
     const filePath = req.query.path || '';
@@ -1858,6 +1930,21 @@ router.get('/login-by-token', (req, res) => {
 // API: Get structured chat history for a session (Agent Chat Mode)
 router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
   const { name } = req.params;
+  const targetDeviceId = req.query.deviceId;
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteChatHistory(targetDeviceId, name);
+      return res.json({
+        sessionName: name,
+        sessionMode: 'hybrid',
+        messages: result?.messages || []
+      });
+    } catch (e) {
+      return res.json({ sessionName: name, sessionMode: 'hybrid', messages: [] });
+    }
+  }
+
   const user = req.user ? req.user.username : null;
   const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
 

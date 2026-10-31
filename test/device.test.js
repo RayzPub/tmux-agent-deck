@@ -226,6 +226,32 @@ async function runTest() {
   assert.strictEqual(readRes.content, '{"name": "remote-app"}');
   console.log('✅ Remote FS Read RPC verified successfully!');
 
+  // 10. Test Remote Git Status & Remote Session Creation
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.action === 'git:status') {
+      ws.send(JSON.stringify({
+        action: 'git:status_result',
+        reqId: msg.reqId,
+        status: { branch: 'main', clean: true, files: [] }
+      }));
+    } else if (msg.action === 'tmux:new_session') {
+      ws.send(JSON.stringify({
+        action: 'tmux:new_session_result',
+        reqId: msg.reqId,
+        success: true
+      }));
+    }
+  };
+
+  const gitRes = await deviceService.remoteGitStatus(pairedDeviceId, '~');
+  assert.strictEqual(gitRes.status.branch, 'main');
+  console.log('✅ Remote Git Status RPC verified successfully!');
+
+  const newSessRes = await deviceService.remoteTmuxNewSession(pairedDeviceId, { sessionName: 'dev2' });
+  assert.strictEqual(newSessRes.success, true);
+  console.log('✅ Remote Tmux New Session RPC verified successfully!');
+
   // Cleanup
   ws.close();
   server.close();
