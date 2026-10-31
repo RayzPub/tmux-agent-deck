@@ -207,45 +207,9 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* 7-Stop Non-Linear Alpha Mask from open-claude-ui */
-  mask-image: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(0, 0, 0, 0.05) calc(var(--cds-scroll-fade-top) * 0.15),
-    rgba(0, 0, 0, 0.15) calc(var(--cds-scroll-fade-top) * 0.30),
-    rgba(0, 0, 0, 0.30) calc(var(--cds-scroll-fade-top) * 0.45),
-    rgba(0, 0, 0, 0.50) calc(var(--cds-scroll-fade-top) * 0.60),
-    rgba(0, 0, 0, 0.70) calc(var(--cds-scroll-fade-top) * 0.75),
-    rgba(0, 0, 0, 0.85) calc(var(--cds-scroll-fade-top) * 0.87),
-    #000 var(--cds-scroll-fade-top),
-    #000 calc(100% - var(--cds-scroll-fade-bottom)),
-    rgba(0, 0, 0, 0.85) calc(100% - var(--cds-scroll-fade-bottom) * 0.87),
-    rgba(0, 0, 0, 0.70) calc(100% - var(--cds-scroll-fade-bottom) * 0.75),
-    rgba(0, 0, 0, 0.50) calc(100% - var(--cds-scroll-fade-bottom) * 0.60),
-    rgba(0, 0, 0, 0.30) calc(100% - var(--cds-scroll-fade-bottom) * 0.45),
-    rgba(0, 0, 0, 0.15) calc(100% - var(--cds-scroll-fade-bottom) * 0.30),
-    rgba(0, 0, 0, 0.05) calc(100% - var(--cds-scroll-fade-bottom) * 0.15),
-    transparent
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(0, 0, 0, 0.05) calc(var(--cds-scroll-fade-top) * 0.15),
-    rgba(0, 0, 0, 0.15) calc(var(--cds-scroll-fade-top) * 0.30),
-    rgba(0, 0, 0, 0.30) calc(var(--cds-scroll-fade-top) * 0.45),
-    rgba(0, 0, 0, 0.50) calc(var(--cds-scroll-fade-top) * 0.60),
-    rgba(0, 0, 0, 0.70) calc(var(--cds-scroll-fade-top) * 0.75),
-    rgba(0, 0, 0, 0.85) calc(var(--cds-scroll-fade-top) * 0.87),
-    #000 var(--cds-scroll-fade-top),
-    #000 calc(100% - var(--cds-scroll-fade-bottom)),
-    rgba(0, 0, 0, 0.85) calc(100% - var(--cds-scroll-fade-bottom) * 0.87),
-    rgba(0, 0, 0, 0.70) calc(100% - var(--cds-scroll-fade-bottom) * 0.75),
-    rgba(0, 0, 0, 0.50) calc(100% - var(--cds-scroll-fade-bottom) * 0.60),
-    rgba(0, 0, 0, 0.30) calc(100% - var(--cds-scroll-fade-bottom) * 0.45),
-    rgba(0, 0, 0, 0.15) calc(100% - var(--cds-scroll-fade-bottom) * 0.30),
-    rgba(0, 0, 0, 0.05) calc(100% - var(--cds-scroll-fade-bottom) * 0.15),
-    transparent
-  );
+  /* Crisp scrolling without top/bottom alpha mask haze */
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
 }
 
 /* Floating "Jump to Bottom" Pill (Scroll Pinning Companion) */

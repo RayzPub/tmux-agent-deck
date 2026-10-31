@@ -250,7 +250,15 @@ class AgentClient {
 
   startHeartbeat() {
     if (this.pingTimer) clearInterval(this.pingTimer);
+    this.lastPong = Date.now();
     this.pingTimer = setInterval(() => {
+      // If we haven't received pong for > 45 seconds, socket is stale/broken
+      if (Date.now() - this.lastPong > 45000) {
+        console.warn('⚠️ Heartbeat pong timed out. Forcing reconnect...');
+        try { this.ws.close(); } catch (e) {}
+        this.scheduleReconnect();
+        return;
+      }
       this.send({ action: 'ping' });
     }, 20000);
   }
@@ -303,6 +311,7 @@ class AgentClient {
 
     // Heartbeat reply
     if (action === 'pong') {
+      this.lastPong = Date.now();
       return;
     }
 

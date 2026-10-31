@@ -2056,12 +2056,13 @@ body.light-minimalist .session-mode-badge.mode-terminal {
     min-height: 0;
     height: 100%;
     position: relative;
+    overflow: hidden;
   }
   
   /* Sidebar styled as sliding Drawer overlay */
   .sidebar {
     position: absolute !important;
-    left: -280px !important;
+    left: -320px !important;
     top: 0 !important;
     width: min(280px, 85vw) !important;
     max-width: 320px !important;
@@ -2070,12 +2071,26 @@ body.light-minimalist .session-mode-badge.mode-terminal {
     border-right: 1px solid var(--border-neon) !important;
     border-bottom: none !important;
     background: var(--surface-0, #141a29) !important;
-    box-shadow: 5px 0 25px rgba(0, 0, 0, 0.85), 0 0 15px rgba(0, 240, 255, 0.08) !important;
-    transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1) !important;
+    box-shadow: none !important;
+    visibility: hidden;
+    pointer-events: none;
+    transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.28s !important;
   }
   
   .sidebar.open {
     left: 0 !important;
+    box-shadow: 5px 0 25px rgba(0, 0, 0, 0.85), 0 0 15px rgba(0, 240, 255, 0.08) !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  body.light-minimalist .sidebar {
+    background: var(--surface-0, #f8fafc) !important;
+    border-right: 1px solid #e2e8f0 !important;
+  }
+
+  body.light-minimalist .sidebar.open {
+    box-shadow: 4px 0 24px rgba(15, 23, 42, 0.15) !important;
   }
   
   .close-sidebar-btn {

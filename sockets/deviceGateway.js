@@ -143,6 +143,12 @@ function initDeviceGateway(servers, io) {
 
       // 3. Heartbeat Ping
       if (action === 'ping') {
+        if (!deviceService.isDeviceOnline(boundDeviceId)) {
+          const deviceRecord = deviceService.getDeviceById(boundDeviceId);
+          if (deviceRecord) {
+            deviceService.registerConnection(boundDeviceId, ws, deviceRecord, io);
+          }
+        }
         deviceService.recordDevicePing(boundDeviceId);
         ws.send(JSON.stringify({
           action: 'pong',
@@ -193,14 +199,14 @@ function initDeviceGateway(servers, io) {
     ws.on('close', (code, reason) => {
       console.log(`[DeviceGateway] Connection closed for device ${boundDeviceId} (code: ${code}, reason: ${reason})`);
       if (boundDeviceId) {
-        deviceService.unregisterConnection(boundDeviceId, io);
+        deviceService.unregisterConnection(boundDeviceId, ws, io);
       }
     });
 
     ws.on('error', (err) => {
       console.error(`[DeviceGateway] Socket error on device ${boundDeviceId}:`, err.message);
       if (boundDeviceId) {
-        deviceService.unregisterConnection(boundDeviceId, io);
+        deviceService.unregisterConnection(boundDeviceId, ws, io);
       }
     });
   });

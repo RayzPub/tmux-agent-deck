@@ -258,9 +258,26 @@ function registerConnection(deviceId, ws, deviceRecord, io) {
 /**
  * Unregister an active WebSocket connection
  */
-function unregisterConnection(deviceId, io) {
+function unregisterConnection(deviceId, wsOrIo, maybeIo) {
   if (!activeConnections.has(deviceId)) return;
   const conn = activeConnections.get(deviceId);
+
+  let targetWs = null;
+  let io = null;
+
+  if (wsOrIo && typeof wsOrIo.send === 'function') {
+    targetWs = wsOrIo;
+    io = maybeIo;
+  } else {
+    io = wsOrIo;
+  }
+
+  // If a specific ws was passed, only unregister if it matches the current active socket!
+  if (targetWs && conn.ws !== targetWs) {
+    console.log(`[DeviceService] Ignoring close from stale connection for ${deviceId}`);
+    return;
+  }
+
   activeConnections.delete(deviceId);
 
   updateDeviceLastSeen(deviceId);
