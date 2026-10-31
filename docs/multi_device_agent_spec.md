@@ -75,14 +75,14 @@ sequenceDiagram
 
 ### 3.2 配对命令形态
 
-控制面根据环境提供跨平台、开箱即用的指令：
+控制面根据环境提供跨平台、开箱即用的指令（无需在 npm 发包，只要有 Node.js 即可运行）：
 
 ```bash
-# 推荐方式 (Node.js 环境开箱即用)
-npx @ccnow/agent-client connect --server https://<your-ccnow-domain> --token pt_<one_time_token>
+# 推荐方式 (网站直接托管脚本，零依赖开箱即用)
+curl -fsSL https://<your-ccnow-domain>/agent.js | node - connect --server https://<your-ccnow-domain> --token pt_<one_time_token>
 
-# Shell 极简运行方式
-curl -fsSL https://<your-ccnow-domain>/install-agent.sh | bash -s -- --token pt_<one_time_token>
+# 或者本地/NPX 运行方式 (如果已克隆或发布)
+npx ccnow-agent connect --server https://<your-ccnow-domain> --token pt_<one_time_token>
 ```
 
 ---

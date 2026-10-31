@@ -2088,7 +2088,7 @@ router.post('/devices/pair-token', requireAuth, (req, res) => {
   const protocol = req.protocol;
   const serverUrl = `${protocol}://${host}`;
 
-  const command = `npx ccnow-agent connect --server ${serverUrl} --token ${pairData.token}`;
+  const command = `curl -fsSL ${serverUrl}/agent.js | node - connect --server ${serverUrl} --token ${pairData.token}`;
 
   res.json({
     success: true,

@@ -245,6 +245,13 @@ app.all('/api/hello', (req, res) => {
 // Mount LLM Gateway routes (Anthropic & OpenAI CLIs localhost proxy)
 app.use(['/v1', '/llm/v1'], llmGatewayRoutes);
 
+// Serve lightweight edge agent client script directly for zero-dependency one-line running
+app.get(['/agent.js', '/ccnow-agent.js'], (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(PROJECT_ROOT, 'client', 'ccnow-agent.js'));
+});
+
 // Fallback to protect any other static files
 app.use(express.static(path.join(PROJECT_ROOT, 'public'), {
   index: false, // Prevent serving index.html automatically without requireAuth
