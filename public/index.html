@@ -919,6 +919,51 @@
     </div>
   </div>
 
+  <!-- Remote Agent Console Modal (Direct Remote Control Panel) -->
+  <div id="remoteAgentConsoleModal" class="modal-overlay hidden" style="z-index: 10001;">
+    <div class="modal-card remote-agent-modal-card" style="position: relative;">
+      <div class="tech-corner top-left"></div>
+      <div class="tech-corner top-right"></div>
+      <div class="tech-corner bottom-left"></div>
+      <div class="tech-corner bottom-right"></div>
+      
+      <div class="device-modal-header">
+        <h3 class="device-modal-title">
+          <i data-lucide="bot"></i>
+          <span id="remoteConsoleTitle">远程控制 Agent</span>
+          <span id="remoteConsoleStatusBadge" class="device-status-pill online" style="margin-left: 8px;">在线</span>
+        </h3>
+        <button id="closeRemoteConsoleModalBtn" class="modal-close"><i data-lucide="x"></i></button>
+      </div>
+
+      <!-- Messages Stream Container -->
+      <div id="remoteConsoleStream" class="remote-console-stream">
+        <div class="remote-console-welcome">
+          <i data-lucide="cpu" style="width: 32px; height: 32px; color: var(--neon-cyan); opacity: 0.8; margin-bottom: 8px;"></i>
+          <div style="font-weight: 600; color: #fff;">已建立与本地设备的实时控制信道</div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">在下方输入指令，远程驱动该设备上的 Agent 智能体（如 Claude Code CLI）执行任务</div>
+        </div>
+      </div>
+
+      <!-- Prompt Input & Controls Area -->
+      <div class="remote-console-composer">
+        <div class="remote-console-input-row">
+          <textarea id="remoteAgentPromptInput" class="remote-agent-textarea" rows="2" placeholder="输入你想在本地设备上执行的 Agent 任务（如：检查当前项目代码、运行测试套件、分析日志）..."></textarea>
+          <div class="remote-console-btn-group">
+            <button id="remoteAgentSendBtn" class="remote-agent-send-btn" title="发送指令 (Ctrl+Enter)">
+              <i data-lucide="send"></i>
+              <span>发送</span>
+            </button>
+            <button id="remoteAgentInterruptBtn" class="remote-agent-interrupt-btn hidden" title="中断当前任务">
+              <i data-lucide="square"></i>
+              <span>停止</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Admin Panel Modal (System Settings & Admin Panel) -->
   <div id="adminPanelModal" class="modal-overlay hidden" style="z-index: 10000;">
     <div class="modal-card invite-modal-card" style="width: 90%; max-width: 600px; padding: 24px; position: relative;">
