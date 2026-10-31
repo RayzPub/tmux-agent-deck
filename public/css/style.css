@@ -857,7 +857,9 @@ body {
 }
 
 .card-actions {
+  position: relative;
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -1396,6 +1398,11 @@ body.light-minimalist .highlight-text-btn:hover {
   padding: 30px;
 }
 
+#sessionModal .modal-card {
+  max-width: 500px;
+  padding: 24px 24px 20px;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1460,14 +1467,17 @@ body.light-minimalist .highlight-text-btn:hover {
 /* Agent Selector Card styles */
 .agent-cards-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .agent-card-option {
   position: relative;
   cursor: pointer;
+  min-width: 0;
 }
 
 .agent-card-option input[type="radio"] {
@@ -1477,11 +1487,13 @@ body.light-minimalist .highlight-text-btn:hover {
 .agent-card-inner {
   background: rgba(7, 9, 18, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 12px 10px;
-  border-radius: 4px;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm, 8px);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
+  box-sizing: border-box;
   transition: var(--transition-fast);
 }
 
@@ -1513,6 +1525,7 @@ body.light-minimalist .highlight-text-btn:hover {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
 
 .agent-title {
@@ -1523,6 +1536,8 @@ body.light-minimalist .highlight-text-btn:hover {
   color: #fff;
   transition: var(--transition-fast);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-title {
@@ -1587,10 +1602,77 @@ body.light-minimalist .session-mode-badge.mode-terminal {
 /* Session Mode Selector Cards */
 .session-mode-cards-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 6px;
   margin-bottom: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.session-mode-cards-container .agent-card-option {
+  min-width: 0;
+  display: flex;
+}
+
+.session-mode-cards-container .agent-card-inner {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: var(--radius-sm, 8px);
+}
+
+.session-mode-cards-container .agent-card-inner i,
+.session-mode-cards-container .agent-card-inner svg {
+  width: 18px;
+  height: 18px;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.session-mode-cards-container .agent-card-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.session-mode-cards-container .agent-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.session-mode-cards-container .agent-desc {
+  font-size: 9.5px;
+  line-height: 1.2;
+  color: var(--text-muted, #7e8b9b);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  letter-spacing: -0.2px;
+}
+
+.session-mode-cards-container .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-desc {
+  color: var(--neon-cyan);
+  opacity: 0.85;
 }
 
 /* Model Cards Selection for New Session */
@@ -2250,7 +2332,7 @@ body.light-minimalist .session-mode-badge.mode-terminal {
   }
   
   .agent-cards-container {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
   
@@ -3520,6 +3602,15 @@ body.light-minimalist .agent-card-option input[type="radio"]:checked + .agent-ca
 body.light-minimalist .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-title {
   color: #4f46e5;
   text-shadow: none;
+}
+
+body.light-minimalist .session-mode-cards-container .agent-desc {
+  color: #64748b;
+}
+
+body.light-minimalist .session-mode-cards-container .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-desc {
+  color: #4f46e5;
+  opacity: 0.9;
 }
 
 /* Model cards styling in light mode */
@@ -6384,6 +6475,12 @@ body.light-minimalist .sidebar-primary-action-btn:hover {
   box-shadow: inset 0 0 0 0.5px rgba(0, 240, 255, 0.35), var(--shadow-sm);
 }
 
+.session-card.menu-open,
+.session-card:has(.session-card-menu:not(.hidden)) {
+  z-index: 50;
+  transform: none;
+}
+
 body.light-minimalist .session-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -6542,8 +6639,8 @@ body.light-minimalist .session-more-btn:hover {
 
 .session-card-menu {
   position: absolute;
-  right: 6px;
-  bottom: calc(100% - 2px);
+  right: 0;
+  top: calc(100% + 4px);
   background: var(--surface-3, #1e263d);
   border: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.12));
   border-radius: 8px;
@@ -6553,6 +6650,11 @@ body.light-minimalist .session-more-btn:hover {
   min-width: 105px;
   display: flex;
   flex-direction: column;
+}
+
+.session-card-menu.dropup {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 body.light-minimalist .session-card-menu {

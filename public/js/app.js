@@ -9,7 +9,7 @@ import { initPushNotifications, togglePushSubscription } from './modules/push.js
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
 import { initImBot } from './modules/imBot.js';
-import { initChatMode, applySessionViewMode } from './modules/chatMode.js';
+import { initChatMode, applySessionViewMode, setSessionViewMode, clearSessionChatCache } from './modules/chatMode.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 import { initProjectOverviewEvents, openProjectTab } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
@@ -378,9 +378,29 @@ export function renderSessions(sessions) {
       moreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         document.querySelectorAll('.session-card-menu:not(.hidden)').forEach(m => {
-          if (m !== cardMenu) m.classList.add('hidden');
+          if (m !== cardMenu) {
+            m.classList.add('hidden');
+            m.classList.remove('dropup');
+            m.closest('.session-card')?.classList.remove('menu-open');
+          }
         });
-        cardMenu.classList.toggle('hidden');
+        const isHidden = cardMenu.classList.toggle('hidden');
+        card.classList.toggle('menu-open', !isHidden);
+        if (!isHidden) {
+          const listRect = sessionList ? sessionList.getBoundingClientRect() : null;
+          if (listRect) {
+            const btnRect = moreBtn.getBoundingClientRect();
+            const spaceBelow = listRect.bottom - btnRect.bottom;
+            const spaceAbove = btnRect.top - listRect.top;
+            if (spaceBelow < 50 && spaceAbove > 50) {
+              cardMenu.classList.add('dropup');
+            } else {
+              cardMenu.classList.remove('dropup');
+            }
+          }
+        } else {
+          cardMenu.classList.remove('dropup');
+        }
       });
     }
 
@@ -388,7 +408,11 @@ export function renderSessions(sessions) {
     if (killBtn) {
       killBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (cardMenu) cardMenu.classList.add('hidden');
+        if (cardMenu) {
+          cardMenu.classList.add('hidden');
+          cardMenu.classList.remove('dropup');
+        }
+        card.classList.remove('menu-open');
         const name = killBtn.getAttribute('data-name');
         if (confirm(`您确定要终止 tmux 会话 "${name}" 吗？`)) {
           await killSession(name);
@@ -409,9 +433,22 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.card-actions')) {
     document.querySelectorAll('.session-card-menu:not(.hidden)').forEach(m => {
       m.classList.add('hidden');
+      m.classList.remove('dropup');
+      m.closest('.session-card')?.classList.remove('menu-open');
     });
   }
 });
+
+// Dismiss open session menus on scroll
+if (sessionList) {
+  sessionList.addEventListener('scroll', () => {
+    document.querySelectorAll('.session-card-menu:not(.hidden)').forEach(m => {
+      m.classList.add('hidden');
+      m.classList.remove('dropup');
+      m.closest('.session-card')?.classList.remove('menu-open');
+    });
+  }, { passive: true });
+}
 
 async function killSession(name) {
   try {
@@ -419,6 +456,7 @@ async function killSession(name) {
     const response = await fetch(`/api/sessions/${encodeURIComponent(name)}${devParam}`, { method: 'DELETE' });
     if (response.ok) {
       removeSessionFromCache(name);
+      clearSessionChatCache(name);
       if (state.currentSession === name) {
         detachSession();
       }
@@ -1066,6 +1104,7 @@ createSessionForm.addEventListener('submit', async (e) => {
       closeModal();
       await loadSessions();
       const actualName = (data && data.name) ? data.name : name;
+      clearSessionChatCache(actualName);
       attachSession(actualName);
       if (sessionMode === 'chat_only') {
         setSessionViewMode(actualName, 'chat');

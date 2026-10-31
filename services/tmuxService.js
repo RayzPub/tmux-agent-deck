@@ -122,10 +122,18 @@ const getTmuxCommandForUser = (username, args) => {
     // recreate userDir, bind-mount the userDir contents back from the temp dir, clean up, and execute tmux.
     const unshareCmd = `TEMP_DIR=$(mktemp -d /tmp/tmux_bind_${username}_XXXXXX) && mount --bind ${shellescape(userDir)} "$TEMP_DIR" && mount -t tmpfs tmpfs ${shellescape(userDir)}/.. && mkdir -p ${shellescape(userDir)} && mount --bind "$TEMP_DIR" ${shellescape(userDir)} && umount "$TEMP_DIR" && rmdir "$TEMP_DIR" && sudo -u ${runUser} ${tmuxCmd}`;
     
-    return {
-      cmd: 'unshare',
-      args: ['-m', 'bash', '-c', unshareCmd]
-    };
+    const isRoot = !process.getuid || process.getuid() === 0;
+    if (isRoot) {
+      return {
+        cmd: 'unshare',
+        args: ['-m', 'bash', '-c', unshareCmd]
+      };
+    } else {
+      return {
+        cmd: 'tmux',
+        args: ['-S', socketPath, ...args]
+      };
+    }
   } else {
     const user = getRunUser();
     const cmd = user ? 'sudo' : 'tmux';

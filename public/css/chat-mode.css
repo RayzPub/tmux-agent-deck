@@ -50,14 +50,14 @@
 /* 2. 999px Segmented Pill Mode Switcher (Terminal / Chat) */
 .deck-mode-switcher {
   position: absolute;
-  top: 8px;
-  right: 14px;
+  top: 5px;
+  right: 12px;
   z-index: 70;
   display: inline-flex;
   align-items: center;
-  height: 30px;
+  height: 26px;
   background: var(--surface-0, rgba(20, 26, 41, 0.92));
-  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.25), 0 4px 16px rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.25), 0 2px 8px rgba(0, 0, 0, 0.35);
   border: none;
   border-radius: 999px;
   padding: 2px;
@@ -66,14 +66,15 @@
   pointer-events: auto !important;
   touch-action: manipulation;
   gap: 2px;
+  box-sizing: border-box;
 }
 
 .deck-mode-btn {
   background: transparent;
   border: none;
   color: #94a3b8;
-  height: 26px;
-  padding: 0 12px;
+  height: 22px;
+  padding: 0 10px;
   font-size: 11px;
   font-family: var(--font-header, sans-serif);
   border-radius: 999px;
@@ -81,7 +82,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   transition: all 140ms cubic-bezier(0.32, 0.72, 0, 1);
   line-height: 1;
   pointer-events: auto !important;
@@ -89,6 +90,7 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
 }
 
 .deck-mode-btn svg,
@@ -142,10 +144,10 @@
 
 /* Minimalist Top Status Header (Surface 0/1 Hairline) */
 .agent-chat-statusbar {
-  height: 40px;
-  padding: 0 18px;
-  padding-left: max(18px, env(safe-area-inset-left, 0px));
-  padding-right: max(140px, calc(140px + env(safe-area-inset-right, 0px))); /* Space for mode switcher pill */
+  height: 36px;
+  padding: 0 14px;
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(148px, calc(148px + env(safe-area-inset-right, 0px))); /* Space for mode switcher pill */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -156,6 +158,7 @@
   font-size: 11px;
   font-family: var(--font-mono, monospace);
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .agent-status-dot {
@@ -1222,16 +1225,21 @@
   .deck-mode-switcher {
     top: 5px;
     right: 8px;
+    height: 26px;
     z-index: 75;
     pointer-events: auto !important;
   }
   .deck-mode-btn {
+    height: 22px;
+    font-size: 10.5px;
+    padding: 0 8px;
     pointer-events: auto !important;
     touch-action: manipulation;
   }
   .agent-chat-statusbar {
-    padding: 0 12px;
-    padding-right: 128px;
+    height: 36px;
+    padding: 0 10px;
+    padding-right: 130px;
   }
   .agent-chat-messages {
     padding: 12px 12px 20px 12px;
@@ -1424,7 +1432,7 @@ body:has(#terminalPanel:not(.hidden) #agentChatContainer:not(.hidden)) .terminal
     border-radius: calc(var(--radius-panel, 8px) - 1px) !important;
   }
   .agent-chat-statusbar {
-    height: 32px;
+    height: 36px;
     padding: 0 12px;
     border-radius: calc(var(--radius-panel, 8px) - 1px) calc(var(--radius-panel, 8px) - 1px) 0 0 !important;
   }
@@ -1437,10 +1445,15 @@ body:has(#terminalPanel:not(.hidden) #agentChatContainer:not(.hidden)) .terminal
   .chat-composer-shell {
     max-width: 820px;
   }
+  .deck-mode-switcher {
+    top: 5px;
+    right: 12px;
+    height: 26px;
+  }
   .deck-mode-btn {
-    font-size: 10.5px;
-    padding: 1px 6px;
-    height: 20px;
+    font-size: 11px;
+    padding: 0 10px;
+    height: 22px;
   }
   .agent-chat-messages {
     flex: 1 1 auto;

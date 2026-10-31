@@ -105,7 +105,11 @@ function extractUserText(rawContent, event) {
     if (rawContent.includes('<command-name>')) {
       const match = rawContent.match(/<command-message>(.*?)<\/command-message>/s) ||
                     rawContent.match(/<command-name>(.*?)<\/command-name>/s);
-      if (match && match[1]) return match[1].trim();
+      if (match && match[1]) {
+        const cmd = match[1].trim();
+        if (cmd === 'clear' || cmd === '/clear') return '';
+        return cmd;
+      }
     }
     return rawContent.trim();
   }
@@ -181,6 +185,20 @@ async function parseClaudeJsonl(filePath, maxMessages = 50) {
   const toolResults = new Set(); // tool_use_id
 
   for (const event of parsedEvents) {
+    // Check if event is a /clear command, which resets conversation history
+    if (event.commandRun && (event.commandRun.command === 'clear' || event.commandRun.command === '/clear')) {
+      messages.length = 0;
+      toolUses.clear();
+      toolResults.clear();
+      continue;
+    }
+    if (event.type === 'user' && event.message && typeof event.message.content === 'string' && event.message.content.includes('<command-name>/clear')) {
+      messages.length = 0;
+      toolUses.clear();
+      toolResults.clear();
+      continue;
+    }
+
     // User message
     if (event.type === 'user' && event.message && event.message.content) {
       if (event.isMeta) continue;
@@ -372,26 +390,29 @@ function getAgySessionIdFromPanePid(panePid) {
   if (!panePid) return null;
   try {
     const pids = fs.readdirSync('/proc').filter(f => /^\d+$/.test(f));
-    const targetPids = new Set();
-    // 1. Direct children of panePid
+    const parentMap = new Map();
     for (const pid of pids) {
       try {
         const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-        const parts = stat.split(' ');
-        if (parts[3] === String(panePid)) {
-          targetPids.add(pid);
-        }
+        const lastParen = stat.lastIndexOf(')');
+        if (lastParen === -1) continue;
+        const rest = stat.substring(lastParen + 2).split(' ');
+        const ppid = rest[1];
+        parentMap.set(pid, ppid);
       } catch (e) {}
     }
-    // 2. Grandchildren (e.g. bash -> agy)
-    for (const pid of pids) {
-      try {
-        const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-        const parts = stat.split(' ');
-        if (targetPids.has(parts[3])) {
+
+    // Recursively collect all descendant processes of panePid
+    const targetPids = new Set();
+    const queue = [String(panePid)];
+    while (queue.length > 0) {
+      const currentParent = queue.shift();
+      for (const [pid, ppid] of parentMap.entries()) {
+        if (ppid === currentParent && !targetPids.has(pid)) {
           targetPids.add(pid);
+          queue.push(pid);
         }
-      } catch (e) {}
+      }
     }
 
     // Check if any process has --conversation in cmdline
@@ -405,7 +426,8 @@ function getAgySessionIdFromPanePid(panePid) {
       } catch (e) {}
     }
 
-    // Check open file descriptors in /proc/<pid>/fd for presence or conversations lock/db
+    // Check open file descriptors in /proc/<pid>/fd:
+    // Priority 1: Check presence/<id>.lock (The authoritative active conversation lock in Antigravity)
     for (const pid of targetPids) {
       try {
         const fdDir = `/proc/${pid}/fd`;
@@ -414,7 +436,29 @@ function getAgySessionIdFromPanePid(panePid) {
         for (const fd of fds) {
           try {
             const link = fs.readlinkSync(path.join(fdDir, fd));
-            const match = link.match(/(?:presence|conversations)\/([a-f0-9-]{36})\.(?:lock|db)/i);
+            const match = link.match(/presence\/([a-f0-9-]{36})\.lock$/i);
+            if (match && match[1]) {
+              return match[1];
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+
+    // Priority 2: Fallback to conversations/brain descriptors (sorted by highest fd number to prefer newer descriptors)
+    for (const pid of targetPids) {
+      try {
+        const fdDir = `/proc/${pid}/fd`;
+        if (!fs.existsSync(fdDir)) continue;
+        const fds = fs.readdirSync(fdDir).sort((a, b) => {
+          const numA = parseInt(a, 10) || 0;
+          const numB = parseInt(b, 10) || 0;
+          return numB - numA;
+        });
+        for (const fd of fds) {
+          try {
+            const link = fs.readlinkSync(path.join(fdDir, fd));
+            const match = link.match(/(?:conversations|brain)\/([a-f0-9-]{36})/i);
             if (match && match[1]) {
               return match[1];
             }
@@ -465,11 +509,12 @@ function getAgySessionIdFromHistory(workspacePath, userHomeDir, sysHomeDir) {
 
 /**
  * Find the matching Antigravity transcript file
+ * Note: Never fallback to historical/latest workspace files to avoid cross-session contamination,
+ * especially when another agy session is actively running in the same workspace.
  */
 function findAgySessionFile(workspacePath, explicitSessionId, panePid, userHomeDir, sysHomeDir) {
   const targetSessionId = explicitSessionId ||
-                          getAgySessionIdFromPanePid(panePid) ||
-                          getAgySessionIdFromHistory(workspacePath, userHomeDir, sysHomeDir);
+                          getAgySessionIdFromPanePid(panePid);
 
   if (!targetSessionId) {
     return null;
@@ -623,6 +668,13 @@ async function parseAgyJsonl(filePath, maxMessages = 50) {
     if (event.source === 'USER_EXPLICIT' && event.type === 'USER_INPUT') {
       const cleanText = extractAgyUserText(event.content);
       if (!cleanText) continue;
+
+      // Handle slash clear command in AGY transcript: reset all prior messages
+      if (cleanText.toLowerCase() === '/clear') {
+        messages.length = 0;
+        currentAssistantMsg = null;
+        continue;
+      }
 
       currentAssistantMsg = null; // Close previous turn
       messages.push({

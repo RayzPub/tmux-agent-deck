@@ -440,6 +440,35 @@ export function setSessionViewMode(sessionName, mode) {
 const sessionSupportCache = new Map(); // sessionName -> boolean
 export const sessionModeCache = new Map(); // sessionName -> 'chat_only' | 'hybrid' | 'terminal_only'
 
+/**
+ * Completely wipe cached chat messages and view mode preferences for a session.
+ * Invoked when a session is killed, removed, or newly recreated to prevent stale message inheritance.
+ */
+export function clearSessionChatCache(sessionName) {
+  if (!sessionName) return;
+  sessionHistoryCache.delete(sessionName);
+  sessionViewModes.delete(sessionName);
+  sessionSupportCache.delete(sessionName);
+  sessionModeCache.delete(sessionName);
+
+  for (const key of expandedAccordions) {
+    if (key.startsWith(`${sessionName}::`)) {
+      expandedAccordions.delete(key);
+    }
+  }
+
+  try {
+    localStorage.removeItem(`deck_mode_${sessionName}`);
+  } catch (e) {}
+
+  if (activePollSession === sessionName) {
+    stopChatPolling();
+  }
+}
+
+// Expose globally for cross-module invocations
+window.clearSessionChatCache = clearSessionChatCache;
+
 export function getSessionMode(sessionName) {
   const current = getCurrentSessionName(sessionName);
   return sessionModeCache.get(current) || 'hybrid';
@@ -1082,7 +1111,7 @@ function bindComposerEvents() {
 
     quickClearBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      sendChatMessage('/clear');
+      clearChatContext();
     });
   }
 
@@ -1267,6 +1296,71 @@ export function sendRawToTmux(text) {
 }
 
 /**
+ * Clear conversation context both in frontend UI and backend agent CLI
+ */
+export async function clearChatContext() {
+  const currentSess = getCurrentSessionName();
+  if (!currentSess) return;
+
+  stopVoiceInput();
+  updateSlashPopover(null);
+
+  // 1. Clear input & reset attachments
+  const textarea = document.getElementById('chatComposerTextarea');
+  if (textarea) {
+    textarea.value = '';
+    textarea.style.height = 'auto';
+  }
+  clearCurrentAttachments();
+
+  // 2. Wipe cached messages for this session
+  sessionHistoryCache.delete(currentSess);
+
+  // 3. Reset the chat messages UI container to empty clean state
+  const container = document.getElementById('agentChatMessages');
+  if (container) {
+    container.innerHTML = `
+      <div class="chat-empty-state">
+        <div class="chat-empty-icon">
+          <i data-lucide="sparkles"></i>
+        </div>
+        <div class="chat-empty-title">上下文已清空</div>
+        <div class="chat-empty-subtitle">终端与会话上下文已重置，输入消息开启全新对话</div>
+      </div>
+    `;
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  }
+
+  // 4. Update status indicator
+  updateStatusBadge('已清空上下文', 'idle');
+
+  // 5. Send /clear into tmux terminal if active
+  const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
+  if (sessMode !== 'chat_only') {
+    sendRawToTmux('/clear\r');
+  }
+
+  // 6. Request backend to clear context, unset @agent_session_id, and reset OAR session
+  try {
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    await fetch(`/api/sessions/${encodeURIComponent(currentSess)}/clear-context${devParam}`, {
+      method: 'POST'
+    });
+  } catch (err) {
+    console.warn('[ChatMode] clear-context API call error:', err.message);
+  }
+
+  // 7. Re-sync chat history after agent process has created fresh state
+  setTimeout(() => {
+    if (getCurrentSessionName() === currentSess) {
+      loadAndRenderChatHistory(currentSess, false);
+    }
+  }, 1000);
+}
+
+/**
  * Send user message to the agent
  */
 export function sendChatMessage(overrideText) {
@@ -1286,6 +1380,12 @@ export function sendChatMessage(overrideText) {
 
   const currentSess = getCurrentSessionName();
   if (!currentSess) return;
+
+  // Intercept slash clear command: cleanly clear context instead of rendering as user chat
+  if (text.toLowerCase() === '/clear' || text.toLowerCase() === 'clear') {
+    clearChatContext();
+    return;
+  }
 
   // Build full prompt text with injected file paths inside the workspace to avoid agent permission prompts
   let fullPrompt = text;

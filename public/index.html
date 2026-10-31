@@ -40,7 +40,7 @@
   <!-- Custom Styles -->
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/invite-modal.css">
-  <link rel="stylesheet" href="/css/chat-mode.css">
+  <link rel="stylesheet" href="/css/chat-mode.css" id="chatModeStylesheet">
   <!-- Favicon / Tab Icon -->
   <link rel="icon" type="image/png" sizes="32x32" id="appFavicon" href="/images/favicon.png">
   <link rel="icon" type="image/png" sizes="192x192" id="appIcon192" href="/images/icon-192.png">
@@ -639,33 +639,33 @@
             <span class="label-tech-text">// 会话运行模式</span>
           </label>
           <div class="agent-cards-container session-mode-cards-container">
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="双模随时平滑切换 (推荐)">
               <input type="radio" name="sessionMode" value="hybrid" checked>
               <div class="agent-card-inner">
                 <i data-lucide="split"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">会话与终端</span>
-                  <span class="agent-desc">双模随时平滑切换 (推荐)</span>
+                  <span class="agent-desc">双模平滑切换</span>
                 </div>
               </div>
             </label>
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="纯会话模式 (原生流式对话，免终端干扰)">
               <input type="radio" name="sessionMode" value="chat_only">
               <div class="agent-card-inner">
                 <i data-lucide="messages-square"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">纯会话 (OAR)</span>
-                  <span class="agent-desc">原生流式对话，免终端干扰</span>
+                  <span class="agent-desc">原生流式对话</span>
                 </div>
               </div>
             </label>
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="纯终端模式 (原生 ANSI 命令行专注操控)">
               <input type="radio" name="sessionMode" value="terminal_only">
               <div class="agent-card-inner">
                 <i data-lucide="terminal"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">纯终端</span>
-                  <span class="agent-desc">原生 ANSI 命令行专注操控</span>
+                  <span class="agent-desc">命令行专注操控</span>
                 </div>
               </div>
             </label>
@@ -677,7 +677,7 @@
             <span class="label-tech-text">// 初始智能体环境</span>
           </label>
           <div class="agent-cards-container">
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="Antigravity AI 智能体">
               <input type="radio" name="sessionAgent" value="agy" checked>
               <div class="agent-card-inner">
                 <i data-lucide="bot"></i>
@@ -687,17 +687,17 @@
                 </div>
               </div>
             </label>
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="Claude Code 命令行智能体">
               <input type="radio" name="sessionAgent" value="claude">
               <div class="agent-card-inner">
                 <i data-lucide="message-square"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">Claude</span>
-                  <span class="agent-desc">Claude Code 命令行</span>
+                  <span class="agent-desc">Claude Code</span>
                 </div>
               </div>
             </label>
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="Codex 智能体">
               <input type="radio" name="sessionAgent" value="codex">
               <div class="agent-card-inner">
                 <i data-lucide="code"></i>
@@ -707,23 +707,23 @@
                 </div>
               </div>
             </label>
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="Kimi Code CLI 智能体">
               <input type="radio" name="sessionAgent" value="kimi">
               <div class="agent-card-inner">
                 <i data-lucide="sparkles"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">Kimi</span>
-                  <span class="agent-desc">Kimi Code CLI 智能体</span>
+                  <span class="agent-desc">Kimi CLI</span>
                 </div>
               </div>
             </label>
-            <label class="agent-card-option">
+            <label class="agent-card-option" title="标准 Bash 命令行环境">
               <input type="radio" name="sessionAgent" value="default">
               <div class="agent-card-inner">
                 <i data-lucide="terminal"></i>
                 <div class="agent-card-info">
                   <span class="agent-title">Shell</span>
-                  <span class="agent-desc">标准 Bash 环境</span>
+                  <span class="agent-desc">标准 Bash</span>
                 </div>
               </div>
             </label>

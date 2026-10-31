@@ -948,6 +948,11 @@ router.post('/sessions', requireAuth, async (req, res) => {
       });
 
       chain.then(async () => {
+        try {
+          const oarService = require('../services/oarService');
+          oarService.deleteOarSession(req.user ? req.user.username : null, sessionNameToCreate);
+        } catch (e) {}
+
         if (targetMode === 'chat_only') {
           try {
             const oarService = require('../services/oarService');
@@ -2006,8 +2011,24 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     }
 
     // 3. Hybrid Mode (Tmux + Agent Shadow Inspection)
+    let effectiveSessionId = agentSessionId;
+    const isAgySession = (agentType === 'agy' || agentType === 'antigravity') || (name.toLowerCase().includes('agy'));
+    if (isAgySession && panePid) {
+      const liveAgyId = getAgySessionIdFromPanePid(panePid);
+      if (liveAgyId) {
+        if (effectiveSessionId && liveAgyId !== effectiveSessionId && physicalSession) {
+          execTmux(['set-option', '-t', physicalSession, '@agent_session_id', liveAgyId], () => {}, user);
+        }
+        effectiveSessionId = liveAgyId;
+      }
+    }
+
     // Locate the matching .jsonl session file strictly
-    const sessionFileInfo = findAgentSessionFile(agentType, targetWorkspace, agentSessionId, panePid, userHome, sysHome);
+    const sessionFileInfo = findAgentSessionFile(agentType, targetWorkspace, effectiveSessionId, panePid, userHome, sysHome);
+
+    if (sessionFileInfo && sessionFileInfo.sessionId && !agentSessionId && physicalSession) {
+      execTmux(['set-option', '-t', physicalSession, '@agent_session_id', sessionFileInfo.sessionId], () => {}, user);
+    }
 
     const isAgy = (agentType === 'agy' || agentType === 'antigravity') ||
                   (sessionFileInfo && sessionFileInfo.agentType === 'agy') ||
@@ -2080,7 +2101,7 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
 
         return res.json({
           supported: true,
-          hasHistory: true,
+          hasHistory: (parsed.messages && parsed.messages.length > 0),
           sessionName: name,
           agentType: effectiveAgent,
           sessionId: sessionFileInfo.sessionId,
@@ -2093,6 +2114,43 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
     } catch (parseErr) {
       return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
     }
+  }, user);
+});
+
+// API: Clear conversation context for a session (Agent Chat Mode / Pure Chat Mode)
+router.post('/sessions/:name/clear-context', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const targetDeviceId = req.query.deviceId;
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const deviceService = require('../services/deviceService');
+      if (typeof deviceService.sendDeviceRpc === 'function') {
+        await deviceService.sendDeviceRpc(targetDeviceId, 'agent:clear_context', { sessionName: name });
+      }
+    } catch (e) {}
+    return res.json({ success: true, message: 'Remote context cleared' });
+  }
+
+  const user = req.user ? req.user.username : null;
+  const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
+
+  // 1. If Pure Chat OAR session, clear session state and history
+  try {
+    const oarService = require('../services/oarService');
+    if (typeof oarService.clearSession === 'function') {
+      await oarService.clearSession(user, name);
+    }
+  } catch (e) {
+    console.warn('[ClearContext] OAR clear error:', e.message);
+  }
+
+  // 2. Clear tmux metadata @agent_session_id so that subsequent chat-history requests never load stale files
+  execTmux(['set-option', '-u', '-t', physicalSession, '@agent_session_id'], () => {
+    // 3. Send /clear into the running agent pane in tmux to reset the CLI context and terminal buffer
+    execTmux(['send-keys', '-t', physicalSession, '/clear', 'C-m'], () => {
+      res.json({ success: true, message: 'Context cleared successfully' });
+    }, user);
   }, user);
 });
 

@@ -878,6 +878,9 @@ export function removeSessionFromCache(name) {
     }
     state.sessionCache.delete(name);
   }
+  if (typeof window.clearSessionChatCache === 'function') {
+    window.clearSessionChatCache(name);
+  }
 }
 
 export function clearSessionCache() {

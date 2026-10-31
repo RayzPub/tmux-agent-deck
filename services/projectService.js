@@ -302,7 +302,20 @@ async function getProjectProgress(workspaceIdentifier, username = null) {
     };
 
     // Check if this is a supported agent session with JSONL logs (Claude Code or Antigravity)
-    const sessionFileInfo = findAgentSessionFile(agentType, workspacePath, agentSessionId, panePid, userHome, sysHome);
+    let effectiveSessionId = agentSessionId;
+    if ((agentType === 'agy' || agentType === 'antigravity') && panePid) {
+      const liveAgyId = getAgySessionIdFromPanePid(panePid);
+      if (liveAgyId) {
+        if (effectiveSessionId && liveAgyId !== effectiveSessionId && fullName) {
+          execTmux(['set-option', '-t', fullName, '@agent_session_id', liveAgyId], () => {}, effectiveUser);
+        }
+        effectiveSessionId = liveAgyId;
+      }
+    }
+    const sessionFileInfo = findAgentSessionFile(agentType, workspacePath, effectiveSessionId, panePid, userHome, sysHome);
+    if (sessionFileInfo && sessionFileInfo.sessionId && !agentSessionId && fullName) {
+      execTmux(['set-option', '-t', fullName, '@agent_session_id', sessionFileInfo.sessionId], () => {}, effectiveUser);
+    }
     if (sessionFileInfo && sessionFileInfo.filePath) {
       try {
         const parsed = await parseAgentChat(sessionFileInfo.agentType, sessionFileInfo.filePath, 10);

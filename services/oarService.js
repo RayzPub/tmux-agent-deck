@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { PROJECT_ROOT } = require('../config');
 const { getRunUser } = require('./tmuxService');
@@ -903,6 +904,33 @@ function abortSession(username, sessionName) {
 }
 
 /**
+ * Clear OAR session context (messages and state)
+ */
+async function clearSession(username, sessionName) {
+  const sess = await getOrCreateSession(username, sessionName);
+  if (sess.currentController) {
+    try { sess.currentController.abort(); } catch (e) {}
+    sess.currentController = null;
+  }
+  sess.messages = [];
+  sess.isGenerating = false;
+  sess.conversationId = crypto.randomUUID();
+  sess.claudeSessionId = crypto.randomUUID();
+  savePersistedSession(username, sessionName, {
+    sessionName: sess.sessionName,
+    username: sess.username,
+    agentType: sess.agentType,
+    workspacePath: sess.workspacePath,
+    model: sess.model,
+    conversationId: sess.conversationId,
+    claudeSessionId: sess.claudeSessionId,
+    createdAt: sess.createdAt,
+    messages: []
+  });
+  return sess;
+}
+
+/**
  * Delete OAR session
  */
 function deleteOarSession(username, sessionName) {
@@ -922,6 +950,7 @@ module.exports = {
   getOrCreateSession,
   sendUserMessage,
   abortSession,
+  clearSession,
   deleteOarSession,
   loadPersistedSession
 };
