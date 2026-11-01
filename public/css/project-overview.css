@@ -3957,3 +3957,45 @@ body.light-minimalist .roadmap-view-btn.active {
   }
 }
 
+/* ==========================================================================
+   CCNOW · Visual Refresh Overrides (Project Overview HUD)
+   ========================================================================== */
+.project-panel {
+  background: var(--c-bg) !important;
+}
+
+.roadmap-header-card,
+.project-overview-card,
+.stats-summary-card {
+  background: var(--c-bg) !important;
+  border: 1px solid var(--c-line) !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+  color: var(--c-text) !important;
+}
+
+.roadmap-header-card h2,
+.roadmap-header-card h3,
+.project-overview-card h2,
+.project-overview-card h3 {
+  color: var(--c-text) !important;
+  font-weight: 600 !important;
+}
+
+.roadmap-controls-bar button {
+  background: var(--c-bg) !important;
+  border: 1px solid var(--c-line) !important;
+  border-radius: 6px !important;
+  color: var(--c-text) !important;
+  box-shadow: none !important;
+}
+
+.roadmap-controls-bar button:hover {
+  background: var(--c-soft) !important;
+}
+
+.progress-bar-fill {
+  background: var(--c-accent) !important;
+}
+
+

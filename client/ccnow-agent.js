@@ -12,7 +12,7 @@ const path = require('path');
 const { spawn, execSync } = require('child_process');
 
 // Client Version
-const CLIENT_VERSION = '1.2.0';
+const CLIENT_VERSION = '1.3.0';
 
 // Configuration directory & file
 const CONFIG_DIR = path.join(os.homedir(), '.ccnow');
@@ -373,7 +373,25 @@ class AgentClient {
       return;
     }
 
-    // 1.7 Remote Git Status & Diff
+    // 1.6.1 Remote Filesystem Extended Operations (Create / Delete / Rename)
+    if (action === 'fs:create_file') {
+      this.handleFsCreateFile(msg.reqId, msg.workspacePath, msg.filePath);
+      return;
+    }
+    if (action === 'fs:create_dir') {
+      this.handleFsCreateDir(msg.reqId, msg.workspacePath, msg.dirPath);
+      return;
+    }
+    if (action === 'fs:delete') {
+      this.handleFsDelete(msg.reqId, msg.workspacePath, msg.targetPath);
+      return;
+    }
+    if (action === 'fs:rename') {
+      this.handleFsRename(msg.reqId, msg.workspacePath, msg.oldPath, msg.newPath);
+      return;
+    }
+
+    // 1.7 Remote Git Operations
     if (action === 'git:status') {
       this.handleGitStatus(msg.reqId, msg.workspacePath);
       return;
@@ -384,9 +402,39 @@ class AgentClient {
       return;
     }
 
-    // 1.8 Remote Agent Chat History
+    if (action === 'git:stage') {
+      this.handleGitStage(msg.reqId, msg.workspacePath, msg.files);
+      return;
+    }
+
+    if (action === 'git:unstage') {
+      this.handleGitUnstage(msg.reqId, msg.workspacePath, msg.files);
+      return;
+    }
+
+    if (action === 'git:commit') {
+      this.handleGitCommit(msg.reqId, msg.workspacePath, msg.message);
+      return;
+    }
+
+    if (action === 'git:branches') {
+      this.handleGitBranches(msg.reqId, msg.workspacePath);
+      return;
+    }
+
+    if (action === 'git:checkout') {
+      this.handleGitCheckout(msg.reqId, msg.workspacePath, msg.branch);
+      return;
+    }
+
+    // 1.8 Remote Agent Chat History & Context
     if (action === 'agent:chat_history') {
       this.handleChatHistory(msg.reqId, msg.sessionName);
+      return;
+    }
+
+    if (action === 'agent:clear_context') {
+      this.handleClearContext(msg.reqId, msg.sessionName);
       return;
     }
 
@@ -616,12 +664,22 @@ class AgentClient {
   }
 
   handleNewSession(reqId, msg) {
-    const { sessionName, workspace } = msg;
+    const { sessionName, workspace, agent } = msg;
     const hasTmux = hasCommand('tmux');
     if (hasTmux && sessionName) {
       try {
         const targetDir = this.resolveBaseDir(workspace);
-        execSync(`tmux new-session -d -s "${sessionName.replace(/"/g, '')}" -c "${targetDir.replace(/"/g, '')}"`, { stdio: 'ignore' });
+        const cleanName = sessionName.replace(/"/g, '');
+        execSync(`tmux new-session -d -s "${cleanName}" -c "${targetDir.replace(/"/g, '')}"`, { stdio: 'ignore' });
+
+        // If an agent CLI is chosen (e.g. claude, codex, agy), auto-launch it in the tmux pane
+        if (agent && agent !== 'default' && agent !== 'terminal') {
+          const agentCmd = String(agent).replace(/"/g, '');
+          try {
+            execSync(`tmux send-keys -t "${cleanName}" "${agentCmd}" C-m`, { stdio: 'ignore' });
+          } catch (e) {}
+        }
+
         this.send({ action: 'tmux:new_session_result', reqId, success: true });
         return;
       } catch (e) {
@@ -640,6 +698,391 @@ class AgentClient {
       } catch (e) {}
     }
     this.send({ action: 'tmux:kill_session_result', reqId, success: true });
+  }
+
+  handleFsCreateFile(reqId, workspacePath, filePath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const targetPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+      const parentDir = path.dirname(targetPath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      if (!fs.existsSync(targetPath)) {
+        fs.writeFileSync(targetPath, '', 'utf8');
+      }
+      this.send({ action: 'fs:create_file_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'fs:create_file_result', reqId, error: e.message });
+    }
+  }
+
+  handleFsCreateDir(reqId, workspacePath, dirPath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const targetPath = path.isAbsolute(dirPath) ? dirPath : path.resolve(baseDir, dirPath);
+      if (!fs.existsSync(targetPath)) {
+        fs.mkdirSync(targetPath, { recursive: true });
+      }
+      this.send({ action: 'fs:create_dir_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'fs:create_dir_result', reqId, error: e.message });
+    }
+  }
+
+  handleFsDelete(reqId, workspacePath, targetPath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const fullPath = path.isAbsolute(targetPath) ? targetPath : path.resolve(baseDir, targetPath);
+      if (fs.existsSync(fullPath)) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      }
+      this.send({ action: 'fs:delete_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'fs:delete_result', reqId, error: e.message });
+    }
+  }
+
+  handleFsRename(reqId, workspacePath, oldPath, newPath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const src = path.isAbsolute(oldPath) ? oldPath : path.resolve(baseDir, oldPath);
+      const dst = path.isAbsolute(newPath) ? newPath : path.resolve(baseDir, newPath);
+      const dstParent = path.dirname(dst);
+      if (!fs.existsSync(dstParent)) {
+        fs.mkdirSync(dstParent, { recursive: true });
+      }
+      fs.renameSync(src, dst);
+      this.send({ action: 'fs:rename_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'fs:rename_result', reqId, error: e.message });
+    }
+  }
+
+  handleGitStage(reqId, workspacePath, files) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const fileArgs = Array.isArray(files) && files.length > 0
+        ? files.map(f => `"${String(f).replace(/"/g, '')}"`).join(' ')
+        : '.';
+      execSync(`git add ${fileArgs}`, { cwd: baseDir, stdio: 'ignore' });
+      this.send({ action: 'git:stage_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'git:stage_result', reqId, error: e.message });
+    }
+  }
+
+  handleGitUnstage(reqId, workspacePath, files) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const fileArgs = Array.isArray(files) && files.length > 0
+        ? files.map(f => `"${String(f).replace(/"/g, '')}"`).join(' ')
+        : '.';
+      execSync(`git reset HEAD ${fileArgs}`, { cwd: baseDir, stdio: 'ignore' });
+      this.send({ action: 'git:unstage_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'git:unstage_result', reqId, error: e.message });
+    }
+  }
+
+  handleGitCommit(reqId, workspacePath, message) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const cleanMsg = (message || 'Commit from ccnow').replace(/"/g, '\\"');
+      execSync(`git commit -m "${cleanMsg}"`, { cwd: baseDir, stdio: 'ignore' });
+      this.send({ action: 'git:commit_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'git:commit_result', reqId, error: e.message });
+    }
+  }
+
+  handleGitBranches(reqId, workspacePath) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const out = execSync('git branch 2>/dev/null || echo ""', { cwd: baseDir, encoding: 'utf8' });
+      const lines = out.split('\n').filter(Boolean);
+      let currentBranch = '';
+      const branches = [];
+      for (const line of lines) {
+        const isCurrent = line.startsWith('*');
+        const bName = line.replace(/^\*?\s+/, '').trim();
+        if (bName) {
+          branches.push(bName);
+          if (isCurrent) currentBranch = bName;
+        }
+      }
+      this.send({ action: 'git:branches_result', reqId, currentBranch, branches });
+    } catch (e) {
+      this.send({ action: 'git:branches_result', reqId, currentBranch: '', branches: [] });
+    }
+  }
+
+  handleGitCheckout(reqId, workspacePath, branch) {
+    try {
+      const baseDir = this.resolveBaseDir(workspacePath);
+      const cleanBranch = String(branch).replace(/[^a-zA-Z0-9_\-\.\/]/g, '');
+      execSync(`git checkout "${cleanBranch}"`, { cwd: baseDir, stdio: 'ignore' });
+      this.send({ action: 'git:checkout_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'git:checkout_result', reqId, error: e.message });
+    }
+  }
+
+  handleClearContext(reqId, sessionName) {
+    const hasTmux = hasCommand('tmux');
+    if (hasTmux && sessionName) {
+      try {
+        const cleanName = sessionName.replace(/"/g, '');
+        execSync(`tmux send-keys -t "${cleanName}" "/clear" C-m`, { stdio: 'ignore' });
+      } catch (e) {}
+    }
+    if (reqId) {
+      this.send({ action: 'agent:clear_context_result', reqId, success: true });
+    }
+  }
+
+  extractUserText(rawContent, event) {
+    if (!rawContent) return '';
+    if (typeof rawContent === 'string') {
+      if (rawContent.includes('<local-command-caveat>')) return '';
+      if (rawContent.includes('<command-name>')) {
+        const match = rawContent.match(/<command-message>(.*?)<\/command-message>/s) ||
+                      rawContent.match(/<command-name>(.*?)<\/command-name>/s);
+        if (match && match[1]) {
+          const cmd = match[1].trim();
+          if (cmd === 'clear' || cmd === '/clear') return '';
+          return cmd;
+        }
+      }
+      return rawContent.trim();
+    }
+
+    if (Array.isArray(rawContent)) {
+      const textPieces = [];
+      for (const item of rawContent) {
+        if (typeof item === 'string') {
+          const cleaned = this.extractUserText(item, event);
+          if (cleaned) textPieces.push(cleaned);
+        } else if (item && typeof item === 'object') {
+          if (item.type === 'text' && item.text) {
+            const cleaned = this.extractUserText(item.text, event);
+            if (cleaned) textPieces.push(cleaned);
+          } else if (item.type === 'tool_result') {
+            if (event && event.toolUseResult && event.toolUseResult.answers) {
+              const ansList = Object.entries(event.toolUseResult.answers)
+                .map(([q, a]) => `**${q}**\n↳ ${a}`)
+                .join('\n\n');
+              textPieces.push(`📋 **已回答智能体提问：**\n\n${ansList}`);
+            } else if (typeof item.content === 'string' && item.content.startsWith('Your questions have been answered:')) {
+              const cleanContent = item.content.replace(/^Your questions have been answered:\s*/, '').replace(/\.\s*You can now continue with these answers in mind\./, '');
+              textPieces.push(`📋 **已回答智能体提问：**\n\n${cleanContent}`);
+            } else if ((event && event.toolDenialKind === 'user-rejected') || (typeof item.content === 'string' && item.content.includes("user doesn't want to proceed"))) {
+              textPieces.push(`🛑 **已拒绝此工具执行操作**`);
+            }
+          }
+        }
+      }
+      return textPieces.join('\n\n').trim();
+    }
+
+    if (typeof rawContent === 'object') {
+      if (rawContent.type === 'text' && rawContent.text) {
+        return this.extractUserText(rawContent.text, event);
+      }
+      if (rawContent.text && typeof rawContent.text === 'string') {
+        return this.extractUserText(rawContent.text, event);
+      }
+    }
+
+    return '';
+  }
+
+  parseClaudeJsonlContent(content) {
+    const lines = content.split('\n').filter(Boolean);
+    const parsedEvents = [];
+    for (const line of lines) {
+      try {
+        parsedEvents.push(JSON.parse(line));
+      } catch (e) {}
+    }
+
+    const messages = [];
+    const toolResults = new Set();
+
+    for (const event of parsedEvents) {
+      if (event.commandRun && (event.commandRun.command === 'clear' || event.commandRun.command === '/clear')) {
+        messages.length = 0;
+        toolResults.clear();
+        continue;
+      }
+      if (event.type === 'user' && event.message && typeof event.message.content === 'string' && event.message.content.includes('<command-name>/clear')) {
+        messages.length = 0;
+        toolResults.clear();
+        continue;
+      }
+
+      // User message
+      if (event.type === 'user' && event.message && event.message.content) {
+        if (event.isMeta) continue;
+
+        if (Array.isArray(event.message.content)) {
+          for (const item of event.message.content) {
+            if (item && item.type === 'tool_result' && item.tool_use_id) {
+              toolResults.add(item.tool_use_id);
+            }
+          }
+        }
+
+        const cleanText = this.extractUserText(event.message.content, event);
+        if (!cleanText) continue;
+
+        messages.push({
+          id: event.uuid || `user-${messages.length}`,
+          role: 'user',
+          timestamp: event.timestamp || new Date().toISOString(),
+          content: cleanText
+        });
+      }
+
+      // Assistant message
+      if (event.type === 'assistant' && event.message && event.message.content) {
+        const contentList = Array.isArray(event.message.content)
+          ? event.message.content
+          : [{ type: 'text', text: String(event.message.content) }];
+
+        let textParts = [];
+        let thinkingParts = [];
+        let tools = [];
+
+        for (const part of contentList) {
+          if (part.type === 'text' && part.text) {
+            textParts.push(part.text);
+          } else if (part.type === 'thinking' && part.thinking) {
+            thinkingParts.push(part.thinking);
+          } else if (part.type === 'tool_use') {
+            const isAskQ = part.name === 'AskUserQuestion';
+            const tInfo = {
+              id: part.id,
+              name: part.name || 'tool',
+              input: part.input || {},
+              isAskQuestion: isAskQ,
+              questions: (isAskQ && part.input && part.input.questions) ? part.input.questions : []
+            };
+            tools.push(tInfo);
+          }
+        }
+
+        const combinedText = textParts.join('\n\n').trim();
+        const combinedThinking = thinkingParts.join('\n\n').trim();
+
+        if (combinedText || combinedThinking || tools.length > 0) {
+          messages.push({
+            id: event.uuid || `assistant-${messages.length}`,
+            role: 'assistant',
+            timestamp: event.timestamp || new Date().toISOString(),
+            content: combinedText,
+            thinking: combinedThinking || null,
+            tools: tools.length > 0 ? tools : null
+          });
+        }
+      }
+    }
+
+    return messages;
+  }
+
+  handleChatHistory(reqId, sessionName) {
+    try {
+      const hasTmux = hasCommand('tmux');
+      let sessionCwd = process.cwd();
+      if (hasTmux && sessionName) {
+        try {
+          const out = execSync(`tmux display-message -p -t "${sessionName.replace(/"/g, '')}" "#{session_path}" 2>/dev/null`, { encoding: 'utf8' }).trim();
+          if (out && fs.existsSync(out)) {
+            sessionCwd = out;
+          }
+        } catch (e) {}
+      }
+
+      // Convert sessionCwd to project slug
+      const slug = path.resolve(sessionCwd).replace(/\/+$/, '').replace(/\//g, '-');
+      const baseClaudeDir = path.join(os.homedir(), '.claude', 'projects');
+      const targetProjDir = path.join(baseClaudeDir, slug);
+
+      let targetJsonlFile = null;
+      let targetMtime = 0;
+
+      if (fs.existsSync(targetProjDir)) {
+        const files = fs.readdirSync(targetProjDir).filter(f => f.endsWith('.jsonl'));
+        for (const file of files) {
+          const fullPath = path.join(targetProjDir, file);
+          try {
+            const st = fs.statSync(fullPath);
+            if (st.mtimeMs > targetMtime) {
+              targetMtime = st.mtimeMs;
+              targetJsonlFile = fullPath;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Fallback: search all project directories under ~/.claude/projects/
+      if (!targetJsonlFile && fs.existsSync(baseClaudeDir)) {
+        try {
+          const subdirs = fs.readdirSync(baseClaudeDir, { withFileTypes: true }).filter(d => d.isDirectory());
+          for (const sub of subdirs) {
+            const subPath = path.join(baseClaudeDir, sub.name);
+            const files = fs.readdirSync(subPath).filter(f => f.endsWith('.jsonl'));
+            for (const file of files) {
+              const fullPath = path.join(subPath, file);
+              try {
+                const st = fs.statSync(fullPath);
+                if (st.mtimeMs > targetMtime) {
+                  targetMtime = st.mtimeMs;
+                  targetJsonlFile = fullPath;
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (targetJsonlFile && fs.existsSync(targetJsonlFile)) {
+        const content = fs.readFileSync(targetJsonlFile, 'utf8');
+        const messages = this.parseClaudeJsonlContent(content);
+        return this.send({
+          action: 'agent:chat_history_result',
+          reqId,
+          sessionName,
+          sessionMode: 'hybrid',
+          supported: true,
+          lastUpdated: targetMtime || Date.now(),
+          messages
+        });
+      }
+
+      // Return default ready state with supported flag true
+      return this.send({
+        action: 'agent:chat_history_result',
+        reqId,
+        sessionName,
+        sessionMode: 'hybrid',
+        supported: true,
+        lastUpdated: Date.now(),
+        messages: []
+      });
+    } catch (e) {
+      console.warn('⚠️ [ccnow-agent] Failed to parse chat history:', e.message);
+      this.send({
+        action: 'agent:chat_history_result',
+        reqId,
+        sessionName,
+        sessionMode: 'hybrid',
+        supported: true,
+        lastUpdated: Date.now(),
+        messages: []
+      });
+    }
   }
 
   handleDirectories(reqId, targetPath) {
@@ -700,34 +1143,7 @@ class AgentClient {
     }
   }
 
-  handleChatHistory(reqId, sessionName) {
-    try {
-      const dirs = [
-        path.join(os.homedir(), '.claude', 'projects'),
-        path.join(process.cwd(), '.claude', 'projects')
-      ];
-      let messages = [];
-      for (const d of dirs) {
-        if (fs.existsSync(d)) {
-          const files = fs.readdirSync(d).filter(f => f.endsWith('.jsonl'));
-          if (files.length > 0) {
-            const content = fs.readFileSync(path.join(d, files[files.length - 1]), 'utf8');
-            const lines = content.split('\n').filter(Boolean);
-            for (const line of lines) {
-              try {
-                const parsed = JSON.parse(line);
-                if (parsed.message) messages.push(parsed.message);
-              } catch (err) {}
-            }
-            break;
-          }
-        }
-      }
-      this.send({ action: 'agent:chat_history_result', reqId, messages });
-    } catch (e) {
-      this.send({ action: 'agent:chat_history_result', reqId, messages: [] });
-    }
-  }
+
 
   /**
    * Spawn a real PTY or Shell session for web terminal relay

@@ -164,12 +164,20 @@ function initDeviceGateway(servers, io) {
           // Notify internal subscribers (e.g. active HTTP/SSE or Socket.io listeners)
           deviceService.emitAgentEvent(sessionId, msg);
 
-          // Also broadcast directly to Socket.io Web clients
+          // Also broadcast directly to the owner's Socket.io private room
           if (io) {
-            io.emit(`device:agent_event:${sessionId}`, {
-              ...msg,
-              deviceId: boundDeviceId
-            });
+            const deviceRecord = deviceService.getDeviceById(boundDeviceId);
+            if (deviceRecord && deviceRecord.userId) {
+              io.to(`user:${deviceRecord.userId}`).emit(`device:agent_event:${sessionId}`, {
+                ...msg,
+                deviceId: boundDeviceId
+              });
+            } else {
+              io.emit(`device:agent_event:${sessionId}`, {
+                ...msg,
+                deviceId: boundDeviceId
+              });
+            }
           }
         }
         return;

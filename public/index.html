@@ -7,7 +7,7 @@
   <!-- iOS & Android PWA Standalone Optimization -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
   <script>
     (function() {
@@ -24,7 +24,7 @@
       } catch (e) {}
     })();
   </script>
-  <title>CCNOW // AI 智能体后台控制中心</title>
+  <title>CCNOW · AI 智能体会话与终端控制中心</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
@@ -59,127 +59,79 @@
   <div class="scanline"></div>
   <div class="cyber-grid"></div>
 
-  <!-- Header -->
-  <header class="cyber-header">
-    <div class="logo-area">
-      <button id="sidebarToggle" class="sidebar-toggle-btn" title="Toggle Sidebar">
-        <i data-lucide="menu"></i>
-      </button>
-      <div class="cyber-logo-icon"></div>
-      <h1 class="logo-text">CCNOW</h1>
+  <!-- Hidden host info -->
+  <span id="hostIp" style="display: none;"></span>
 
-      <!-- Top-Left Device Switcher -->
-      <div class="device-switcher-container" id="deviceSwitcherContainer">
-        <button id="deviceSwitcherBtn" class="device-switcher-btn" title="切换当前操作设备 (云端主机 / 远程电脑)">
-          <i data-lucide="cloud" id="deviceCurrentIcon" class="device-switcher-icon"></i>
-          <span id="deviceCurrentName" class="device-switcher-name">云端主机</span>
-          <span class="device-switcher-dot online" id="deviceCurrentStatusDot" title="在线"></span>
-          <i data-lucide="chevron-down" class="device-switcher-arrow"></i>
-        </button>
-        <div id="deviceSwitcherDropdown" class="device-switcher-dropdown hidden">
-          <div class="device-dropdown-header">// 可用操作设备</div>
-          <div id="deviceDropdownList" class="device-dropdown-list">
-            <!-- Populated dynamically: Cloud Host & Remote Devices -->
-          </div>
-          <div class="device-dropdown-divider"></div>
-          <button id="deviceDropdownPairBtn" class="device-dropdown-action-btn">
-            <i data-lucide="plus"></i>
-            <span>配对新设备...</span>
-          </button>
-        </div>
-      </div>
-    </div>
-    <div class="sys-info">
-      <span id="hostIp" style="display: none;"></span>
-
-      <!-- Aggregated System Control Dropdown -->
-      <div class="deck-control-dropdown" id="deckControlDropdown">
-        <button id="deckControlToggleBtn" class="header-btn" title="系统设置与连接管理">
-          <i data-lucide="sliders-horizontal"></i>
-          <span>系统</span>
-        </button>
-        <div id="deckControlDropdownMenu" class="deck-dropdown-menu hidden">
-          <div class="deck-dropdown-header">// 控制面板设置</div>
-          <div id="deckDropdownDeviceBanner" class="deck-dropdown-device-banner hidden">
-            <div class="device-banner-row">
-              <span class="device-banner-badge">边缘端</span>
-              <span class="device-banner-name" id="deckDropdownDeviceName">设备名称</span>
-            </div>
-            <div class="device-banner-tip">当前 Deck 操作上下文作用于此边缘设备</div>
-          </div>
-          <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
-            <i data-lucide="bell"></i>
-            <span>消息推送: 关闭</span>
-          </button>
-          <button id="deviceManagerBtn" class="header-btn" title="多设备互联与远程 Agent 管理">
-            <i data-lucide="laptop"></i>
-            <span>设备互联</span>
-          </button>
-          <!-- IM BOT will be inserted here dynamically -->
-          <button id="adminPanelBtn" class="header-btn hidden" title="系统管理面板（云端全局）">
-            <i data-lucide="shield"></i>
-            <span>系统管理</span>
-            <span class="scope-tag-cloud" title="仅作用于云端服务端">云端</span>
-          </button>
-          <button id="themeToggleBtn" class="header-btn" title="切换界面主题">
-            <i data-lucide="moon"></i>
-            <span>赛博朋克</span>
-          </button>
-          <button id="fullscreenToggleBtn" class="header-btn" title="切换全屏沉浸模式">
-            <i data-lucide="maximize"></i>
-            <span>全屏模式</span>
-          </button>
-          <button id="qrCodeBtn" class="header-btn hidden-mobile" title="手机扫码打开网页">
-            <i data-lucide="qr-code"></i>
-            <span>手机扫码连接</span>
-          </button>
-          <button id="headerHelpDocBtn" class="header-btn" title="查看新手快速上手指南">
-            <i data-lucide="book-open"></i>
-            <span>使用指南</span>
-          </button>
-          <button id="reloadBtn" class="header-btn" title="重新加载页面">
-            <i data-lucide="refresh-cw"></i>
-            <span>重新加载</span>
-          </button>
-          <div class="deck-dropdown-divider"></div>
-          <button id="logoutBtn" class="header-btn danger" title="退出并断开控制台">
-            <i data-lucide="log-out"></i>
-            <span>断开连接</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <!-- Main Layout -->
+  <!-- Main Layout (Headerless Fullscreen Canvas) -->
   <div class="main-container">
+    <!-- Floating Brand & Sidebar Expand Trigger (Visible when sidebar collapsed or on mobile) -->
+    <button id="sidebarExpandBtn" class="floating-brand-expand-btn" title="展开侧边栏">
+      <div class="cyber-logo-icon"></div>
+      <span class="logo-text">CCNOW</span>
+      <i data-lucide="panel-left-open" class="brand-expand-icon"></i>
+    </button>
+
     <!-- Sidebar -->
-    <aside class="sidebar">
-      <!-- Top Workspace Selector Context -->
+    <aside class="sidebar" id="sidebar">
+      <!-- 0. Brand Header & Sidebar Toggle (Merged Brand Bar) -->
+      <div class="sidebar-brand-bar">
+        <button id="sidebarToggle" class="sidebar-brand-toggle" title="折叠侧边栏">
+          <div class="cyber-logo-icon"></div>
+          <span class="logo-text">CCNOW</span>
+          <i data-lucide="panel-left-close" class="brand-collapse-icon"></i>
+        </button>
+        <!-- Compatibility close button (hidden) -->
+        <button id="closeSidebarBtn" class="close-sidebar-btn hidden" style="display: none;" title="关闭侧边栏"></button>
+      </div>
+
+      <!-- Top Workspace & Device Selector Context -->
       <div class="workspace-selector-actions">
-        <!-- Tech Label Header -->
-        <div class="workspace-tech-header">
-          // 当前工作区
-        </div>
-        <!-- Select & Buttons Row -->
-        <div class="workspace-selector-row">
-          <div class="input-wrapper workspace-select-wrapper">
-            <i data-lucide="folder-git-2" class="input-icon"></i>
-            <select id="explorerWorkspaceSelect" class="cyber-select">
-              <!-- populated dynamically -->
-            </select>
+        <!-- Context 1: Device Switcher (选机器) -->
+        <div class="sidebar-context-group">
+          <div class="workspace-tech-header">
+            当前操作机器
           </div>
-          <button id="explorerNewWorkspaceBtn" class="cyber-btn-outline sidebar-icon-btn" title="创建工作区">
-            <i data-lucide="plus"></i>
-          </button>
-          <button id="explorerDeleteWorkspaceBtn" class="cyber-btn-outline sidebar-icon-btn" title="删除工作区">
-            <i data-lucide="trash-2"></i>
-          </button>
-          <!-- Mobile close sidebar button (visible on mobile only) -->
-          <button id="closeSidebarBtn" class="close-sidebar-btn cyber-btn-outline sidebar-icon-btn" title="关闭侧边栏">
-            <i data-lucide="x"></i>
-          </button>
+          <div class="device-switcher-container" id="deviceSwitcherContainer">
+            <button id="deviceSwitcherBtn" class="device-switcher-btn" title="切换当前操作设备 (云端主机 / 远程电脑)">
+              <div class="device-switcher-info">
+                <i data-lucide="cloud" id="deviceCurrentIcon" class="device-switcher-icon"></i>
+                <span id="deviceCurrentName" class="device-switcher-name">云端主机</span>
+                <span class="device-switcher-dot online" id="deviceCurrentStatusDot" title="在线"></span>
+              </div>
+              <i data-lucide="chevron-down" class="device-switcher-arrow"></i>
+            </button>
+            <div id="deviceSwitcherDropdown" class="device-switcher-dropdown hidden">
+              <div class="device-dropdown-header">可用操作设备</div>
+              <div id="deviceDropdownList" class="device-dropdown-list">
+                <!-- Populated dynamically: Cloud Host & Remote Devices -->
+              </div>
+              <div class="device-dropdown-divider"></div>
+              <button id="deviceDropdownPairBtn" class="device-dropdown-action-btn">
+                <i data-lucide="plus"></i>
+                <span>配对新设备...</span>
+              </button>
+            </div>
+          </div>
         </div>
+
+        <!-- Context 2: Workspace Selector (当前工作区) -->
+        <div class="sidebar-context-group">
+          <div class="workspace-tech-header">
+            当前工作区
+          </div>
+          <div class="workspace-selector-row">
+            <div class="input-wrapper workspace-select-wrapper">
+              <i data-lucide="folder-git-2" class="input-icon"></i>
+              <select id="explorerWorkspaceSelect" class="cyber-select">
+                <!-- populated dynamically -->
+              </select>
+            </div>
+            <!-- Keep hidden buttons for programmatic backward compatibility -->
+            <button id="explorerNewWorkspaceBtn" style="display: none !important;" title="创建工作区" aria-hidden="true" tabindex="-1"></button>
+            <button id="explorerDeleteWorkspaceBtn" style="display: none !important;" title="删除工作区" aria-hidden="true" tabindex="-1"></button>
+          </div>
+        </div>
+
         <!-- Project Progress HUD Entry Button -->
         <button id="openProjectOverviewBtn" class="project-overview-entry-btn" title="查看当前工作区项目推进总览">
           <i data-lucide="activity" class="entry-btn-icon"></i>
@@ -264,6 +216,68 @@
         <div class="upload-progress-toast hidden" id="uploadProgressToast">
           <div class="upload-toast-spinner cyber-spinner"></div>
           <span class="upload-toast-text" id="uploadToastText">正在上传文件...</span>
+        </div>
+      </div>
+
+      <!-- Sidebar Footer: System Control Dropup -->
+      <div class="sidebar-footer">
+        <div class="deck-control-dropdown dropup" id="deckControlDropdown">
+          <button id="deckControlToggleBtn" class="sidebar-footer-btn" title="系统设置与连接管理">
+            <div class="sidebar-footer-btn-left">
+              <i data-lucide="sliders-horizontal" class="footer-btn-icon"></i>
+              <span class="footer-btn-label">系统设置</span>
+            </div>
+            <i data-lucide="chevron-up" class="footer-btn-arrow"></i>
+          </button>
+          <div id="deckControlDropdownMenu" class="deck-dropdown-menu dropup-menu hidden">
+            <div class="deck-dropdown-header">系统控制面板</div>
+            <div id="deckDropdownDeviceBanner" class="deck-dropdown-device-banner hidden">
+              <div class="device-banner-row">
+                <span class="device-banner-badge">边缘端</span>
+                <span class="device-banner-name" id="deckDropdownDeviceName">设备名称</span>
+              </div>
+              <div class="device-banner-tip">当前 Deck 操作上下文作用于此边缘设备</div>
+            </div>
+            <button id="pushToggleBtn" class="header-btn" title="Toggle Push Notifications">
+              <i data-lucide="bell"></i>
+              <span>消息推送: 关闭</span>
+            </button>
+            <button id="deviceManagerBtn" class="header-btn" title="多设备互联与远程 Agent 管理">
+              <i data-lucide="laptop"></i>
+              <span>设备互联</span>
+            </button>
+            <!-- IM BOT will be inserted here dynamically -->
+            <button id="adminPanelBtn" class="header-btn hidden" title="系统管理面板（云端全局）">
+              <i data-lucide="shield"></i>
+              <span>系统管理</span>
+              <span class="scope-tag-cloud" title="仅作用于云端服务端">云端</span>
+            </button>
+            <button id="themeToggleBtn" class="header-btn" title="切换界面主题">
+              <i data-lucide="moon"></i>
+              <span>深色模式</span>
+            </button>
+            <button id="fullscreenToggleBtn" class="header-btn" title="切换全屏沉浸模式">
+              <i data-lucide="maximize"></i>
+              <span>全屏模式</span>
+            </button>
+            <button id="qrCodeBtn" class="header-btn hidden-mobile" title="手机扫码打开网页">
+              <i data-lucide="qr-code"></i>
+              <span>手机扫码连接</span>
+            </button>
+            <button id="headerHelpDocBtn" class="header-btn" title="查看新手快速上手指南">
+              <i data-lucide="book-open"></i>
+              <span>使用指南</span>
+            </button>
+            <button id="reloadBtn" class="header-btn" title="重新加载页面">
+              <i data-lucide="refresh-cw"></i>
+              <span>重新加载</span>
+            </button>
+            <div class="deck-dropdown-divider"></div>
+            <button id="logoutBtn" class="header-btn danger" title="退出并断开控制台">
+              <i data-lucide="log-out"></i>
+              <span>断开连接</span>
+            </button>
+          </div>
         </div>
       </div>
     </aside>

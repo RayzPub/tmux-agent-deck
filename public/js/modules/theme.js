@@ -6,13 +6,13 @@ export function updateThemeButtonUI(isLight) {
   const textSpan = themeToggleBtn.querySelector('span');
   const icon = themeToggleBtn.querySelector('i, svg');
   if (isLight) {
-    if (textSpan) textSpan.textContent = 'MINIMAL';
+    if (textSpan) textSpan.textContent = '浅色模式';
     if (icon) {
       icon.setAttribute('data-lucide', 'sun');
     }
     themeToggleBtn.classList.add('active');
   } else {
-    if (textSpan) textSpan.textContent = 'CYBERPUNK';
+    if (textSpan) textSpan.textContent = '深色模式';
     if (icon) {
       icon.setAttribute('data-lucide', 'moon');
     }
@@ -26,14 +26,11 @@ export function updateThemeButtonUI(isLight) {
 export function updateMetaThemeColor(isLight) {
   const meta = document.getElementById('pwaThemeColor');
   if (meta) {
-    // In light mode, make it white (#ffffff) to blend with the light theme header
-    // In dark mode, match surface-0 (#141a29) to seamlessly blend PWA titlebar/window frame with the top header
-    meta.setAttribute('content', isLight ? '#ffffff' : '#141a29');
+    // In light mode: #ffffff; In dark mode: #17191e (matches --c-bg & --c-side)
+    meta.setAttribute('content', isLight ? '#ffffff' : '#17191e');
   }
   const statusBarMeta = document.getElementById('appleStatusBarMeta') || document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
   if (statusBarMeta) {
-    // In light mode, use 'default' so iOS uses dark icons/text without rendering dark gradient scrim overlay
-    // In dark mode, use 'black-translucent' so the dark space theme blends with system status bar
     statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
   }
 }

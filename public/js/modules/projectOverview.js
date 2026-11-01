@@ -14,7 +14,11 @@ function closeSidebarOnMobile() {
   const sidebarOverlay = document.getElementById('sidebarOverlay');
   if (window.innerWidth <= 768 && sidebar && sidebarOverlay) {
     sidebar.classList.remove('open');
+    sidebar.classList.remove('collapsed');
     sidebarOverlay.classList.add('hidden');
+    document.body.classList.remove('sidebar-open');
+    const expandBtn = document.getElementById('sidebarExpandBtn');
+    if (expandBtn) expandBtn.classList.remove('hidden');
   }
 }
 

@@ -1042,9 +1042,27 @@ function bindComposerEvents() {
     });
 
     textarea.addEventListener('input', () => {
-      textarea.style.height = 'auto';
+      const currentVal = textarea.value || '';
+      const prevVal = textarea._prevValue || '';
+      textarea._prevValue = currentVal;
+
       const maxHeight = window.innerWidth <= 768 ? 96 : 150;
-      textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+      const minHeight = 24;
+      const currentHeight = textarea.offsetHeight;
+
+      let targetHeight;
+      if (currentVal.length < prevVal.length) {
+        textarea.style.height = `${minHeight}px`;
+        targetHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+      } else {
+        targetHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+      }
+
+      if (Math.abs(targetHeight - currentHeight) > 1) {
+        textarea.style.height = `${targetHeight}px`;
+      }
+
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
 
       const val = textarea.value;
       if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
@@ -1057,6 +1075,11 @@ function bindComposerEvents() {
     textarea.addEventListener('focus', () => {
       if (inputRow) inputRow.classList.add('is-focused');
       scrollToChatBottom(true);
+      [100, 250, 400].forEach((delay) => {
+        setTimeout(() => {
+          scrollToChatBottom(false);
+        }, delay);
+      });
     });
 
     textarea.addEventListener('blur', () => {

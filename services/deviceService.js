@@ -244,9 +244,9 @@ function registerConnection(deviceId, ws, deviceRecord, io) {
 
   console.log(`[DeviceService] Device online: ${deviceId} (${deviceRecord.name}) for user ${deviceRecord.userId}`);
 
-  // Broadcast device status update to web clients via Socket.io
-  if (io) {
-    io.emit('device:status_change', {
+  // Broadcast device status update strictly to the owner's private room via Socket.io
+  if (io && deviceRecord.userId) {
+    io.to(`user:${deviceRecord.userId}`).emit('device:status_change', {
       deviceId,
       userId: deviceRecord.userId,
       isOnline: true,
@@ -284,8 +284,9 @@ function unregisterConnection(deviceId, wsOrIo, maybeIo) {
 
   console.log(`[DeviceService] Device offline: ${deviceId}`);
 
-  if (io && conn) {
-    io.emit('device:status_change', {
+  // Broadcast device status update strictly to the owner's private room via Socket.io
+  if (io && conn && conn.userId) {
+    io.to(`user:${conn.userId}`).emit('device:status_change', {
       deviceId,
       userId: conn.userId,
       isOnline: false,

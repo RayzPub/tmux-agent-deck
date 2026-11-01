@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCNOW · 全尺寸设备视口与单一安全壳适配架构规范</title>
+  <style>
+    :root {
+      --bg: #0b0e17;
+      --surface-1: #141a29;
+      --surface-2: #1c253b;
+      --surface-3: #222d47;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(0, 240, 255, 0.3);
+      --cyan: #00f0ff;
+      --purple: #ac9bff;
+      --pink: #ff007f;
+      --green: #00ff88;
+      --amber: #facc15;
+      --red: #ef4444;
+      --text: #e2e8f0;
+      --text-muted: #8b9bb4;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    header.doc-header {
+      max-width: 1200px;
+      margin: 0 auto 32px auto;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .badge-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .spec-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(0, 240, 255, 0.1);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      color: var(--cyan);
+    }
+
+    .spec-badge.purple {
+      background: rgba(172, 155, 255, 0.12);
+      border-color: rgba(172, 155, 255, 0.3);
+      color: var(--purple);
+    }
+
+    .doc-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .doc-desc {
+      color: var(--text-muted);
+      font-size: 14px;
+      max-width: 900px;
+    }
+
+    /* Tab Switcher */
+    .view-switcher {
+      max-width: 1200px;
+      margin: 0 auto 28px auto;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      background: var(--surface-1);
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .view-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .view-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .view-btn.active {
+      background: var(--surface-2);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
+    }
+
+    /* Section Panels */
+    .spec-panel {
+      display: none;
+      max-width: 1200px;
+      margin: 0 auto;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .spec-panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Grid Layout for Mockup & Notes */
+    .mockup-grid {
+      display: grid;
+      grid-template-columns: minmax(360px, 480px) 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      .mockup-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Device Mockup Shell */
+    .device-stage {
+      display: flex;
+      justify-content: center;
+      padding: 20px 0;
+      background: radial-gradient(circle at 50% 20%, rgba(0, 240, 255, 0.06), transparent 70%);
+      border-radius: 16px;
+      border: 1px dashed var(--border);
+    }
+
+    /* ==========================================================================
+       MOCKUP 1: iPhone 18
+       ========================================================================== */
+    .phone-frame {
+      width: 380px;
+      height: 780px;
+      background: #000;
+      border-radius: 54px; /* G2 iPhone 18 Super-ellipse */
+      padding: 12px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 0 3px #282f3d, 0 0 0 5px #121620;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen-canvas {
+      width: 100%;
+      height: 100%;
+      background: var(--surface-1);
+      border-radius: 44px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Dynamic Island */
+    .dynamic-island {
+      position: absolute;
+      top: 11px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 124px;
+      height: 35px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+    }
+
+    .island-camera {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #111;
+      border: 1px solid #222;
+    }
+
+    .island-sensor {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #080c14;
+    }
+
+    /* Status Bar */
+    .mock-status-bar {
+      height: 50px;
+      padding: 12px 28px 0 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      z-index: 90;
+      flex-shrink: 0;
+    }
+
+    /* Safe Shell Inset Outline Visualizer */
+    .safe-shell-overlay {
+      position: absolute;
+      top: 54px; /* env(safe-area-inset-top) */
+      bottom: 34px; /* env(safe-area-inset-bottom) */
+      left: 0;
+      right: 0;
+      border: 2px dashed rgba(0, 240, 255, 0.45);
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 80;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .safe-shell-label {
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.15);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    /* Inner Mock UI */
+    .mock-tabs-bar {
+      height: 32px;
+      margin-top: 6px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .mock-tab {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .mock-tab.active {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.08);
+    }
+
+    .mock-chat-flow {
+      flex: 1;
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .mock-msg {
+      max-width: 82%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .mock-msg.user {
+      align-self: flex-end;
+      background: var(--purple);
+      color: #0b0e17;
+      border-bottom-right-radius: 2px;
+      font-weight: 500;
+    }
+
+    .mock-msg.assistant {
+      align-self: flex-start;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 2px;
+    }
+
+    .mock-composer-area {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      background: var(--surface-1);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      z-index: 10;
+    }
+
+    .mock-input-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border-accent);
+      border-radius: 18px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .mock-input-placeholder {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .mock-input-tools {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .mock-tool-pills {
+      display: flex;
+      gap: 4px;
+    }
+
+    .mock-tool-pill {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+    }
+
+    .mock-send-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--cyan);
+      color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    /* Home Indicator */
+    .home-indicator-zone {
+      height: 34px; /* env(safe-area-inset-bottom) */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: var(--surface-1);
+    }
+
+    .home-bar {
+      width: 135px;
+      height: 4.5px;
+      background: #ffffff;
+      border-radius: 999px;
+      opacity: 0.85;
+    }
+
+    /* ==========================================================================
+       MOCKUP 2: iPhone Duo / Foldable Vertical (Laptop Posture)
+       ========================================================================== */
+    .duo-vertical-frame {
+      width: 390px;
+      height: 820px;
+      background: #0f131c;
+      border-radius: 20px;
+      padding: 8px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 0 2px #263042;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .duo-screen-half {
+      flex: 1;
+      background: var(--surface-1);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .duo-hinge-seam {
+      height: 18px;
+      background: #080a10;
+      border-top: 1px solid #1a2333;
+      border-bottom: 1px solid #1a2333;
+      margin: 4px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--amber);
+      gap: 6px;
+      letter-spacing: 0.5px;
+    }
+
+    .mock-terminal-screen {
+      flex: 1;
+      background: #080a12;
+      padding: 8px 10px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: #38bdf8;
+      line-height: 1.4;
+      overflow: hidden;
+    }
+
+    .mock-keys-bar {
+      display: flex;
+      gap: 4px;
+      padding: 4px 6px;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .mock-key {
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    /* ==========================================================================
+       MOCKUP 3: iPhone Duo / Foldable Horizontal (Book Posture)
+       ========================================================================== */
+    .duo-horizontal-frame {
+      width: 680px;
+      height: 480px;
+      background: #0f131c;
+      border-radius: 20px;
+      padding: 8px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 0 2px #263042;
+      display: flex;
+      flex-direction: row;
+    }
+
+    .duo-screen-left {
+      width: 250px;
+      background: var(--surface-0, #13151b);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 10px;
+    }
+
+    .duo-v-hinge {
+      width: 14px;
+      background: #080a10;
+      border-left: 1px solid #1a2333;
+      border-right: 1px solid #1a2333;
+      margin: 0 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      writing-mode: vertical-rl;
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+      color: var(--amber);
+      letter-spacing: 2px;
+    }
+
+    .duo-screen-right {
+      flex: 1;
+      background: var(--surface-1);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Explanation Cards */
+    .notes-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .info-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .info-card.cyan-card {
+      border-color: rgba(0, 240, 255, 0.3);
+      background: linear-gradient(145deg, rgba(0, 240, 255, 0.05), rgba(20, 26, 41, 0.6));
+    }
+
+    .info-card.amber-card {
+      border-color: rgba(250, 204, 21, 0.3);
+      background: linear-gradient(145deg, rgba(250, 204, 21, 0.05), rgba(20, 26, 41, 0.6));
+    }
+
+    .info-card.green-card {
+      border-color: rgba(0, 255, 136, 0.3);
+      background: linear-gradient(145deg, rgba(0, 255, 136, 0.05), rgba(20, 26, 41, 0.6));
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-text {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    .code-snippet {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 10px 14px;
+      border-radius: 6px;
+      color: var(--cyan);
+      margin-top: 6px;
+      overflow-x: auto;
+    }
+
+    /* Comparison Slider / Grid */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 768px) {
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .compare-box {
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .compare-box.bad {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .compare-box.good {
+      background: rgba(0, 255, 136, 0.08);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+    }
+
+    .compare-title {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .compare-box.bad .compare-title { color: var(--red); }
+    .compare-box.good .compare-title { color: var(--green); }
+
+    .compare-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="doc-header">
+    <div class="badge-bar">
+      <span class="spec-badge">VIEWPORT & SAFE-SHELL SPEC</span>
+      <span class="spec-badge purple">CROSS-DEVICE ENGINE</span>
+      <span class="spec-badge">HTML SPEC PREVIEW</span>
+    </div>
+    <h1 class="doc-title">
+      <span>📱 移动、折叠双屏与 PC 全场景单一安全区架构规范</span>
+    </h1>
+    <p class="doc-desc">
+      本规范阐明如何通过“物理全景铺底 + 外层单一安全壳（Single Safe-Shell）”架构，彻底解决 iPhone 18 超椭圆大圆角、折叠屏内外屏、多设备异形屏下<strong>输入框下方悬空 50px 幽灵空白</strong>的顽疾，并确保 PC 桌面端 0 干扰。
+    </p>
+  </header>
+
+  <!-- Interactive Switcher -->
+  <nav class="view-switcher">
+    <button class="view-btn active" onclick="switchView('iphone18')">
+      <span>📱 iPhone 18 直板全面屏 (393 × 852)</span>
+    </button>
+    <button class="view-btn" onclick="switchView('duo-v')">
+      <span>📖 Duo 内屏 · 竖屏 (笔记本上下双屏)</span>
+    </button>
+    <button class="view-btn" onclick="switchView('duo-h')">
+      <span>📂 Duo 内屏 · 横屏 (书籍左右双屏)</span>
+    </button>
+    <button class="view-btn" onclick="switchView('compare')">
+      <span>⚖️ 50px 间隙根因剖析与对比</span>
+    </button>
+  </nav>
+
+  <!-- ========================================================================
+       PANEL 1: iPhone 18
+       ======================================================================== -->
+  <section class="spec-panel active" id="panel-iphone18">
+    <div class="mockup-grid">
+      <!-- Device Canvas Mockup -->
+      <div class="device-stage">
+        <div class="phone-frame">
+          <div class="screen-canvas">
+            <!-- Dynamic Island -->
+            <div class="dynamic-island">
+              <div class="island-camera"></div>
+              <div class="island-sensor"></div>
+            </div>
+
+            <!-- Top Status Bar -->
+            <div class="mock-status-bar">
+              <span>09:41</span>
+              <span>5G 🔋</span>
+            </div>
+
+            <!-- Single Safe-Shell Boundary (Virtual Overlay Indicator) -->
+            <div class="safe-shell-overlay">
+              <span class="safe-shell-label">Safe Shell (Padding Bounds)</span>
+            </div>
+
+            <!-- Inner App UI -->
+            <div class="mock-tabs-bar">
+              <div class="mock-tab active">智能体会话</div>
+              <div class="mock-tab">Tmux终端</div>
+              <div class="mock-tab">+</div>
+            </div>
+
+            <div class="mock-chat-flow">
+              <div class="mock-msg assistant">
+                你好！我是当前工作区的 Antigravity 智能体。请问今天有什么任务需要我协助处理？
+              </div>
+              <div class="mock-msg user">
+                帮我排查一下底部输入框多出空白的问题。
+              </div>
+              <div class="mock-msg assistant">
+                已为您锁定根因：由于之前外层和内层同时写了 env(safe-area)，产生了双重扣减；现已升级为外层单一安全壳，输入框已自然吸底！
+              </div>
+            </div>
+
+            <!-- Bottom Composer -->
+            <div class="mock-composer-area">
+              <div class="mock-input-box">
+                <div class="mock-input-placeholder">输入消息，可添加/粘贴图片文件，输入 / 呼出指令...</div>
+                <div class="mock-input-tools">
+                  <div class="mock-tool-pills">
+                    <span class="mock-tool-pill">📎 附件</span>
+                    <span class="mock-tool-pill">/ 指令</span>
+                  </div>
+                  <div class="mock-send-btn">↑</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Home Bar Zone -->
+            <div class="home-indicator-zone">
+              <div class="home-bar"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Engineering Notes -->
+      <div class="notes-container">
+        <div class="info-card cyan-card">
+          <h3 class="card-title">💡 iPhone 18 单一安全壳执行法则</h3>
+          <p class="card-text">
+            <strong>1. 底色全景穿透：</strong><br>
+            <code>html, body { position: fixed; inset: 0; background: var(--c-bg); }</code><br>
+            深色背景直接延伸到灵动岛、手机四角圆弧（R=54px）和底部手势横条背后，彻底告别浏览器黑边/白条。
+          </p>
+          <p class="card-text">
+            <strong>2. 外层独占避让：</strong><br>
+            全站<strong>仅由最外层容器</strong>（<code>.main-container</code>）声明一次：<br>
+            <code>padding-top: env(safe-area-inset-top);</code><br>
+            <code>padding-bottom: env(safe-area-inset-bottom);</code>
+          </p>
+          <p class="card-text">
+            <strong>3. 业务组件零感知：</strong><br>
+            内部的 <code>.agent-chat-composer</code> 与 <code>.workspace-tabs</code> 完全不再编写任何 <code>env()</code>。输入框直接以标准 Flex 沉底，与底部的 Home Bar 天然贴合，<strong>底部的 50px 冗余空白彻底消失！</strong>
+          </p>
+        </div>
+
+        <div class="info-card">
+          <h3 class="card-title">📐 物理参数映射表 (iPhone 18 / 17 Pro)</h3>
+          <div class="code-snippet">
+env(safe-area-inset-top)    = 59px (避开灵动岛与硬件天线状态栏)
+env(safe-area-inset-bottom) = 34px (避开底部系统 Home 手势小横条)
+env(safe-area-inset-left)   = 0px
+env(safe-area-inset-right)  = 0px
+物理超椭圆圆角曲率           = R54px (业务在安全框内，文字绝不切角)
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       PANEL 2: iPhone Duo / Foldable Vertical (Laptop Posture)
+       ======================================================================== -->
+  <section class="spec-panel" id="panel-duo-v">
+    <div class="mockup-grid">
+      <div class="device-stage">
+        <div class="duo-vertical-frame">
+          <!-- Screen 1: Top Display -->
+          <div class="duo-screen-half">
+            <div class="mock-tabs-bar">
+              <div class="mock-tab active">🤖 Agent 对话流</div>
+              <div class="mock-tab">📄 业务代码</div>
+            </div>
+            <div class="mock-chat-flow">
+              <div class="mock-msg assistant">
+                【上半屏：展示与阅读区】<br>
+                当前任务：正在监听前端编译任务，测试覆盖率 98.4%
+              </div>
+              <div class="mock-msg user">
+                正在后台跑测试，下半屏终端可以直观看到进度！
+              </div>
+            </div>
+          </div>
+
+          <!-- Middle Hinge Seam (折痕/铰链) -->
+          <div class="duo-hinge-seam">
+            <span>─── 物理折痕与铰链缝隙 (Hinge Seam ≈ 18px ~ 34px) ───</span>
+          </div>
+
+          <!-- Screen 2: Bottom Display -->
+          <div class="duo-screen-half">
+            <div class="mock-terminal-screen">
+              [Terminal Workspace - Tmux Node]<br>
+              $ npm run build:prod<br>
+              &gt; esbuild public/js/app.js --bundle --minify --outdir=public/dist<br>
+              ✔ Build completed in 42ms [Hash: 9e3f2a]<br>
+              $ tail -f /var/log/deck-access.log<br>
+              [2026-11-01 23:25] WebSocket connection established.
+            </div>
+
+            <!-- Expanded Keyboard Helper Bar -->
+            <div class="mock-keys-bar">
+              <span class="mock-key">ESC</span>
+              <span class="mock-key">TAB</span>
+              <span class="mock-key">Ctrl-C</span>
+              <span class="mock-key">/clear</span>
+              <span class="mock-key">PgUp</span>
+              <span class="mock-key">PgDn</span>
+              <span class="mock-key">←</span>
+              <span class="mock-key">↑</span>
+              <span class="mock-key">↓</span>
+              <span class="mock-key">→</span>
+            </div>
+
+            <!-- Terminal Mobile Input -->
+            <div class="mock-composer-area" style="border-top: none;">
+              <div class="mock-input-box" style="padding: 6px 10px;">
+                <div class="mock-input-tools">
+                  <span style="font-size: 11px;">$ 口述或输入终端命令...</span>
+                  <div class="mock-send-btn" style="width:20px; height:20px;">↵</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="home-indicator-zone" style="height: 20px;">
+              <div class="home-bar" style="width: 100px; height: 3.5px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="notes-container">
+        <div class="info-card amber-card">
+          <h3 class="card-title">📖 Duo 竖屏：笔记本 / Console 姿态解密</h3>
+          <p class="card-text">
+            <strong>为什么以前下半部分是大片空白？</strong><br>
+            因为双屏展开竖着握持时，纵向高度通常高达 <strong>1400px+</strong>。如果只把它当作单张网页渲染，内容都在上面，底部的输入框又因为双重 padding 悬在中间，导致下半块屏幕几乎全部被浪费。
+          </p>
+          <p class="card-text">
+            <strong>最佳利用模式：上下双屏联动（Top-Bottom Dual View）</strong><br>
+            • <strong>上半屏（视线直视）</strong>：固定呈现 Agent 对话思考流或代码编辑器；<br>
+            • <strong>下半屏（手持操作）</strong>：展开为完整的 Tmux 实时终端 + 大键位控制基座。
+          </p>
+        </div>
+
+        <div class="info-card">
+          <h3 class="card-title">⚡ CSS Viewport Segments API 驱动</h3>
+          <div class="code-snippet">
+@media (vertical-viewport-segments: 2),
+       (screen-spanning: single-fold-horizontal) {
+  /* 上半屏自动对齐第一个视口段 */
+  .chat-view-container {
+    height: env(viewport-segment-height 0 0);
+  }
+  /* 下半屏对齐第二个视口段，铰链处完全留白保护，不跨缝撕裂文字 */
+  .terminal-view-container {
+    height: env(viewport-segment-height 0 1);
+  }
+}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       PANEL 3: iPhone Duo / Foldable Horizontal (Book Posture)
+       ======================================================================== -->
+  <section class="spec-panel" id="panel-duo-h">
+    <div class="mockup-grid">
+      <div class="device-stage">
+        <div class="duo-horizontal-frame">
+          <!-- Screen 1: Left Display -->
+          <div class="duo-screen-left">
+            <div style="font-size: 13px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 6px;">
+              <div style="width: 8px; height: 8px; background: var(--cyan); border-radius: 2px;"></div>
+              <span>CCNOW // DECK</span>
+            </div>
+            <div style="font-size: 11px; background: rgba(255,255,255,0.05); padding: 6px 8px; border-radius: 6px; color: var(--cyan);">
+              🖥️ 当前操作机器: 云端主机
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); display:flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+              <span style="color: #fff; font-weight: 600;">📁 工作区目录树</span>
+              <span>▾ 📂 tmux-agent-deck</span>
+              <span style="padding-left: 12px;">▾ 📁 public/css</span>
+              <span style="padding-left: 20px; color: var(--purple);">📄 style.css</span>
+              <span style="padding-left: 20px;">📄 chat-mode.css</span>
+              <span style="padding-left: 12px;">▸ 📁 routes</span>
+              <span style="padding-left: 12px;">▸ 📁 services</span>
+            </div>
+            <div style="margin-top: auto; font-size: 11px; padding: 6px 8px; background: rgba(0,0,0,0.3); border-radius: 6px;">
+              👤 admin (已连接)
+            </div>
+          </div>
+
+          <!-- Middle Hinge -->
+          <div class="duo-v-hinge">
+            <span>HINGE SEAM</span>
+          </div>
+
+          <!-- Screen 2: Right Display -->
+          <div class="duo-screen-right">
+            <div class="mock-tabs-bar" style="border-bottom: 1px solid var(--border);">
+              <div class="mock-tab active">智能体工作区</div>
+              <div class="mock-tab">style.css [编辑中]</div>
+            </div>
+            <div class="mock-chat-flow">
+              <div class="mock-msg assistant">
+                【右半屏：高精度工作台】<br>
+                左屏常驻工作区文件树与状态监视，右屏完整沉浸在代码或对话中，两屏协同。
+              </div>
+            </div>
+            <div class="mock-composer-area">
+              <div class="mock-input-box">
+                <div class="mock-input-placeholder">对智能体发送修改指令...</div>
+              </div>
+            </div>
+            <div class="home-indicator-zone" style="height: 18px;">
+              <div class="home-bar" style="width: 80px; height: 3px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="notes-container">
+        <div class="info-card green-card">
+          <h3 class="card-title">📂 Duo 横屏：双列书籍 / Book 姿态</h3>
+          <p class="card-text">
+            <strong>横向双视口协同 (`horizontal-viewport-segments: 2`)：</strong><br>
+            • <strong>左屏（Segment 0）</strong>：固定放置 248px~280px 的侧边栏，作为导航中枢（机器切换、工作区切换、文件树）；<br>
+            • <strong>右屏（Segment 1）</strong>：填满所有剩余宽度，作为 Agent 对话与代码编辑器的高效工作台；<br>
+            • <strong>垂直铰链自然分割</strong>：物理缝隙正好落在侧边栏和工作台的接缝处，视觉上没有任何割裂感。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       PANEL 4: 50px Bug Breakdown
+       ======================================================================== -->
+  <section class="spec-panel" id="panel-compare">
+    <div class="notes-container">
+      <div class="info-card cyan-card">
+        <h3 class="card-title">🔬 为什么之前输入框下方会多出一道“输入框大小”的 50px 空白？</h3>
+        <p class="card-text">
+          经过我们之前的排查，这个 50px 的空隙是由两组机制叠加产生的：
+        </p>
+
+        <div class="compare-grid">
+          <div class="compare-box bad">
+            <div class="compare-title">❌ 改造前：双重 Safe-Area + 100dvh 扣减陷阱</div>
+            <div class="compare-desc">
+              1. <strong>安全区重复叠加：</strong>外层 <code>.terminal-workspace</code> 扣除了 34px (env-bottom)，内层 <code>.agent-chat-composer</code> 自身又扣了 34px (env-bottom)，两层相加产生了 <strong>68px</strong> 的物理抬高；<br><br>
+              2. <strong>100dvh 幽灵工具栏扣减：</strong>移动端浏览器内核误扣除了不存在的 44px 浏览器底部导航条，把 <code>.main-container</code> 顶格底边卡在了半空中；<br><br>
+              3. <strong>视觉表现：</strong>输入框漂浮在离屏幕底部约 50~60px 的半空中，底下露出一大截未利用的死区背景。
+            </div>
+          </div>
+
+          <div class="compare-box good">
+            <div class="compare-title">✔ 改造后：外层单一安全壳 + 内层纯净 Flex 贴底</div>
+            <div class="compare-desc">
+              1. <strong>全景铺底：</strong>根节点 <code>position: fixed; inset: 0;</code>，消除任何白边黑边；<br><br>
+              2. <strong>单一安全壳：</strong>全站只有 <code>.main-container</code> 消费一次 <code>env(safe-area-inset-bottom)</code>，只避让一次真实的 Home 手势横条；<br><br>
+              3. <strong>内层组件零污染：</strong>输入框 <code>padding-bottom: 0</code>，紧紧吸附在安全壳的最底沿，<strong>这 50px 直接全部释放还给上方的内容聊天流！</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3 class="card-title">🖥️ PC 桌面端为何能做到 100% 零影响？</h3>
+        <p class="card-text">
+          1. <strong>PC 端环境变量天然为 0：</strong>在 PC 桌面（Windows/Mac Chrome/Firefox）上，<code>env(safe-area-inset-*)</code> 严格求值为 <code>0px</code>，因此安全壳在 PC 上等同于无任何额外 padding 的标准全屏容器；<br>
+          2. <strong>消灭移动端侵入代码：</strong>以前在子组件里写死的 <code>max(8px, env(...))</code> 会在 PC 端无端垫高 8px，收拢到外层后，PC 端的子组件完全是原汁原味的 Desktop CSS；<br>
+          3. <strong>MacBook 刘海屏全屏体验更佳：</strong>如果在带刘海的 MacBook Pro 全屏 Safari 运行，顶栏会自动由外壳避让刘海，完全无需专门编写 Mac 适配逻辑。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    function switchView(viewId) {
+      document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.spec-panel').forEach(panel => panel.classList.remove('active'));
+
+      const targetBtn = Array.from(document.querySelectorAll('.view-btn')).find(b => b.getAttribute('onclick').includes(viewId));
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const targetPanel = document.getElementById(`panel-${viewId}`);
+      if (targetPanel) targetPanel.classList.add('active');
+    }
+  </script>
+</body>
+</html>

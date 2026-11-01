@@ -237,8 +237,14 @@ function closeSidebarOnMobile() {
   if (window.innerWidth <= 768) {
     const sidebar = document.querySelector('.sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
-    if (sidebar) sidebar.classList.remove('open');
+    if (sidebar) {
+      sidebar.classList.remove('open');
+      sidebar.classList.remove('collapsed');
+    }
     if (sidebarOverlay) sidebarOverlay.classList.add('hidden');
+    document.body.classList.remove('sidebar-open');
+    const expandBtn = document.getElementById('sidebarExpandBtn');
+    if (expandBtn) expandBtn.classList.remove('hidden');
   }
 }
 

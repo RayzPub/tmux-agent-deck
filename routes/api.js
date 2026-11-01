@@ -27,6 +27,10 @@ const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaude
 const llmGatewayService = require('../services/llmGatewayService');
 const projectService = require('../services/projectService');
 const deviceService = require('../services/deviceService');
+const { requireDeviceOwnership } = require('../middlewares/deviceGuard');
+
+// Global middleware to guard device access across all API endpoints
+router.use(requireDeviceOwnership);
 
 // Shell escape utility for safe command interpolation
 const shellescape = (s) => {
@@ -1382,7 +1386,7 @@ router.post('/files/save', requireAuth, async (req, res) => {
 
 // Upload files (supports images, markdown, text, code, etc.)
 router.post('/files/upload', requireAuth, (req, res) => {
-  fileUpload.array('files', 20)(req, res, (err) => {
+  fileUpload.array('files', 20)(req, res, async (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
@@ -1395,6 +1399,41 @@ router.post('/files/upload', requireAuth, (req, res) => {
 
     try {
       const workspacePath = req.body.workspacePath || '';
+      const deviceId = req.body.deviceId || req.query.deviceId;
+
+      // Handle remote edge device file upload via device RPC tunnel
+      if (deviceId && deviceId !== 'cloud') {
+        if (!req.files || req.files.length === 0) {
+          return res.status(400).json({ error: '未选择任何待上传文件' });
+        }
+        const uploadedFiles = [];
+        for (const file of req.files) {
+          const originalName = file.originalname || 'uploaded_file';
+          const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim();
+          if (!cleanName || cleanName === '.' || cleanName === '..') {
+            continue;
+          }
+          const uploadRes = await deviceService.remoteUploadFile(
+            deviceId,
+            workspacePath,
+            cleanName,
+            file.buffer.toString('base64')
+          );
+          if (uploadRes && !uploadRes.error) {
+            uploadedFiles.push({
+              name: cleanName,
+              path: cleanName,
+              size: file.size
+            });
+          }
+        }
+        return res.json({
+          success: true,
+          message: `成功上传 ${uploadedFiles.length} 个文件至远程设备`,
+          files: uploadedFiles
+        });
+      }
+
       const targetDirRel = req.body.targetDir || '';
       const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
       
@@ -1942,11 +1981,13 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
       const result = await deviceService.remoteChatHistory(targetDeviceId, name);
       return res.json({
         sessionName: name,
-        sessionMode: 'hybrid',
+        sessionMode: result?.sessionMode || 'hybrid',
+        supported: true,
+        lastUpdated: result?.lastUpdated || Date.now(),
         messages: result?.messages || []
       });
     } catch (e) {
-      return res.json({ sessionName: name, sessionMode: 'hybrid', messages: [] });
+      return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
     }
   }
 

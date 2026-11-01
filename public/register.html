@@ -7,7 +7,7 @@
   <!-- iOS & Android PWA Standalone Optimization -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
   <title>CCNOW - 注册新账号</title>
   <!-- Google Fonts -->
@@ -52,7 +52,7 @@
   <!-- Floating Theme Switcher Pill -->
   <button type="button" id="authThemeToggleBtn" class="auth-theme-toggle-btn" title="切换深浅主题">
     <i data-lucide="moon" id="authThemeIcon"></i>
-    <span id="authThemeText">赛博朋克</span>
+    <span id="authThemeText">深色模式</span>
   </button>
 
   <!-- Register Container -->
@@ -168,7 +168,7 @@
       const textEl = document.getElementById('authThemeText');
       function syncAuthThemeUI() {
         const isLight = document.body.classList.contains('light-minimalist');
-        if (textEl) textEl.textContent = isLight ? '浅色极简' : '赛博朋克';
+        if (textEl) textEl.textContent = isLight ? '浅色模式' : '深色模式';
         const iconEl = btn ? btn.querySelector('i, svg') : null;
         if (iconEl && window.lucide) {
           iconEl.setAttribute('data-lucide', isLight ? 'sun' : 'moon');

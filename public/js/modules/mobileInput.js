@@ -9,27 +9,37 @@ import { fitTerminal } from './terminal.js';
  */
 export function autoResizeMobileInput(textarea) {
   if (!textarea) return;
-  // Reset height to let scrollHeight compute natural scroll dimensions
-  textarea.style.height = 'auto';
 
-  // Constrain between 36px (1 row) and 120px (approx 5 rows)
-  const targetHeight = Math.min(Math.max(textarea.scrollHeight, 36), 120);
-  textarea.style.height = `${targetHeight}px`;
+  const currentHeight = textarea.offsetHeight;
+  const currentVal = textarea.value || '';
+  const prevVal = textarea._prevValue || '';
+  textarea._prevValue = currentVal;
+
+  let targetHeight;
+  if (currentVal.length < prevVal.length) {
+    textarea.style.height = '36px';
+    targetHeight = Math.min(Math.max(textarea.scrollHeight, 36), 120);
+  } else {
+    targetHeight = Math.min(Math.max(textarea.scrollHeight, 36), 120);
+  }
+
+  if (Math.abs(targetHeight - currentHeight) > 1) {
+    textarea.style.height = `${targetHeight}px`;
+
+    const mobileControls = document.querySelector('.mobile-bottom-controls');
+    if (mobileControls) {
+      document.documentElement.style.setProperty(
+        '--mobile-controls-height',
+        `${mobileControls.offsetHeight}px`
+      );
+    }
+  }
 
   // Enable vertical scroll only if text overflows max-height
   if (textarea.scrollHeight > 120) {
     textarea.style.overflowY = 'auto';
   } else {
     textarea.style.overflowY = 'hidden';
-  }
-
-  // Update dynamic CSS variable for bottom controls height
-  const mobileControls = document.querySelector('.mobile-bottom-controls');
-  if (mobileControls) {
-    document.documentElement.style.setProperty(
-      '--mobile-controls-height',
-      `${mobileControls.offsetHeight}px`
-    );
   }
 }
 
@@ -45,18 +55,64 @@ export function isStandalone() {
 }
 export const isIosStandalone = isStandalone;
 
+let wasKeyboardOpen = false;
+
 /**
- * Synchronize viewport height (Kept as safe no-op for pure CSS layout)
+ * Synchronize viewport height and virtual keyboard state (iOS Safari / PWA Standalone / Duo Foldable)
  */
 export function syncAppViewportHeight() {
-  // Pure CSS flex layout (100dvh + interactive-widget=resizes-content) handles keyboard height natively.
+  if (typeof window === 'undefined') return;
+
+  const vv = window.visualViewport;
+  const winHeight = window.innerHeight;
+  const currentHeight = vv ? vv.height : winHeight;
+  const diff = winHeight - currentHeight;
+
+  // Keyboard detection iron rule: virtual keyboard can ONLY exist if an editable element currently has focus!
+  // This completely eliminates false positive keyboard detection during screen rotation (orientation change)
+  // where winHeight and visualViewport differ momentarily during layout inversion.
+  const activeEl = document.activeElement;
+  const isInputFocused = Boolean(
+    activeEl && (
+      activeEl.tagName === 'INPUT' ||
+      activeEl.tagName === 'TEXTAREA' ||
+      activeEl.isContentEditable
+    )
+  );
+
+  // On wide/landscape screens (winHeight <= 520px), genuine software keyboard takes >= 90px.
+  // Minor address bar/indicator bar variations range between 0-60px and must NOT be treated as a keyboard.
+  const minThreshold = winHeight < 520 ? 90 : 110;
+  const isKeyboardOpen = isInputFocused && (diff > minThreshold);
+  const keyboardHeight = isKeyboardOpen ? Math.max(0, Math.round(diff)) : 0;
+
+  const root = document.documentElement;
+  const body = document.body;
+
+  if (isKeyboardOpen) {
+    wasKeyboardOpen = true;
+    body.classList.add('keyboard-open');
+    root.style.setProperty('--app-height', `${Math.round(currentHeight)}px`);
+    root.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
+  } else {
+    body.classList.remove('keyboard-open');
+    // Remove inline properties so container cleanly falls back to 100% natural height
+    root.style.removeProperty('--app-height');
+    root.style.removeProperty('--keyboard-height');
+
+    // If keyboard was previously open and now closed, aggressively restore WebKit viewport scroll
+    if (wasKeyboardOpen) {
+      wasKeyboardOpen = false;
+      restorePwaViewportScroll();
+    }
+  }
 }
 
 /**
  * Duet-inspired viewport recovery:
- * When virtual keyboard dismisses on iOS Safari / standalone PWA,
- * WebKit often leaves the window scrolled upwards with a blank dead zone.
- * Reset scrollX and scrollY to 0 and nudge layout reflow.
+ * When virtual keyboard dismisses on iOS Safari / standalone PWA / Duo wide screen,
+ * WebKit often leaves window.scrollY displaced upwards with a dead blank zone at the bottom.
+ * Reset scrollX and scrollY to 0 and nudge layout reflow across progressive intervals.
  */
 export function restorePwaViewportScroll() {
   if (typeof window === 'undefined') return;
@@ -67,22 +123,30 @@ export function restorePwaViewportScroll() {
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
     }
-    // Force WebKit synchronous reflow to clear blank void
+    // Force WebKit synchronous reflow & purge PWA Compositor dead zone
     void document.body.offsetHeight;
+    if (document.documentElement.style.transform !== undefined) {
+      document.documentElement.style.transform = 'translateZ(0)';
+      requestAnimationFrame(() => {
+        document.documentElement.style.transform = '';
+      });
+    }
   };
 
   restore();
-  [40, 160, 320].forEach((delay) => setTimeout(restore, delay));
+  [15, 40, 80, 150, 250, 400].forEach((delay) => setTimeout(restore, delay));
 }
 
 /**
- * Handle screen orientation & window resize events to maintain terminal sizing
+ * Handle screen orientation, visualViewport & window resize events to maintain responsive sizing & unblocked inputs
  */
 export function initVisualViewportLinkage() {
   if (typeof window === 'undefined') return;
 
   let resizeTimer = null;
   const handleResize = () => {
+    syncAppViewportHeight();
+
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       try {
@@ -95,38 +159,110 @@ export function initVisualViewportLinkage() {
           cached.term.scrollToBottom();
         }
       }
-    }, 120);
+
+      // Keep chat message stream pinned to bottom if in chat mode
+      const chatMessages = document.getElementById('agentChatMessages');
+      const chatContainer = document.getElementById('agentChatContainer');
+      if (chatMessages && chatContainer && !chatContainer.classList.contains('hidden')) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }, 60);
   };
 
+  // 1. Visual Viewport API bindings for iOS WebKit & Modern Browsers
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', handleResize);
+    window.visualViewport.addEventListener('scroll', () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+      }
+      syncAppViewportHeight();
+    });
+  }
+
+  // 2. Window and visibility events
   window.addEventListener('resize', handleResize);
-  window.addEventListener('orientationchange', handleResize);
-  window.addEventListener('pageshow', handleResize);
+
+  // Aggressive multi-stage orientation recovery for iPhone Duo / Foldables
+  window.addEventListener('orientationchange', () => {
+    // Stage 1: Immediately purge keyboard classes & dimensions to avoid rotation freeze
+    wasKeyboardOpen = false;
+    document.body.classList.remove('keyboard-open');
+    document.documentElement.style.removeProperty('--app-height');
+    document.documentElement.style.removeProperty('--keyboard-height');
+    restorePwaViewportScroll();
+
+    // Stage 2: If an input was active, release it to prevent WebKit rotation dislocation
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+      active.blur();
+    }
+
+    // Stage 3: Multi-phase reflow as WebKit orientation animation completes
+    [50, 150, 300, 500].forEach((delay) => {
+      setTimeout(() => {
+        handleResize();
+        restorePwaViewportScroll();
+      }, delay);
+    });
+  });
+
+  window.addEventListener('pageshow', () => {
+    handleResize();
+    restorePwaViewportScroll();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       handleResize();
     }
   });
 
-  // Exit tmux copy-mode when tapping mobile input
+  // Guard against window scrolling in PWA / flex 100dvh layout
+  window.addEventListener('scroll', () => {
+    if (window.scrollY !== 0 || window.scrollX !== 0) {
+      window.scrollTo(0, 0);
+    }
+  }, { passive: true });
+
+  // 3. Focusin guard: handle mobile command input tmux copy-mode exit and prevent WebKit scroll drift
   document.addEventListener('focusin', (e) => {
-    if (e.target && e.target.id === 'mobileCommandInput' && state.currentSession) {
+    const target = e.target;
+    if (target && target.id === 'mobileCommandInput' && state.currentSession) {
       const cached = state.sessionCache.get(state.currentSession);
       if (cached && cached.socket) {
         cached.socket.emit('exit-copy-mode');
       }
     }
+
+    const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (isInput) {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+      }
+
+      // Progressive sync as virtual keyboard finishes opening animation
+      [30, 100, 250, 400].forEach((delay) => {
+        setTimeout(() => {
+          syncAppViewportHeight();
+          if (window.scrollY !== 0 || window.scrollX !== 0) {
+            window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+          }
+        }, delay);
+      });
+    }
   });
 
-  // When mobile virtual keyboard dismisses on any input/textarea, restore viewport scroll
+  // 4. When mobile virtual keyboard dismisses on any input/textarea, restore viewport scroll
   document.addEventListener('focusout', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
       setTimeout(() => {
         const active = document.activeElement;
-        const stillInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+        const stillInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
         if (!stillInput) {
+          syncAppViewportHeight();
           restorePwaViewportScroll();
         }
-      }, 50);
+      }, 80);
     }
   });
 }

@@ -1634,3 +1634,78 @@ body.light-minimalist .remote-composer-send-btn {
   background: #4f46e5;
   color: #ffffff;
 }
+
+/* ==========================================================================
+   CCNOW · Visual Refresh Overrides (Invite & Admin Modals)
+   ========================================================================== */
+.invite-modal-card {
+  background: var(--c-bg) !important;
+  border: 1px solid var(--c-line) !important;
+  border-radius: 11px !important;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.25) !important;
+  color: var(--c-text) !important;
+}
+
+.invite-modal-header {
+  border-bottom: 1px solid var(--c-line) !important;
+  padding: 14px 18px !important;
+}
+
+.invite-modal-title {
+  color: var(--c-text) !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+.cyber-tab {
+  color: var(--c-muted) !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-bottom: 2px solid transparent !important;
+}
+
+.cyber-tab:hover {
+  color: var(--c-text) !important;
+  background: var(--c-soft) !important;
+}
+
+.cyber-tab.active {
+  color: var(--c-accent) !important;
+  border-bottom: 2px solid var(--c-accent) !important;
+}
+
+.remote-device-panel {
+  background: var(--c-bg) !important;
+  border: 1px solid var(--c-line) !important;
+  border-radius: 10px !important;
+}
+
+.remote-panel-header {
+  background: var(--c-bg) !important;
+  border-bottom: 1px solid var(--c-line) !important;
+}
+
+.remote-deck-composer {
+  background: var(--c-bg) !important;
+  border-top: 1px solid var(--c-line) !important;
+}
+
+.remote-composer-textarea {
+  background: var(--c-soft) !important;
+  border: 1px solid var(--c-line) !important;
+  border-radius: 8px !important;
+  color: var(--c-text) !important;
+}
+
+.remote-composer-textarea:focus {
+  border-color: var(--c-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-accent) 25%, transparent) !important;
+}
+
+.remote-composer-send-btn {
+  background: var(--c-accent) !important;
+  color: var(--c-on) !important;
+  border-radius: 8px !important;
+}
+

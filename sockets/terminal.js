@@ -40,6 +40,13 @@ const initSocket = (io) => {
   // Socket.io Terminal Connection
   io.on('connection', (socket) => {
     console.log('Client connected to terminal socket:', socket.id);
+
+    // Auto-join private user room for isolated push events and status broadcasts
+    const activeUsername = socket.user?.username || (MULTI_USER_ENABLED ? null : 'admin');
+    if (activeUsername) {
+      socket.join(`user:${activeUsername}`);
+    }
+
     let ptyProcess = null;
     let isReinitializing = false;
     let lastCols = null;
@@ -71,6 +78,14 @@ const initSocket = (io) => {
 
       // If targeting a remote edge device (e.g. Mac/Linux workstation)
       if (deviceId && deviceId !== 'cloud') {
+        const username = socket.user?.username || (MULTI_USER_ENABLED ? null : 'admin');
+        const device = deviceService.getDeviceById(deviceId);
+        if (!device || (username && device.userId !== username)) {
+          console.warn(`[Security Alert] Access denied: User "${username}" attempted unauthorized terminal access to device "${deviceId}" (owned by "${device?.userId}")`);
+          socket.emit('terminal-output', '\r\n\x1b[31;1mError: Device not found or not owned by you.\x1b[0m\r\n');
+          return;
+        }
+
         socket.remoteDeviceId = deviceId;
         socket.remoteTermId = socket.id;
         console.log(`[Terminal] Routing terminal socket ${socket.id} to remote edge device: ${deviceId} (Session: ${sessionName})`);

@@ -137,6 +137,8 @@ initLlmGatewayAdminPanel();
 function updateFullscreenButtonState() {
   if (!fullscreenToggleBtn) return;
   const isFull = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  document.body.classList.toggle('is-fullscreen', isFull);
+  document.documentElement.classList.toggle('is-fullscreen', isFull);
   const icon = fullscreenToggleBtn.querySelector('i');
   const span = fullscreenToggleBtn.querySelector('span');
   if (span) {
@@ -155,7 +157,7 @@ if (fullscreenToggleBtn) {
     try {
       if (!document.fullscreenElement && !document.webkitFullscreenElement) {
         if (document.documentElement.requestFullscreen) {
-          await document.documentElement.requestFullscreen();
+          await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
         } else if (document.documentElement.webkitRequestFullscreen) {
           await document.documentElement.webkitRequestFullscreen();
         } else {
@@ -191,23 +193,23 @@ if (typeof require !== 'undefined') {
       base: 'vs-dark',
       inherit: true,
       rules: [
-        { token: 'comment', foreground: '7f8a9e', fontStyle: 'italic' },
-        { token: 'keyword', foreground: '00f0ff', fontStyle: 'bold' },
-        { token: 'string', foreground: 'ff007f' },
-        { token: 'number', foreground: '39ff14' },
-        { token: 'type', foreground: '9d00ff' },
-        { token: 'class', foreground: '9d00ff', fontStyle: 'bold' },
-        { token: 'function', foreground: 'ffcc00' }
+        { token: 'comment', foreground: '7b7f8d', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'ac9bff', fontStyle: 'bold' },
+        { token: 'string', foreground: '64cda2' },
+        { token: 'number', foreground: 'f3f99d' },
+        { token: 'type', foreground: 'c084fc' },
+        { token: 'class', foreground: 'c084fc', fontStyle: 'bold' },
+        { token: 'function', foreground: 'ac9bff' }
       ],
       colors: {
-        'editor.background': '#162033',
-        'editor.foreground': '#f2f5fa',
-        'editor.lineHighlightBackground': '#1d2a45',
-        'editorCursor.foreground': '#00f0ff',
-        'editor.selectionBackground': 'rgba(0, 240, 255, 0.2)',
-        'editorLineNumber.foreground': '#4e5866',
-        'editorLineNumber.activeForeground': '#00f0ff',
-        'editor.lineHighlightBorder': 'rgba(0, 240, 255, 0.1)'
+        'editor.background': '#17191e',
+        'editor.foreground': '#e9e9ee',
+        'editor.lineHighlightBackground': '#22252e',
+        'editorCursor.foreground': '#ac9bff',
+        'editor.selectionBackground': 'rgba(172, 155, 255, 0.25)',
+        'editorLineNumber.foreground': '#7b7f8d',
+        'editorLineNumber.activeForeground': '#ac9bff',
+        'editor.lineHighlightBorder': 'rgba(172, 155, 255, 0.1)'
       }
     });
 
@@ -331,27 +333,24 @@ export function renderSessions(sessions) {
 
     let modeBadgeHtml = '';
     if (session.sessionMode === 'chat_only') {
-      modeBadgeHtml = '<span class="session-mode-badge mode-chat" title="纯会话模式 (OAR 统一运行时驱动)">💬 OAR</span>';
+      modeBadgeHtml = '<span class="session-mode-badge mode-chat" title="纯会话模式 (OAR 统一运行时驱动)">OAR</span>';
     } else if (session.sessionMode === 'terminal_only') {
-      modeBadgeHtml = '<span class="session-mode-badge mode-terminal" title="纯终端模式 (原生 ANSI 命令行)">💻 终端</span>';
+      modeBadgeHtml = '<span class="session-mode-badge mode-terminal" title="纯终端模式 (原生 ANSI 命令行)">终端</span>';
     } else {
-      modeBadgeHtml = '<span class="session-mode-badge mode-hybrid" title="混合双模 (支持在聊天与终端间平滑切换)">⚡ 双模</span>';
+      modeBadgeHtml = '<span class="session-mode-badge mode-hybrid" title="混合双模 (支持在聊天与终端间平滑切换)">双模</span>';
     }
+
+    card.setAttribute('title', `${session.name} · 工作区: ${workspaceText}${session.agentModel ? ` (模型: ${session.agentModel})` : ''} · 创建于: ${session.created}`);
 
     card.innerHTML = `
       <div class="session-info">
         <div class="session-name-wrapper">
-          <span class="session-status-dot ${session.attached ? 'attached' : 'detached'}" title="${session.attached ? '前台查看 (Active)' : '后台挂起 (Background)'}"></span>
+          <span class="session-status-dot ${session.attached ? 'attached' : 'detached'}" title="${session.attached ? '前台活跃 (Active)' : '后台挂起 (Background)'}"></span>
           <div class="session-name" title="${session.name}">${session.name}</div>
-          ${modeBadgeHtml}
-        </div>
-        <div class="session-workspace" title="${session.path || '默认工作区'}${session.agentModel ? ` (模型: ${session.agentModel})` : ''}">
-          <i data-lucide="folder"></i>
-          <span>${workspaceText}</span>
         </div>
       </div>
-      <div class="session-meta">
-        <span class="session-time">${session.created}</span>
+      <div class="session-sub-row">
+        ${modeBadgeHtml}
         <div class="card-actions">
           <button class="session-more-btn" data-action="toggle-menu" data-name="${session.name}" title="更多操作">
             <i data-lucide="more-horizontal"></i>
@@ -476,11 +475,45 @@ window.deckEvents = {
   loadSessions
 };
 
+const sidebarExpandBtn = document.getElementById('sidebarExpandBtn');
+
+// Unified sidebar expand button state synchronization
+function updateSidebarExpandBtnState(explicitOpenState) {
+  const expandBtn = document.getElementById('sidebarExpandBtn');
+  const sidebarEl = document.getElementById('sidebar');
+  if (!sidebarEl) return;
+
+  // Determine if sidebar is currently visible/open to the user
+  let isSidebarOpen;
+  if (typeof explicitOpenState === 'boolean') {
+    isSidebarOpen = explicitOpenState;
+  } else {
+    isSidebarOpen = (window.innerWidth <= 768)
+      ? sidebarEl.classList.contains('open')
+      : !sidebarEl.classList.contains('collapsed');
+  }
+
+  if (expandBtn) {
+    if (isSidebarOpen) {
+      expandBtn.classList.add('hidden');
+    } else {
+      expandBtn.classList.remove('hidden');
+    }
+  }
+  if (isSidebarOpen) {
+    document.body.classList.add('sidebar-open');
+  } else {
+    document.body.classList.remove('sidebar-open');
+  }
+}
+
 // Unified sidebar closed function
 function closeSidebarOnMobile() {
-  if (window.innerWidth <= 760 && sidebar && sidebarOverlay) {
+  if (window.innerWidth <= 768 && sidebar && sidebarOverlay) {
     sidebar.classList.remove('open');
+    sidebar.classList.remove('collapsed');
     sidebarOverlay.classList.add('hidden');
+    updateSidebarExpandBtnState(false);
   }
 }
 
@@ -512,22 +545,34 @@ if (closeTerminalBtn) {
 // Sidebar drawer toggle
 if (sidebar && sidebarOverlay) {
   const toggleSidebar = () => {
-    if (window.innerWidth <= 760) {
-      sidebar.classList.toggle('open');
-      sidebarOverlay.classList.toggle('hidden');
+    if (window.innerWidth <= 768) {
+      const willOpen = !sidebar.classList.contains('open');
+      sidebar.classList.remove('collapsed');
+      sidebar.classList.toggle('open', willOpen);
+      sidebarOverlay.classList.toggle('hidden', !willOpen);
+      updateSidebarExpandBtnState(willOpen);
+      if (willOpen) {
+        if (!tabFilesBtn.classList.contains('active') && tabSessionsBtn) {
+          tabSessionsBtn.click();
+        }
+      }
     } else {
       sidebar.classList.toggle('collapsed');
+      updateSidebarExpandBtnState();
       setTimeout(fitTerminal, 350);
     }
   };
 
   const closeSidebar = () => {
-    if (window.innerWidth <= 760) {
+    if (window.innerWidth <= 768) {
       sidebar.classList.remove('open');
+      sidebar.classList.remove('collapsed');
       sidebarOverlay.classList.add('hidden');
+      updateSidebarExpandBtnState(false);
     } else {
       if (!sidebar.classList.contains('collapsed')) {
         sidebar.classList.add('collapsed');
+        updateSidebarExpandBtnState();
         setTimeout(fitTerminal, 350);
       }
     }
@@ -536,6 +581,22 @@ if (sidebar && sidebarOverlay) {
   if (sidebarToggle) {
     sidebarToggle.addEventListener('click', toggleSidebar);
   }
+  if (sidebarExpandBtn) {
+    sidebarExpandBtn.addEventListener('click', toggleSidebar);
+  }
+  updateSidebarExpandBtnState();
+
+  // Global shortcut: Cmd/Ctrl + B to toggle sidebar
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+      if (!isInput) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    }
+  });
   sidebarOverlay.addEventListener('click', closeSidebar);
   if (closeSidebarBtn) {
     closeSidebarBtn.addEventListener('click', closeSidebar);
@@ -544,15 +605,21 @@ if (sidebar && sidebarOverlay) {
     closeSidebarBtnFiles.addEventListener('click', closeSidebar);
   }
 
-  // Auto clean up drawer and overlay when switching from mobile/portrait to landscape/desktop (>760px)
+  // Auto clean up drawer and overlay when switching from mobile/portrait to landscape/desktop (>768px)
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 760) {
+    if (window.innerWidth > 768) {
       if (sidebar.classList.contains('open')) {
         sidebar.classList.remove('open');
       }
       if (!sidebarOverlay.classList.contains('hidden')) {
         sidebarOverlay.classList.add('hidden');
       }
+      document.body.classList.remove('sidebar-open');
+      updateSidebarExpandBtnState();
+    } else {
+      sidebar.classList.remove('collapsed');
+      const isOpen = sidebar.classList.contains('open');
+      updateSidebarExpandBtnState(isOpen);
     }
   });
 
@@ -566,7 +633,7 @@ if (sidebar && sidebarOverlay) {
   }, { passive: true });
 
   document.addEventListener('touchend', (e) => {
-    const isTouch = window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+    const isTouch = window.innerWidth <= 768 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
     if (!isTouch && window.innerWidth > 1024) return;
 
     const touchEndX = e.changedTouches[0].clientX;
@@ -577,21 +644,27 @@ if (sidebar && sidebarOverlay) {
 
     // Horizontal swipe threshold of 60px, must be mostly horizontal
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
-      if (window.innerWidth <= 760) {
+      if (window.innerWidth <= 768) {
         const isSidebarOpen = sidebar.classList.contains('open');
 
         if (deltaX > 0) {
           // Swipe Right (Left-to-right) -> Open Sidebar
           // Only trigger if starting from the left edge of the screen (< 50px)
           if (!isSidebarOpen && touchStartX < 50) {
+            sidebar.classList.remove('collapsed');
             sidebar.classList.add('open');
             sidebarOverlay.classList.remove('hidden');
+            updateSidebarExpandBtnState(true);
+            if (!tabFilesBtn.classList.contains('active') && tabSessionsBtn) {
+              tabSessionsBtn.click();
+            }
           }
         } else {
           // Swipe Left (Right-to-left) -> Close Sidebar
           if (isSidebarOpen) {
             sidebar.classList.remove('open');
             sidebarOverlay.classList.add('hidden');
+            updateSidebarExpandBtnState(false);
           }
         }
       } else {
@@ -599,9 +672,11 @@ if (sidebar && sidebarOverlay) {
         const isCollapsed = sidebar.classList.contains('collapsed');
         if (deltaX > 0 && isCollapsed && touchStartX < 60) {
           sidebar.classList.remove('collapsed');
+          updateSidebarExpandBtnState();
           setTimeout(fitTerminal, 350);
         } else if (deltaX < 0 && !isCollapsed) {
           sidebar.classList.add('collapsed');
+          updateSidebarExpandBtnState();
           setTimeout(fitTerminal, 350);
         }
       }
@@ -616,14 +691,14 @@ if (cyberHeader) {
     if (e.target.closest('button, .header-btn, .sidebar-toggle-btn, #sidebarToggle, #deckControlToggleBtn, .deck-control-dropdown, a, input, select')) {
       return;
     }
-    if (window.innerWidth <= 760) e.preventDefault();
+    if (window.innerWidth <= 768) e.preventDefault();
   }, { passive: false });
 }
 
 const terminalWorkspace = document.querySelector('.terminal-workspace');
 if (terminalWorkspace) {
   terminalWorkspace.addEventListener('touchmove', (e) => {
-    if (window.innerWidth <= 760) {
+    if (window.innerWidth <= 768) {
       if (e.target.closest('#editorTextarea') || 
           e.target.closest('#markdownPreview') || 
           e.target.closest('#diffPanel .editor-container-wrapper') || 
@@ -646,6 +721,18 @@ if (terminalWorkspace) {
 
 // Workspace Selector changes
 explorerWorkspaceSelect.addEventListener('change', () => {
+  if (explorerWorkspaceSelect.value === '__action_new_workspace__') {
+    explorerWorkspaceSelect.value = state.currentWorkspacePath;
+    explorerWorkspaceSelect.dispatchEvent(new Event('sync-custom'));
+    explorerNewWorkspaceBtn.click();
+    return;
+  }
+  if (explorerWorkspaceSelect.value === '__action_delete_workspace__') {
+    explorerWorkspaceSelect.value = state.currentWorkspacePath;
+    explorerWorkspaceSelect.dispatchEvent(new Event('sync-custom'));
+    explorerDeleteWorkspaceBtn.click();
+    return;
+  }
   state.currentWorkspacePath = explorerWorkspaceSelect.value;
   localStorage.setItem('lastWorkspacePath', state.currentWorkspacePath);
   updateDeleteWorkspaceBtnState();
@@ -1040,8 +1127,24 @@ if (welcomeNewSessionBtn) {
 const welcomeSelectSessionBtn = document.getElementById('welcomeSelectSessionBtn');
 if (welcomeSelectSessionBtn) {
   welcomeSelectSessionBtn.addEventListener('click', () => {
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    if (sidebarToggle) sidebarToggle.click();
+    const tabSessionsBtn = document.getElementById('tabSessionsBtn');
+    if (tabSessionsBtn) tabSessionsBtn.click();
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    if (window.innerWidth <= 768) {
+      if (sidebar) {
+        sidebar.classList.remove('collapsed');
+        sidebar.classList.add('open');
+      }
+      if (sidebarOverlay) sidebarOverlay.classList.remove('hidden');
+      updateSidebarExpandBtnState(true);
+    } else {
+      if (sidebar && sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
+        updateSidebarExpandBtnState();
+        setTimeout(fitTerminal, 350);
+      }
+    }
   });
 }
 
@@ -1250,7 +1353,13 @@ function convertSelectToCustom(selectEl) {
       selectedText.innerHTML = '<span style="color: var(--text-secondary);">选择选项</span>';
       return;
     }
-    const opt = selectEl.options[selectedIndex];
+    let opt = selectEl.options[selectedIndex];
+    if (opt && opt.value && opt.value.startsWith('__action_')) {
+      const realOpt = Array.from(selectEl.options).find(o => o.value === state.currentWorkspacePath && !o.value.startsWith('__action_')) || selectEl.options[0];
+      if (realOpt && realOpt !== opt) {
+        opt = realOpt;
+      }
+    }
     const text = opt.textContent;
     
     if (opt.value === '') {
@@ -1274,7 +1383,15 @@ function convertSelectToCustom(selectEl) {
 
   function rebuildOptions() {
     dropdown.innerHTML = '';
+    let hasActionDivider = false;
     Array.from(selectEl.options).forEach((opt, idx) => {
+      if (opt.value && opt.value.startsWith('__action_') && !hasActionDivider) {
+        const divider = document.createElement('div');
+        divider.className = 'cyber-custom-select-divider';
+        dropdown.appendChild(divider);
+        hasActionDivider = true;
+      }
+
       const optEl = document.createElement('div');
       optEl.className = 'cyber-custom-select-option';
       optEl.dataset.value = opt.value;
@@ -1296,6 +1413,22 @@ function convertSelectToCustom(selectEl) {
             ${text}
           </span>
         `;
+      } else if (opt.value === '__action_new_workspace__') {
+        optEl.classList.add('special-option', 'action-new-workspace');
+        optEl.innerHTML = `
+          <span style="display: flex; align-items: center; gap: 6px; color: var(--c-accent); font-weight: 500;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            ${text}
+          </span>
+        `;
+      } else if (opt.value === '__action_delete_workspace__') {
+        optEl.classList.add('special-option', 'action-delete-workspace');
+        optEl.innerHTML = `
+          <span style="display: flex; align-items: center; gap: 6px; color: #ff5566; font-weight: 500;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            ${text}
+          </span>
+        `;
       } else {
         const match = text.match(/^(.+?)\s*\((.+?)\)$/);
         if (match) {
@@ -1312,6 +1445,16 @@ function convertSelectToCustom(selectEl) {
 
       optEl.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (opt.value === '__action_new_workspace__') {
+          container.classList.remove('open');
+          explorerNewWorkspaceBtn.click();
+          return;
+        }
+        if (opt.value === '__action_delete_workspace__') {
+          container.classList.remove('open');
+          explorerDeleteWorkspaceBtn.click();
+          return;
+        }
         selectEl.value = opt.value;
         selectEl.dispatchEvent(new Event('change'));
         container.classList.remove('open');
@@ -1324,6 +1467,8 @@ function convertSelectToCustom(selectEl) {
       dropdown.appendChild(optEl);
     });
   }
+
+  selectEl.addEventListener('sync-custom', syncSelectedText);
 
   triggerBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1403,6 +1548,19 @@ async function loadWorkspaces() {
       opt.textContent = w.name;
       explorerWorkspaceSelect.appendChild(opt);
     });
+
+    const actionNewOpt = document.createElement('option');
+    actionNewOpt.value = '__action_new_workspace__';
+    actionNewOpt.textContent = '新建工作区...';
+    explorerWorkspaceSelect.appendChild(actionNewOpt);
+
+    if (state.currentWorkspacePath && state.workspacesList.some(w => w.path === state.currentWorkspacePath)) {
+      const actionDelOpt = document.createElement('option');
+      actionDelOpt.value = '__action_delete_workspace__';
+      actionDelOpt.textContent = '移除当前工作区...';
+      explorerWorkspaceSelect.appendChild(actionDelOpt);
+    }
+
     explorerWorkspaceSelect.value = state.currentWorkspacePath;
 
     sessionWorkspaceSelect.innerHTML = '';
@@ -1474,11 +1632,9 @@ loadWorkspaces().then(async () => {
     applySessionViewMode(currentSess);
   }
 
-  if (isFirstLogin) {
-    const tabFilesBtn = document.getElementById('tabFilesBtn');
-    if (tabFilesBtn) {
-      tabFilesBtn.click();
-    }
+  const tabSessionsBtn = document.getElementById('tabSessionsBtn');
+  if (tabSessionsBtn) {
+    tabSessionsBtn.click();
   }
   
   // Setup dynamic intervals and micro-systems
@@ -1502,12 +1658,26 @@ loadWorkspaces().then(async () => {
   if (deckControlToggleBtn && deckControlDropdownMenu) {
     deckControlToggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      deckControlDropdownMenu.classList.toggle('hidden');
+      const isHidden = deckControlDropdownMenu.classList.toggle('hidden');
+      deckControlToggleBtn.classList.toggle('active', !isHidden);
+      if (!isHidden) {
+        deckControlDropdownMenu.scrollTop = 0;
+      }
     });
+
+    // Touch event guard on iPhone / Surface Duo: prevent drawer swipes from hijacking menu scrolls
+    deckControlDropdownMenu.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
+
+    deckControlDropdownMenu.addEventListener('touchmove', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
 
     document.addEventListener('click', (e) => {
       if (!deckControlDropdownMenu.contains(e.target) && !deckControlToggleBtn.contains(e.target)) {
         deckControlDropdownMenu.classList.add('hidden');
+        deckControlToggleBtn.classList.remove('active');
       }
     });
 
@@ -1515,6 +1685,7 @@ loadWorkspaces().then(async () => {
       const target = e.target.closest('button, .header-btn');
       if (target && (target.id === 'imBotBtn' || target.id === 'logoutBtn' || target.id === 'reloadBtn' || target.id === 'qrCodeBtn' || target.id === 'headerHelpDocBtn' || target.id === 'adminPanelBtn' || target.id === 'userKeysBtn')) {
         deckControlDropdownMenu.classList.add('hidden');
+        deckControlToggleBtn.classList.remove('active');
       }
     });
   }
@@ -1626,6 +1797,7 @@ loadWorkspaces().then(async () => {
       adminPanelModal.classList.remove('hidden');
       if (deckControlDropdownMenu) {
         deckControlDropdownMenu.classList.add('hidden');
+        deckControlToggleBtn?.classList.remove('active');
       }
       
       const adminTabsHeader = document.getElementById('adminTabsHeader');
@@ -1693,6 +1865,7 @@ loadWorkspaces().then(async () => {
       adminPanelModal.classList.remove('hidden');
       if (deckControlDropdownMenu) {
         deckControlDropdownMenu.classList.add('hidden');
+        deckControlToggleBtn?.classList.remove('active');
       }
       
       const adminTabsHeader = document.getElementById('adminTabsHeader');
