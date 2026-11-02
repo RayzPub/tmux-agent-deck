@@ -971,10 +971,10 @@
 /* 8. 20px Dual-Ring Composer Engine + Slash Command Popover (open-claude-ui) */
 .agent-chat-composer {
   position: relative;
-  padding: 6px 14px max(6px, env(safe-area-inset-bottom, 0px)) 14px;
+  padding: 6px 14px var(--safe-bottom, 6px) 14px;
   padding-left: max(14px, env(safe-area-inset-left, 0px));
   padding-right: max(14px, env(safe-area-inset-right, 0px));
-  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--safe-bottom, 6px);
   background: transparent;
   display: flex;
   flex-direction: column;
@@ -1318,7 +1318,7 @@
   }
   .agent-chat-composer {
     padding: 4px 10px;
-    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--safe-bottom, 6px);
   }
   .chat-input-row {
     border-radius: 18px;
@@ -1580,7 +1580,7 @@ body:has(#terminalPanel:not(.hidden) #agentChatContainer:not(.hidden)) .terminal
 
   /* Compact Composer */
   .agent-chat-composer {
-    padding: 3px 8px max(6px, env(safe-area-inset-bottom, 0px)) 8px !important;
+    padding: 3px 8px var(--safe-bottom, 6px) 8px !important;
     background: transparent !important;
     border-top: none !important;
     border-radius: 0 !important;
@@ -2852,7 +2852,7 @@ body.light-minimalist .cds-accordion {
 /* 3. Composer Section (Centered, Limited Width on Wide Screens) */
 .agent-chat-composer {
   margin-top: auto !important;
-  padding: 6px 18px max(6px, env(safe-area-inset-bottom, 0px)) !important;
+  padding: 6px 18px var(--safe-bottom, 6px) !important;
   background: var(--c-bg) !important;
   border-top: none !important;
   border-radius: 0 !important;
@@ -3101,7 +3101,7 @@ body.light-minimalist .chat-send-btn {
 
   .agent-chat-composer {
     flex-shrink: 0 !important;
-    padding: 6px 12px max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    padding: 6px 12px var(--safe-bottom, 6px) !important;
     border-top: none !important;
   }
 

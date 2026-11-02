@@ -24,14 +24,36 @@ export function updateThemeButtonUI(isLight) {
 }
 
 export function updateMetaThemeColor(isLight) {
-  const meta = document.getElementById('pwaThemeColor');
+  const bg = isLight ? '#ffffff' : '#17191e';
+  const meta = document.getElementById('pwaThemeColor') || document.querySelector('meta[name="theme-color"]');
   if (meta) {
     // In light mode: #ffffff; In dark mode: #17191e (matches --c-bg & --c-side)
-    meta.setAttribute('content', isLight ? '#ffffff' : '#17191e');
+    meta.setAttribute('content', bg);
+    if (meta.parentNode) {
+      const clone = meta.cloneNode(true);
+      meta.parentNode.replaceChild(clone, meta);
+    }
   }
   const statusBarMeta = document.getElementById('appleStatusBarMeta') || document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
   if (statusBarMeta) {
+    // In light mode, use 'default' so iOS uses dark icons/text without rendering dark gradient scrim overlay
+    // In dark mode, use 'black-translucent' so the dark space theme blends with system status bar
     statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
+    if (statusBarMeta.parentNode) {
+      const statusClone = statusBarMeta.cloneNode(true);
+      statusBarMeta.parentNode.replaceChild(statusClone, statusBarMeta);
+    }
+  }
+  if (document.documentElement) {
+    document.documentElement.style.removeProperty('background-color');
+    document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
+    document.documentElement.style.transform = 'translateZ(0)';
+    requestAnimationFrame(() => {
+      document.documentElement.style.transform = '';
+    });
+  }
+  if (document.body) {
+    document.body.style.removeProperty('background-color');
   }
 }
 

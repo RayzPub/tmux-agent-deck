@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-  <meta name="theme-color" id="pwaThemeColor" content="#141a29">
+  <meta name="theme-color" id="pwaThemeColor" content="#17191e">
   <!-- iOS & Android PWA Standalone Optimization -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="default">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
   <script>
     (function() {
@@ -17,8 +17,9 @@
         if (isLight) {
           document.documentElement.classList.add('light-minimalist');
         }
+        document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
         const meta = document.getElementById('pwaThemeColor');
-        if (meta) meta.setAttribute('content', isLight ? '#ffffff' : '#141a29');
+        if (meta) meta.setAttribute('content', isLight ? '#ffffff' : '#17191e');
         const statusBarMeta = document.getElementById('appleStatusBarMeta');
         if (statusBarMeta) statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
       } catch (e) {}

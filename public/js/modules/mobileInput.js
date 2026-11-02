@@ -96,8 +96,9 @@ export function syncAppViewportHeight() {
     root.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
   } else {
     body.classList.remove('keyboard-open');
-    // Remove inline properties so container cleanly falls back to 100% natural height
+    // Remove inline properties so container cleanly falls back to CSS 100dvh / -webkit-fill-available
     root.style.removeProperty('--app-height');
+    root.style.removeProperty('--app-width');
     root.style.removeProperty('--keyboard-height');
 
     // If keyboard was previously open and now closed, aggressively restore WebKit viewport scroll
@@ -125,7 +126,7 @@ export function restorePwaViewportScroll() {
     }
     // Force WebKit synchronous reflow & purge PWA Compositor dead zone
     void document.body.offsetHeight;
-    if (document.documentElement.style.transform !== undefined) {
+    if (document.documentElement && document.documentElement.style.transform !== undefined) {
       document.documentElement.style.transform = 'translateZ(0)';
       requestAnimationFrame(() => {
         document.documentElement.style.transform = '';
@@ -189,6 +190,7 @@ export function initVisualViewportLinkage() {
     wasKeyboardOpen = false;
     document.body.classList.remove('keyboard-open');
     document.documentElement.style.removeProperty('--app-height');
+    document.documentElement.style.removeProperty('--app-width');
     document.documentElement.style.removeProperty('--keyboard-height');
     restorePwaViewportScroll();
 
@@ -199,13 +201,25 @@ export function initVisualViewportLinkage() {
     }
 
     // Stage 3: Multi-phase reflow as WebKit orientation animation completes
-    [50, 150, 300, 500].forEach((delay) => {
+    [50, 150, 300, 500, 800, 1200].forEach((delay) => {
       setTimeout(() => {
         handleResize();
         restorePwaViewportScroll();
       }, delay);
     });
   });
+
+  // Some iOS PWA / foldable builds skip 'resize' after rotation; listen to orientation APIs directly
+  const settleAfterRotation = () => {
+    [0, 100, 300, 600, 1000].forEach((delay) => setTimeout(handleResize, delay));
+  };
+  if (window.screen && window.screen.orientation && typeof window.screen.orientation.addEventListener === 'function') {
+    window.screen.orientation.addEventListener('change', settleAfterRotation);
+  }
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(orientation: landscape)');
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', settleAfterRotation);
+  }
 
   window.addEventListener('pageshow', () => {
     handleResize();

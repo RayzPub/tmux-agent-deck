@@ -27,6 +27,7 @@
   /* Viewport & Virtual Keyboard Dynamics (iPhone & Duo Adaptive) */
   --app-height: 100dvh;
   --keyboard-height: 0px;
+  --safe-bottom: 6px;
   --header-safe-top: max(10px, calc(8px + env(safe-area-inset-top, 0px)));
   --header-safe-left: max(32px, calc(20px + env(safe-area-inset-left, 0px)));
 
@@ -109,7 +110,6 @@
 }
 
 html {
-  position: relative;
   margin: 0;
   padding: 0;
   width: 100%;
@@ -117,7 +117,7 @@ html {
   height: 100%;
   height: -webkit-fill-available;
   height: 100dvh;
-  background-color: var(--bg-core, #141a29) !important;
+  background-color: var(--bg-core, #17191e) !important;
   overflow: hidden;
   overscroll-behavior: none;
   overscroll-behavior-y: none;
@@ -137,8 +137,9 @@ body {
   padding: 0;
   width: 100%;
   height: 100%;
+  height: -webkit-fill-available;
   height: 100dvh;
-  background-color: var(--bg-core, #141a29) !important;
+  background-color: var(--bg-core, #17191e) !important;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 16px;
@@ -531,17 +532,20 @@ body {
    DASHBOARD STYLES (index.html)
    ========================================================================== */
 .dashboard-body {
-  width: 100%;
-  height: 100%;
-  height: var(--app-height, 100%);
-  max-height: var(--app-height, 100%);
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
+  width: 100% !important;
+  height: 100% !important;
+  height: -webkit-fill-available !important;
+  height: 100dvh !important;
+  height: var(--app-height, 100dvh) !important;
+  max-height: var(--app-height, 100dvh) !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
   overscroll-behavior: none;
   overscroll-behavior-y: none;
-  display: flex;
-  flex-direction: column;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 /* Header */
@@ -4570,7 +4574,7 @@ body.light-minimalist .sidebar-footer .deck-dropdown-menu::-webkit-scrollbar-thu
     margin-right: -14px !important;
     margin-bottom: 0 !important;
     padding: 5px 14px !important;
-    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: var(--safe-bottom, 6px) !important;
   }
 
   .sidebar-footer-btn {
@@ -7343,17 +7347,17 @@ body.light-minimalist .auth-alert.success .alert-message {
 
   /* 14.1 Full-Bleed Edge-to-Edge Canvas: Zero Padding, Zero Extra Margins */
   .dashboard-body {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
     gap: 0 !important;
     width: 100% !important;
     width: 100vw !important;
     height: 100% !important;
+    height: -webkit-fill-available !important;
+    height: 100dvh !important;
+    height: var(--app-height, 100dvh) !important;
+    max-height: var(--app-height, 100dvh) !important;
+    min-height: 0 !important;
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -7470,9 +7474,9 @@ body.light-minimalist .auth-alert.success .alert-message {
 
   /* Right Conversation Workspace fills all remaining space */
   .terminal-workspace {
-    padding: 0 max(6px, env(safe-area-inset-right, 0px)) 3px 6px !important;
+    padding: 0 max(6px, env(safe-area-inset-right, 0px)) 0 6px !important;
     padding-top: 0 !important;
-    padding-bottom: max(3px, calc(env(safe-area-inset-bottom, 0px) - 14px)) !important;
+    padding-bottom: 0 !important;
     background: transparent;
     height: 100%;
     width: auto;
@@ -7754,7 +7758,7 @@ body.light-minimalist .auth-alert.success .alert-message {
     flex: 1 1 0% !important;
     min-width: 0 !important;
     min-height: 0 !important;
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: 0 !important;
   }
 }
 
@@ -7767,19 +7771,16 @@ body.light-minimalist .sidebar {
    ========================================================================== */
 @media (display-mode: fullscreen), (display-mode: standalone) {
   html, body {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
     width: 100vw !important;
     height: 100% !important;
-    min-height: 0 !important;
+    height: -webkit-fill-available !important;
+    height: 100dvh !important;
+    min-height: 100% !important;
     overflow: hidden !important;
-    background-color: var(--bg-core, #141a29) !important;
+    background-color: var(--bg-core, #17191e) !important;
   }
 
   html.light-minimalist,
@@ -7789,14 +7790,17 @@ body.light-minimalist .sidebar {
   }
 
   .dashboard-body {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
     width: 100% !important;
     height: 100% !important;
-    background-color: var(--bg-core, #141a29) !important;
+    height: -webkit-fill-available !important;
+    height: 100dvh !important;
+    height: var(--app-height, 100dvh) !important;
+    max-height: var(--app-height, 100dvh) !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background-color: var(--bg-core, #17191e) !important;
   }
 
   body.light-minimalist.dashboard-body {
@@ -7817,12 +7821,13 @@ body.is-fullscreen .terminal-workspace {
 
 body.is-ios-pwa,
 body.is-standalone {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
+  width: 100% !important;
   height: 100% !important;
+  height: -webkit-fill-available !important;
+  height: 100dvh !important;
+  height: var(--app-height, 100dvh) !important;
+  max-height: var(--app-height, 100dvh) !important;
+  min-height: 0 !important;
   overflow: hidden !important;
   background-color: var(--bg-core, #17191e) !important;
 }
@@ -7837,10 +7842,15 @@ body.light-minimalist.is-standalone {
    Prevents active inputs from being obscured under virtual software keyboards
    ========================================================================== */
 body.keyboard-open,
+body.keyboard-open.dashboard-body,
 body.keyboard-open .dashboard-body {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
   bottom: var(--keyboard-height, 0px) !important;
-  height: auto !important;
-  max-height: none !important;
+  height: var(--app-height, 100dvh) !important;
+  max-height: var(--app-height, 100dvh) !important;
 }
 
 body.keyboard-open .mobile-bottom-controls:not(.hidden) {
@@ -7879,6 +7889,14 @@ body,
   background-color: var(--c-bg) !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html.light-minimalist,
+html:has(body.light-minimalist),
+body.light-minimalist,
+body.light-minimalist.dashboard-body,
+body.light-minimalist.cyberpunk-auth-body {
+  background-color: #ffffff !important;
 }
 
 button,
@@ -8340,10 +8358,10 @@ body.light-minimalist .device-switcher-btn:hover {
 .main-container {
   display: flex !important;
   flex: 1 1 0% !important;
+  width: 100% !important;
   height: 100% !important;
-  height: var(--app-height, 100dvh) !important;
-  max-height: var(--app-height, 100dvh) !important;
   min-height: 0 !important;
+  max-height: none !important;
   background: var(--c-bg) !important;
   position: relative !important;
   border: none !important;
@@ -8423,7 +8441,7 @@ body.light-minimalist .sidebar {
   margin-right: -12px !important;
   margin-bottom: 0 !important;
   padding: 5px 12px !important;
-  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom: var(--safe-bottom, 6px) !important;
   border-top: none !important;
   background: var(--c-side) !important;
   position: sticky !important;
@@ -9333,13 +9351,15 @@ body.light-minimalist .session-card-menu {
 
 /* 4. Main Workspace & Tabs */
 .terminal-workspace {
-  flex: 1 !important;
+  flex: 1 1 0% !important;
   display: flex !important;
   flex-direction: column !important;
   min-width: 0 !important;
+  min-height: 0 !important;
   background: var(--c-bg) !important;
   padding: 0 !important;
   padding-top: 0 !important;
+  padding-bottom: 0 !important;
   position: relative !important;
   height: 100% !important;
 }
@@ -9489,9 +9509,17 @@ body:not(.sidebar-open) .workspace-tabs {
 .terminal-panel,
 .editor-panel,
 .welcome-panel,
-.project-panel {
-  flex: 1 !important;
+.project-panel,
+body.light-minimalist .main-container,
+body.light-minimalist .terminal-workspace,
+body.light-minimalist .terminal-panel,
+body.light-minimalist .editor-panel,
+body.light-minimalist .welcome-panel,
+body.light-minimalist .project-panel,
+body.light-minimalist .terminal-container-wrapper {
+  flex: 1 1 0% !important;
   min-height: 0 !important;
+  height: 100% !important;
   background: var(--c-bg) !important;
   border: none !important;
   border-radius: 0 !important;
@@ -9505,6 +9533,9 @@ body:not(.sidebar-open) .workspace-tabs {
 .project-panel:not(.hidden) {
   display: flex !important;
   flex-direction: column !important;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  height: 100% !important;
 }
 
 .editor-header {
@@ -9574,10 +9605,11 @@ body:not(.sidebar-open) .workspace-tabs {
 }
 
 .terminal-container-wrapper {
-  flex: 1 !important;
+  flex: 1 1 0% !important;
   min-height: 0 !important;
   background: var(--c-bg) !important;
   position: relative !important;
+  overflow: hidden !important;
 }
 
 #terminal-container {
@@ -9592,7 +9624,7 @@ body:not(.sidebar-open) .workspace-tabs {
   background: var(--c-bg) !important;
   border-top: none !important;
   padding: 6px 12px !important;
-  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom: var(--safe-bottom, 6px) !important;
   padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
   padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
   box-shadow: none !important;
@@ -9858,7 +9890,7 @@ body.light-minimalist .mobile-bottom-controls:not(.hidden) {
     margin-right: -14px !important;
     margin-bottom: 0 !important;
     padding: 5px 14px !important;
-    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: var(--safe-bottom, 6px) !important;
   }
 
   .cyber-header {

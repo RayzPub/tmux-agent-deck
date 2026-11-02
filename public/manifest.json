@@ -5,10 +5,10 @@
   "description": "Cyberpunk CCNOW Console",
   "start_url": "/",
   "scope": "/",
-  "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone", "window-controls-overlay"],
-  "background_color": "#0a0c16",
-  "theme_color": "#0a0c16",
+  "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "background_color": "#17191e",
+  "theme_color": "#17191e",
   "orientation": "any",
   "icons": [
     {
