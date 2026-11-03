@@ -1450,8 +1450,23 @@ body:has(#terminalPanel:not(.hidden) #agentChatContainer:not(.hidden)) .terminal
   .agent-chat-messages {
     flex: 1 1 auto;
     min-height: 0 !important;
-    padding: 6px 10px 8px 10px;
-    gap: 6px;
+    padding: 44px 16px 12px 16px;
+    gap: 10px;
+  }
+
+  /* 当侧边栏收起时（包括移动抽屉关闭与宽屏横屏），对话消息流与底部输入舱避免紧贴屏幕左边缘，留出充足安全呼吸边距 */
+  .sidebar.collapsed ~ .terminal-workspace .agent-chat-messages,
+  .main-container:has(.sidebar.collapsed) .agent-chat-messages,
+  body:not(.sidebar-open) .agent-chat-messages {
+    padding-left: var(--header-safe-left, max(26px, calc(16px + env(safe-area-inset-left, 0px)))) !important;
+    padding-right: max(20px, calc(16px + env(safe-area-inset-right, 0px))) !important;
+  }
+
+  .sidebar.collapsed ~ .terminal-workspace .agent-chat-composer,
+  .main-container:has(.sidebar.collapsed) .agent-chat-composer,
+  body:not(.sidebar-open) .agent-chat-composer {
+    padding-left: var(--header-safe-left, max(26px, calc(16px + env(safe-area-inset-left, 0px)))) !important;
+    padding-right: max(20px, calc(16px + env(safe-area-inset-right, 0px))) !important;
   }
 
   /* Compact Professional Typography for iPhone Duo Wide Screen */
@@ -2516,6 +2531,8 @@ body.light-minimalist .agent-chat-statusbar {
   position: absolute !important;
   top: 8px !important;
   right: 12px !important;
+  left: auto !important;
+  transform: none !important;
   z-index: 75 !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -2592,9 +2609,9 @@ body.light-minimalist .deck-mode-btn.active {
   height: 12px !important;
 }
 
-/* 2. Messages Canvas & Typography */
+/* 2. Messages Canvas & Typography (Centered, GPT-Aligned Spacing) */
 .agent-chat-messages {
-  padding: 38px 24px 14px !important;
+  padding: 48px max(24px, calc(16px + env(safe-area-inset-right, 0px))) 16px max(24px, calc(16px + env(safe-area-inset-left, 0px))) !important;
   flex: 1 !important;
   min-width: 0 !important;
   font-size: 12px !important;
@@ -2849,10 +2866,10 @@ body.light-minimalist .cds-accordion {
   box-shadow: none !important;
 }
 
-/* 3. Composer Section (Centered, Limited Width on Wide Screens) */
+/* 3. Composer Section (Centered, GPT-Aligned Focused Width) */
 .agent-chat-composer {
   margin-top: auto !important;
-  padding: 6px 18px var(--safe-bottom, max(12px, env(safe-area-inset-bottom, 0px))) !important;
+  padding: 8px max(24px, calc(16px + env(safe-area-inset-right, 0px))) max(16px, env(safe-area-inset-bottom, 0px)) max(24px, calc(16px + env(safe-area-inset-left, 0px))) !important;
   background: var(--c-bg) !important;
   border-top: none !important;
   border-radius: 0 !important;
@@ -2878,15 +2895,15 @@ body.light-minimalist .agent-chat-composer {
 
 @media (orientation: landscape), (min-width: 680px) {
   .chat-composer-shell {
-    max-width: 900px !important;
+    max-width: 768px !important;
   }
 }
 
 .chat-input-row {
   border: 1px solid color-mix(in srgb, var(--c-line) 65%, var(--c-muted)) !important;
-  border-radius: 10px !important;
+  border-radius: 22px !important;
   background: var(--c-bg) !important;
-  padding: 8px 12px 6px !important;
+  padding: 10px 16px 8px !important;
   box-shadow: none !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
@@ -3103,6 +3120,17 @@ body.light-minimalist .chat-send-btn {
   .chat-msg-row.assistant,
   .chat-composer-shell {
     max-width: 100% !important;
+  }
+
+  /* 横屏模式下消息行与输入框保持居中，避免宽屏下拉伸至边缘 */
+  @media (orientation: landscape) {
+    .chat-msg-row.user,
+    .chat-msg-row.assistant,
+    .chat-composer-shell {
+      max-width: min(780px, 100%) !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+    }
   }
 
   .agent-chat-composer {

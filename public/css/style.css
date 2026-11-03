@@ -4305,11 +4305,11 @@ body.light-minimalist .workspace-tech-header .pulse-dot {
 .sidebar-footer {
   margin-top: auto !important;
   flex-shrink: 0 !important;
-  width: calc(100% + 24px) !important;
-  margin-left: -12px !important;
-  margin-right: -12px !important;
+  width: calc(100% + 28px) !important;
+  margin-left: -14px !important;
+  margin-right: -14px !important;
   margin-bottom: 0 !important;
-  padding: 5px 12px !important;
+  padding: 5px 14px !important;
   padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
   border-top: none !important;
   background: var(--surface-1, rgba(14, 18, 30, 0.85));
@@ -7437,14 +7437,14 @@ body.light-minimalist .auth-alert.success .alert-message {
     box-shadow: none !important;
   }
 
-  /* Left Workspace Sidebar strictly within 224-264px */
+  /* Left Workspace Sidebar strictly within 250-290px (GPT-Proportioned) */
   .sidebar {
     position: relative !important;
     left: 0 !important;
     top: 0 !important;
-    width: 248px !important;
-    min-width: 224px !important;
-    max-width: 264px !important;
+    width: 270px !important;
+    min-width: 250px !important;
+    max-width: 290px !important;
     height: 100% !important;
     flex-shrink: 0 !important;
     border-right: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.08)) !important;
@@ -8383,9 +8383,10 @@ body.light-minimalist .device-switcher-btn:hover {
   max-height: 100% !important;
   background: var(--c-side) !important;
   border-right: 1px solid var(--c-line) !important;
-  padding: var(--header-safe-top) 12px 0 var(--header-safe-left) !important;
+  padding: var(--header-safe-top) 14px 0 max(14px, calc(8px + env(safe-area-inset-left, 0px))) !important;
   padding-top: var(--header-safe-top) !important;
-  padding-left: var(--header-safe-left) !important;
+  padding-left: max(14px, calc(8px + env(safe-area-inset-left, 0px))) !important;
+  padding-right: 14px !important;
   padding-bottom: 0 !important;
   box-sizing: border-box !important;
   display: flex !important;
@@ -8442,11 +8443,11 @@ body.light-minimalist .sidebar {
 .sidebar-footer {
   margin-top: auto !important;
   flex-shrink: 0 !important;
-  width: calc(100% + 24px) !important;
-  margin-left: -12px !important;
-  margin-right: -12px !important;
+  width: calc(100% + 28px) !important;
+  margin-left: -14px !important;
+  margin-right: -14px !important;
   margin-bottom: 0 !important;
-  padding: 5px 12px !important;
+  padding: 5px 14px !important;
   padding-bottom: var(--safe-bottom, 6px) !important;
   border-top: none !important;
   background: var(--c-side) !important;
@@ -9440,6 +9441,38 @@ body:not(.sidebar-open) .workspace-tabs {
   .workspace-tabs:not(.hidden),
   .workspace-tabs {
     padding-left: max(174px, calc(160px + env(safe-area-inset-left, 0px))) !important;
+  }
+}
+
+/* 宽屏 iPhone / Surface Duo / 折叠屏横屏优化：左上角品牌 Logo 向右平移避让刘海、灵动岛与屏幕圆角 */
+@media ((orientation: landscape) and (max-height: 768px)),
+       ((orientation: landscape) and (hover: none) and (pointer: coarse)),
+       (horizontal-viewport-segments: 2),
+       (vertical-viewport-segments: 2),
+       (screen-spanning: single-fold-vertical),
+       (screen-spanning: single-fold-horizontal) {
+  :root,
+  body {
+    --header-safe-left: max(26px, calc(16px + env(safe-area-inset-left, 0px)));
+  }
+
+  .floating-brand-expand-btn {
+    left: var(--header-safe-left) !important;
+  }
+
+  /* 侧边栏内部居中平衡，左右留白对称（14px），消除左侧过多死空 */
+  .sidebar {
+    padding-left: max(14px, calc(8px + env(safe-area-inset-left, 0px))) !important;
+    padding-right: 14px !important;
+  }
+
+  .sidebar.collapsed ~ .terminal-workspace .workspace-tabs:not(.hidden),
+  .sidebar.collapsed ~ .terminal-workspace .workspace-tabs,
+  .main-container:has(.sidebar.collapsed) .workspace-tabs:not(.hidden),
+  .main-container:has(.sidebar.collapsed) .workspace-tabs,
+  body:not(.sidebar-open) .workspace-tabs:not(.hidden),
+  body:not(.sidebar-open) .workspace-tabs {
+    padding-left: max(176px, calc(158px + env(safe-area-inset-left, 0px))) !important;
   }
 }
 
