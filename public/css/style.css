@@ -24,12 +24,13 @@
   --surface-2: var(--c-soft);           /* Cards, Code Blocks, Accordions */
   --surface-3: #2a2e39;                 /* Floating Composer, Modals, Popovers */
 
-  /* Viewport & Virtual Keyboard Dynamics (iPhone & Duo Adaptive) */
+  /* Viewport & Virtual Keyboard Dynamics (Dual Mode: 100dvh for Browser Tab, 100lvh for PWA) */
   --app-height: 100dvh;
   --keyboard-height: 0px;
-  --safe-bottom: 6px;
-  --header-safe-top: max(10px, calc(8px + env(safe-area-inset-top, 0px)));
-  --header-safe-left: max(32px, calc(20px + env(safe-area-inset-left, 0px)));
+  --safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  --header-safe-top: max(12px, calc(10px + env(safe-area-inset-top, 0px)));
+  --header-safe-left: max(20px, calc(14px + env(safe-area-inset-left, 0px)));
+  --header-safe-right: max(20px, calc(14px + env(safe-area-inset-right, 0px)));
 
   --bg-core: var(--c-bg);
   --bg-card: var(--c-bg);
@@ -7775,9 +7776,10 @@ body.light-minimalist .sidebar {
     padding: 0 !important;
     width: 100% !important;
     width: 100vw !important;
+    width: 100lvw !important;
     height: 100% !important;
-    height: -webkit-fill-available !important;
-    height: 100dvh !important;
+    height: 100vh !important;
+    height: 100lvh !important;
     min-height: 100% !important;
     overflow: hidden !important;
     background-color: var(--bg-core, #17191e) !important;
@@ -7791,11 +7793,13 @@ body.light-minimalist .sidebar {
 
   .dashboard-body {
     width: 100% !important;
+    width: 100vw !important;
+    width: 100lvw !important;
     height: 100% !important;
-    height: -webkit-fill-available !important;
-    height: 100dvh !important;
-    height: var(--app-height, 100dvh) !important;
-    max-height: var(--app-height, 100dvh) !important;
+    height: 100vh !important;
+    height: 100lvh !important;
+    height: var(--app-height, 100lvh) !important;
+    max-height: var(--app-height, 100lvh) !important;
     min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -7822,11 +7826,13 @@ body.is-fullscreen .terminal-workspace {
 body.is-ios-pwa,
 body.is-standalone {
   width: 100% !important;
+  width: 100vw !important;
+  width: 100lvw !important;
   height: 100% !important;
-  height: -webkit-fill-available !important;
-  height: 100dvh !important;
-  height: var(--app-height, 100dvh) !important;
-  max-height: var(--app-height, 100dvh) !important;
+  height: 100vh !important;
+  height: 100lvh !important;
+  height: var(--app-height, 100lvh) !important;
+  max-height: var(--app-height, 100lvh) !important;
   min-height: 0 !important;
   overflow: hidden !important;
   background-color: var(--bg-core, #17191e) !important;

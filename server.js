@@ -16,6 +16,7 @@ const { initDeviceGateway } = require('./sockets/deviceGateway');
 const { runMigration } = require('./services/dbService');
 const { initClaudeConfig } = require('./services/fileService');
 const { initActiveIcon } = require('./services/iconService');
+const { genericProxyMiddleware, initGenericProxy } = require('./middlewares/genericProxy');
 const apiRoutes = require('./routes/api');
 const llmGatewayRoutes = require('./routes/llmGateway');
 const imBot = require('./im-bot');
@@ -77,6 +78,10 @@ const io = socketIo(useHttps ? httpsServer : httpServer);
 // Share io instance with express requests
 app.set('io', io);
 
+// Initialize generic reverse proxy gateway (routes declared via PROXY_ROUTES env)
+initGenericProxy(app, [httpServer, httpsServer]);
+app.use(genericProxyMiddleware);
+
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -97,7 +102,9 @@ app.use((req, res, next) => {
     cleanPath === '' ||
     cleanPath === '/welcome' ||
     cleanPath === '/login' ||
-    cleanPath === '/register'
+    cleanPath === '/register' ||
+    cleanPath === '/fold' ||
+    cleanPath === '/fold-lab'
   ) {
     // HTML pages must never be stale-cached by browser/CDN
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
@@ -213,6 +220,44 @@ app.get('/manifest.json', (req, res) => {
 // Serve welcome page without authentication
 app.get('/welcome', (req, res) => {
   res.sendFile(getHtmlPath('welcome.html'));
+});
+
+// Dedicated PWA Manifest for iPhone Fold Adaptive Experiment
+app.get('/manifest-fold.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.json({
+    id: '/fold',
+    name: 'Fold Canvas',
+    short_name: 'FoldLab',
+    description: 'iPhone Fold Adaptive Experimental Blank Canvas',
+    start_url: '/fold',
+    scope: '/fold',
+    display: 'fullscreen',
+    display_override: ['fullscreen', 'standalone', 'window-controls-overlay'],
+    background_color: '#0d111a',
+    theme_color: '#0d111a',
+    orientation: 'any',
+    icons: [
+      {
+        src: '/images/icon-192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any'
+      },
+      {
+        src: '/images/icon-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any'
+      }
+    ]
+  });
+});
+
+// Serve iPhone Fold adaptive lab experimental page (direct standalone access for PWA)
+app.get(['/fold', '/fold-lab', '/fold.html'], (req, res) => {
+  res.sendFile(getHtmlPath('fold.html'));
 });
 
 // Serve register page

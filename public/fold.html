@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#17191e">
+  <!-- iOS PWA Fullscreen Optimization (全屏作为首要模式) -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Fold 实验">
+  <link rel="manifest" href="/manifest-fold.json">
+  <link rel="icon" type="image/png" href="/images/icon-192.png">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 
+      1. 默认模式：非 PWA（普通浏览器标签页模式）
+         此时 Safari 浏览器底部拥有实体工具栏（约 82px）。
+         必须使用 100dvh / 100%，让输入框位于工具栏上方，保证输入框 100% 完整可见，绝不被底栏遮挡！
+    */
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      background-color: #1c1d22;
+      color: #e9e9ee;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    }
+
+    .app-root {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+
+      /* 页面全封闭红线边框：顶部、底部、左边、右边 */
+      border-top: 4px solid #ff2a2a;
+      border-left: 4px solid #ff2a2a;
+      border-right: 4px solid #ff2a2a;
+      border-bottom: 5px solid #ff2a2a;
+      position: relative;
+    }
+
+    /* 
+      2. PWA 独立全屏模式 (Standalone / Fullscreen)
+         此时已脱离浏览器外壳，底部没有 Safari 工具栏。
+         使用 100lvh / 100lvw，彻底消除 82px 空白，顶格全屏！
+    */
+    @media (display-mode: standalone), (display-mode: fullscreen) {
+      html, body {
+        width: 100lvw !important;
+        height: 100lvh !important;
+      }
+      .app-root {
+        width: 100lvw !important;
+        height: 100lvh !important;
+      }
+    }
+
+    /* 支持通过 JS 检测添加的 is-pwa-standalone 类名双重加锁 */
+    html.is-pwa-standalone,
+    body.is-pwa-standalone {
+      width: 100lvw !important;
+      height: 100lvh !important;
+    }
+    html.is-pwa-standalone .app-root,
+    body.is-pwa-standalone .app-root {
+      width: 100lvw !important;
+      height: 100lvh !important;
+    }
+
+    /* 顶部红线中心浮标：秒级定位视口最顶边 */
+    .top-redline-tag {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ff2a2a;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 0 0 4px 4px;
+      pointer-events: none;
+      z-index: 999;
+      letter-spacing: 0.5px;
+    }
+
+    /* 底部红线浮标：帮助肉眼秒级定位视口最底边 */
+    .bottom-redline-tag {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ff2a2a;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 4px 4px 0 0;
+      pointer-events: none;
+      z-index: 999;
+      letter-spacing: 0.5px;
+    }
+
+    /* 右侧红线浮标：帮助定位右侧物理边缘 */
+    .right-redline-tag {
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%) rotate(90deg);
+      transform-origin: right center;
+      background: #ff2a2a;
+      color: #ffffff;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px 4px 0 0;
+      pointer-events: none;
+      z-index: 999;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    /* ==========================================================================
+       绿色安全区边框与 4 个圆角参考规范 (Safe Area Wireframe)
+       ========================================================================== */
+    .safe-area-overlay {
+      position: absolute;
+      top: env(safe-area-inset-top, 0px);
+      bottom: env(safe-area-inset-bottom, 0px);
+      left: env(safe-area-inset-left, 0px);
+      right: env(safe-area-inset-right, 0px);
+      border: 2px dashed #00ff66;
+      box-shadow: inset 0 0 10px rgba(0, 255, 102, 0.15), 0 0 10px rgba(0, 255, 102, 0.25);
+      border-radius: 32px; /* 模拟折叠屏/iPhone物理大圆角轮廓 */
+      pointer-events: none;
+      z-index: 990;
+      transition: all 0.2s ease;
+    }
+
+    /* 顶部绿色安全区标签 */
+    .safe-tag-top {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 255, 102, 0.95);
+      color: #0b140e;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 10px;
+      border-radius: 4px;
+      white-space: nowrap;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 8px rgba(0, 255, 102, 0.4);
+    }
+
+    /* 底部绿色安全区标签 */
+    .safe-tag-bottom {
+      position: absolute;
+      bottom: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 255, 102, 0.95);
+      color: #0b140e;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 10px;
+      border-radius: 4px;
+      white-space: nowrap;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 8px rgba(0, 255, 102, 0.4);
+    }
+
+    /* 4 个圆角参考弧度指示器 */
+    .corner-mark {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      border: 3px solid #00ff66;
+      pointer-events: none;
+    }
+
+    .corner-mark.top-left {
+      top: 0;
+      left: 0;
+      border-right: none;
+      border-bottom: none;
+      border-top-left-radius: 32px;
+    }
+
+    .corner-mark.top-right {
+      top: 0;
+      right: 0;
+      border-left: none;
+      border-bottom: none;
+      border-top-right-radius: 32px;
+    }
+
+    .corner-mark.bottom-left {
+      bottom: 0;
+      left: 0;
+      border-right: none;
+      border-top: none;
+      border-bottom-left-radius: 32px;
+    }
+
+    .corner-mark.bottom-right {
+      bottom: 0;
+      right: 0;
+      border-left: none;
+      border-top: none;
+      border-bottom-right-radius: 32px;
+    }
+
+    .corner-label {
+      position: absolute;
+      font-size: 9px;
+      font-weight: 700;
+      color: #00ff66;
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid rgba(0, 255, 102, 0.4);
+      padding: 1px 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .corner-label.tl { top: 8px; left: 8px; }
+    .corner-label.tr { top: 8px; right: 8px; }
+    .corner-label.bl { bottom: 8px; left: 8px; }
+    .corner-label.br { bottom: 8px; right: 8px; }
+
+    /* 极简空白主体区域：自适应填充剩余空间，并内嵌安全区 padding */
+    .blank-workspace {
+      flex: 1;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      cursor: pointer;
+      padding: 16px;
+      padding-top: max(16px, env(safe-area-inset-top, 0px));
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+    }
+      flex: 1;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      cursor: pointer;
+      padding: 16px;
+    }
+
+    /* 需求 2：页面中间可视化参数信息卡片 */
+    .metrics-panel {
+      width: 100%;
+      max-width: 620px;
+      background: rgba(32, 35, 44, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 16px 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      user-select: none;
+      pointer-events: auto;
+    }
+
+    .metrics-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+
+    .metrics-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .metrics-title::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff2a2a;
+      box-shadow: 0 0 8px #ff2a2a;
+      display: inline-block;
+    }
+
+    .metrics-badge {
+      font-size: 11px;
+      background: rgba(172, 155, 255, 0.15);
+      color: #ac9bff;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px 14px;
+    }
+
+    @media (max-width: 480px) {
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .metric-item {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: #8b92a4;
+    }
+
+    .metric-val {
+      font-size: 14px;
+      font-weight: 600;
+      color: #00f0ff;
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .metric-val.warn {
+      color: #ffb800;
+    }
+
+    /* 底部输入框外层：方案 A（仅依靠硬件安全区，无额外多余留白） */
+    .composer-area {
+      position: relative;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+      padding: 10px 16px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+      z-index: 20;
+    }
+
+    /* 输入框卡片外壳：与截图主应用 hyness 完全对齐的适手卡片 */
+    .composer-shell {
+      position: relative;
+      width: 100%;
+      max-width: 760px; /* iPhone Fold 展开横屏/竖屏黄金比例 */
+      margin: 0 auto;
+      background: #252830;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 20px;
+      padding: 12px 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .composer-shell:focus-within {
+      border-color: rgba(172, 155, 255, 0.45);
+      box-shadow: 0 0 0 2px rgba(172, 155, 255, 0.15), 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .composer-input {
+      width: 100%;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 15px;
+      line-height: 1.45;
+      color: #e9e9ee;
+      font-family: inherit;
+      resize: none;
+      min-height: 24px;
+      max-height: 120px;
+    }
+
+    .composer-input::placeholder {
+      color: #7b8192;
+    }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      padding-top: 6px;
+    }
+
+    .action-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #8b92a4;
+    }
+
+    .action-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.06);
+      border: none;
+      color: #e9e9ee;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .icon-btn.send {
+      background: #444754;
+      color: #a0a4b2;
+    }
+
+    /* iPhone Fold 展开横屏与宽屏全屏利用 */
+    @media (orientation: landscape), (min-width: 680px) {
+      .composer-shell {
+        max-width: 900px; /* 充分利用右侧与整屏宽度 */
+      }
+      .metrics-panel {
+        max-width: 760px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-root" id="appRoot">
+    <!-- 顶部红线中心标记 -->
+    <div class="top-redline-tag">▼ 页面最顶物理红线 (Top Edge)</div>
+
+    <!-- 底部红线中心标记 -->
+    <div class="bottom-redline-tag">▲ 页面最底物理红线 (Bottom Edge)</div>
+
+    <!-- 右侧红线标记 -->
+    <div class="right-redline-tag">▶ 页面最右物理红线 (Right Edge)</div>
+
+    <!-- 绿色安全区线框图层（包含 4 个圆角参考与顶部安全界线） -->
+    <div class="safe-area-overlay" id="safeAreaOverlay">
+      <div class="safe-tag-top">▼ 绿色虚线：安全区顶部界线 (Safe Area Top)</div>
+      <div class="safe-tag-bottom">▲ 绿色虚线：安全区底部界线 (Safe Area Bottom)</div>
+
+      <div class="corner-mark top-left"></div>
+      <span class="corner-label tl">↖ 左上圆角参考 (32px)</span>
+
+      <div class="corner-mark top-right"></div>
+      <span class="corner-label tr">↗ 右上圆角参考 (32px)</span>
+
+      <div class="corner-mark bottom-left"></div>
+      <span class="corner-label bl">↙ 左下圆角参考 (32px)</span>
+
+      <div class="corner-mark bottom-right"></div>
+      <span class="corner-label br">↘ 右下圆角参考 (32px)</span>
+    </div>
+
+    <!-- 需求 2：页面中间可视化参数区域 -->
+    <div class="blank-workspace" id="blankWorkspace">
+      <div class="metrics-panel">
+        <div class="metrics-panel-header">
+          <div>
+            <div class="metrics-title">屏幕可视尺寸与双边框参考</div>
+            <div style="font-size:11px; color:#8b92a4; margin-top:3px;">
+              🔴 红线：物理视口极限边界 | 🟢 绿虚线：系统安全区与 4 角圆角
+            </div>
+          </div>
+          <div class="metrics-badge" id="metricOrientation">检测中...</div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-item">
+            <span class="metric-label">视觉视口高度 (visualViewport.height)</span>
+            <span class="metric-val" id="valVvHeight">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">窗口高度 (window.innerHeight)</span>
+            <span class="metric-val" id="valInnerHeight">-</span>
+          </div>
+
+          <div class="metric-item">
+            <span class="metric-label">视口总宽度 (Width)</span>
+            <span class="metric-val" id="valWidth">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">屏幕分辨率 (screen.width × height)</span>
+            <span class="metric-val" id="valScreen">-</span>
+          </div>
+
+          <div class="metric-item">
+            <span class="metric-label">左侧安全区 (safe-area-inset-left)</span>
+            <span class="metric-val" id="valSafeLeft">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">右侧安全区 (safe-area-inset-right)</span>
+            <span class="metric-val" id="valSafeRight">-</span>
+          </div>
+
+          <div class="metric-item">
+            <span class="metric-label">底部安全区 (safe-area-inset-bottom)</span>
+            <span class="metric-val" id="valSafeBottom">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">顶部安全区 (safe-area-inset-top)</span>
+            <span class="metric-val" id="valSafeTop">-</span>
+          </div>
+
+          <div class="metric-item">
+            <span class="metric-label">视觉视口垂直偏移 (offsetTop)</span>
+            <span class="metric-val" id="valOffsetTop">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">软键盘状态 (Keyboard State)</span>
+            <span class="metric-val" id="valKeyboardState">已收起</span>
+          </div>
+
+          <div class="metric-item" style="grid-column: span 2;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <span class="metric-label">当前运行容器环境 (Mode)</span>
+                <span class="metric-val" id="valPwaMode" style="display:block; font-size:13px; margin-top:2px;">检测中...</span>
+              </div>
+              <button id="btnRequestFullscreen" style="background:#ac9bff; color:#17191e; border:none; padding:6px 14px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer;">
+                尝试全屏 ⛶
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="pwaTipBar" style="margin-top:12px; padding:8px 12px; background:rgba(255, 184, 0, 0.12); border:1px solid rgba(255, 184, 0, 0.3); border-radius:8px; font-size:11px; color:#ffb800; line-height:1.5; display:none;">
+          💡 <strong>右侧工具栏说明</strong>：当前处于 Safari 浏览器标签模式，右侧工具栏为浏览器外壳自带。点击 Safari 底部<strong>“分享” ➔ “添加到主屏幕”</strong>后在桌面打开，右侧工具栏将彻底消失，实现无边框真正全屏！
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部输入栏：完全还原主项目的成熟物理结构 -->
+    <footer class="composer-area">
+      <div class="composer-shell">
+        <textarea 
+          id="composerInput" 
+          class="composer-input" 
+          placeholder="提出后续修改请求或附加图片" 
+          rows="1"
+          autocomplete="off"
+        ></textarea>
+        
+        <div class="composer-actions">
+          <div class="action-left">
+            <span style="cursor:pointer;">+</span>
+            <span style="font-size:12px; opacity:0.8;">完全访问 ∨</span>
+          </div>
+          <div class="action-right">
+            <button class="icon-btn" title="语音">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+              </svg>
+            </button>
+            <button class="icon-btn send" title="发送">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="19" x2="12" y2="5"></line>
+                <polyline points="5 12 12 5 19 12"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      const input = document.getElementById('composerInput');
+      const blankWorkspace = document.getElementById('blankWorkspace');
+
+      // 文本框自动弹性增高
+      input.addEventListener('input', function () {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+      });
+
+      // 完美复用主项目 mobileInput.js 验证过的 WebKit 视口恢复引擎
+      function restorePwaViewportScroll() {
+        const active = document.activeElement;
+        const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+        if (isInput) return;
+
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        if (document.documentElement) document.documentElement.scrollTop = 0;
+        if (document.body) document.body.scrollTop = 0;
+
+        // Asynchronous micro-offset trick: forces WebKit FrameView to unstick visualViewport.offsetTop
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          const currentActive = document.activeElement;
+          if (currentActive && (currentActive.tagName === 'INPUT' || currentActive.tagName === 'TEXTAREA')) return;
+
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          if (document.documentElement) document.documentElement.scrollTop = 0;
+          if (document.body) document.body.scrollTop = 0;
+        }, 40);
+      }
+
+      // 输入框失焦（软键盘关闭）触发复位
+      input.addEventListener('blur', function () {
+        [60, 200, 400].forEach((delay) => {
+          setTimeout(() => {
+            const active = document.activeElement;
+            if (active !== input) {
+              restorePwaViewportScroll();
+            }
+          }, delay);
+        });
+      });
+
+      // 点击空白处主动收起软键盘
+      blankWorkspace.addEventListener('click', function () {
+        input.blur();
+      });
+
+      // =========================================================================
+      // 实时计算并打印屏幕可视尺寸、安全区参数 (中文)
+      // =========================================================================
+      function getSafeAreaInsets() {
+        const div = document.createElement('div');
+        div.style.cssText = `
+          position: fixed;
+          top: env(safe-area-inset-top, 0px);
+          left: env(safe-area-inset-left, 0px);
+          right: env(safe-area-inset-right, 0px);
+          bottom: env(safe-area-inset-bottom, 0px);
+          pointer-events: none;
+          visibility: hidden;
+        `;
+        document.body.appendChild(div);
+        const rect = div.getBoundingClientRect();
+        const top = rect.top;
+        const left = rect.left;
+        const right = window.innerWidth - rect.right;
+        const bottom = window.innerHeight - rect.bottom;
+        document.body.removeChild(div);
+        return {
+          top: Math.max(0, Math.round(top)),
+          left: Math.max(0, Math.round(left)),
+          right: Math.max(0, Math.round(right)),
+          bottom: Math.max(0, Math.round(bottom))
+        };
+      }
+
+      function updateMetrics() {
+        const vv = window.visualViewport;
+        const insets = getSafeAreaInsets();
+        const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+
+        const vvHeight = vv ? Math.round(vv.height) : window.innerHeight;
+        const vvWidth = vv ? Math.round(vv.width) : window.innerWidth;
+        const offsetTop = vv ? Math.round(vv.offsetTop) : 0;
+        const innerH = window.innerHeight;
+        const innerW = window.innerWidth;
+
+        // 估算键盘状态
+        const isKbOpen = (innerH - vvHeight) > 120 || offsetTop > 50;
+
+        const oriBadge = document.getElementById('metricOrientation');
+        if (oriBadge) {
+          oriBadge.textContent = isPortrait ? 'Fold 竖屏模式' : 'Fold 横屏模式';
+        }
+
+        const elVvHeight = document.getElementById('valVvHeight');
+        if (elVvHeight) elVvHeight.textContent = `${vvHeight} px`;
+
+        const elInnerHeight = document.getElementById('valInnerHeight');
+        if (elInnerHeight) elInnerHeight.textContent = `${innerH} px`;
+
+        const elWidth = document.getElementById('valWidth');
+        if (elWidth) elWidth.textContent = `${innerW} px (视口: ${vvWidth}px)`;
+
+        const elScreen = document.getElementById('valScreen');
+        if (elScreen) elScreen.textContent = `${window.screen.width} × ${window.screen.height}`;
+
+        const elSafeLeft = document.getElementById('valSafeLeft');
+        if (elSafeLeft) elSafeLeft.textContent = `${insets.left} px`;
+
+        const elSafeRight = document.getElementById('valSafeRight');
+        if (elSafeRight) elSafeRight.textContent = `${insets.right} px`;
+
+        const elSafeBottom = document.getElementById('valSafeBottom');
+        if (elSafeBottom) elSafeBottom.textContent = `${insets.bottom} px`;
+
+        const elSafeTop = document.getElementById('valSafeTop');
+        if (elSafeTop) elSafeTop.textContent = `${insets.top} px`;
+
+        const elOffsetTop = document.getElementById('valOffsetTop');
+        if (elOffsetTop) elOffsetTop.textContent = `${offsetTop} px`;
+
+        const kbEl = document.getElementById('valKeyboardState');
+        if (kbEl) {
+          if (isKbOpen) {
+            kbEl.textContent = `已弹起 (高度 ~${innerH - vvHeight}px)`;
+            kbEl.className = 'metric-val warn';
+          } else {
+            kbEl.textContent = '已收起';
+            kbEl.className = 'metric-val';
+          }
+        }
+
+        // PWA 模式判定与右侧工具栏提示
+        const isStandalone = Boolean(
+          (window.navigator && window.navigator.standalone === true) ||
+          (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches))
+        );
+
+        if (isStandalone) {
+          document.documentElement.classList.add('is-pwa-standalone');
+        } else {
+          document.documentElement.classList.remove('is-pwa-standalone');
+        }
+
+        const pwaEl = document.getElementById('valPwaMode');
+        const tipEl = document.getElementById('pwaTipBar');
+        if (pwaEl) {
+          if (isStandalone) {
+            pwaEl.textContent = '✅ PWA 独立全屏模式 (无浏览器外壳)';
+            pwaEl.style.color = '#00f0ff';
+            if (tipEl) tipEl.style.display = 'none';
+          } else {
+            pwaEl.textContent = '⚠️ 浏览器标签页模式 (输入框自适应避让 Safari 底栏)';
+            pwaEl.style.color = '#ffb800';
+            if (tipEl) tipEl.style.display = 'block';
+          }
+        }
+      }
+
+      // 尝试 HTML5 Fullscreen API 按钮
+      const btnFs = document.getElementById('btnRequestFullscreen');
+      if (btnFs) {
+        btnFs.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const rootEl = document.documentElement;
+          if (rootEl.requestFullscreen) {
+            rootEl.requestFullscreen().catch(() => {});
+          } else if (rootEl.webkitRequestFullscreen) {
+            rootEl.webkitRequestFullscreen();
+          }
+          setTimeout(updateMetrics, 200);
+        });
+      }
+
+      // 实时监听事件
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateMetrics);
+        window.visualViewport.addEventListener('scroll', updateMetrics);
+      }
+      window.addEventListener('resize', updateMetrics);
+      window.addEventListener('orientationchange', function () {
+        setTimeout(updateMetrics, 200);
+      });
+      input.addEventListener('focus', function () {
+        setTimeout(updateMetrics, 120);
+      });
+      input.addEventListener('blur', function () {
+        setTimeout(updateMetrics, 150);
+        setTimeout(updateMetrics, 450);
+      });
+
+      // 初始化显示参数
+      updateMetrics();
+    })();
+  </script>
+</body>
+</html>

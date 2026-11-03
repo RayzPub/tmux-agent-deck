@@ -48,6 +48,7 @@ function checkNeedsBuild() {
     path.join(PROJECT_ROOT, 'public', 'index.html'),
     path.join(PROJECT_ROOT, 'public', 'login.html'),
     path.join(PROJECT_ROOT, 'public', 'register.html'),
+    path.join(PROJECT_ROOT, 'public', 'fold.html'),
   ];
 
   for (const src of sources) {
@@ -134,7 +135,7 @@ async function performBuild(force = false) {
     console.log(`📦 Hashed chat-mode.css -> ${chatModeHashed}`);
 
     // 5. Read and transform HTML files
-    const htmlFiles = ['index.html', 'login.html', 'register.html'];
+    const htmlFiles = ['index.html', 'login.html', 'register.html', 'fold.html'];
     for (const file of htmlFiles) {
       const srcPath = path.join(PROJECT_ROOT, 'public', file);
       if (!fs.existsSync(srcPath)) continue;
