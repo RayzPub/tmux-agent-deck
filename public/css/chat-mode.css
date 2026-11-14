@@ -2909,9 +2909,9 @@ body.light-minimalist .agent-chat-composer {
 }
 
 body.light-minimalist .chat-input-row {
-  border: 1px solid color-mix(in srgb, var(--c-line) 65%, var(--c-muted)) !important;
-  background: var(--c-bg) !important;
-  box-shadow: none !important;
+  border: 1px solid var(--c-line) !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.03) !important;
 }
 
 .chat-input-row:focus-within {
@@ -2921,7 +2921,7 @@ body.light-minimalist .chat-input-row {
 
 body.light-minimalist .chat-input-row:focus-within {
   border-color: var(--c-accent) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-accent) 20%, transparent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-accent) 20%, transparent), 0 4px 16px rgba(105, 82, 217, 0.08) !important;
 }
 
 .chat-textarea {

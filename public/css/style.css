@@ -130,7 +130,7 @@ html {
 
 html.light-minimalist,
 html:has(body.light-minimalist) {
-  background-color: #ffffff !important;
+  background-color: var(--c-bg) !important;
 }
 
 body {
@@ -3124,22 +3124,22 @@ div#editorTextarea {
 html.light-minimalist,
 html:has(body.light-minimalist),
 body.light-minimalist {
-  /* CCNOW Visual Refresh Core Design Tokens (Light Mode) */
-  --c-bg: #ffffff;
-  --c-side: #f7f7fa;
-  --c-soft: #f4f4f8;
-  --c-selected: #f0edff;
-  --c-line: #e8e8ee;
-  --c-text: #282b35;
-  --c-muted: #7b7f8d;
+  /* CCNOW Visual Refresh Core Design Tokens (Light Mode - Eye-friendly Soft Gray / Muted Slate) */
+  --c-bg: #f3f4f6;
+  --c-side: #eaedf1;
+  --c-soft: #ffffff;
+  --c-selected: #ede9fe;
+  --c-line: #d8dce4;
+  --c-text: #1e232e;
+  --c-muted: #646a78;
   --c-accent: #6952d9;
   --c-on: #ffffff;
   --c-green: #27916b;
 
   /* 4-Tier Surface Hierarchy (Light Mode) */
-  --surface-0: var(--c-side);           /* Sidebar / Root Base */
-  --surface-1: var(--c-bg);             /* Main Workspace & Chat Canvas */
-  --surface-2: var(--c-soft);           /* Cards, Code Blocks, Accordions */
+  --surface-0: var(--c-side);           /* Sidebar / Root Base (#eaedf1) */
+  --surface-1: var(--c-bg);             /* Main Workspace & Chat Canvas (#f3f4f6) */
+  --surface-2: var(--c-soft);           /* Cards, Code Blocks, Accordions (#ffffff) */
   --surface-3: #ffffff;                 /* Floating Composer, Modals, Popovers */
 
   --bg-core: var(--c-bg);
@@ -7788,7 +7788,7 @@ body.light-minimalist .sidebar {
   html.light-minimalist,
   html:has(body.light-minimalist),
   body.light-minimalist {
-    background-color: #ffffff !important;
+    background-color: var(--c-bg) !important;
   }
 
   .dashboard-body {
@@ -7808,7 +7808,7 @@ body.light-minimalist .sidebar {
   }
 
   body.light-minimalist.dashboard-body {
-    background-color: #ffffff !important;
+    background-color: var(--c-bg) !important;
   }
 
   /* Fullscreen Edge Bleed: Eliminate Right Pillarbox / Fake Navigation Gaps */
@@ -7840,7 +7840,7 @@ body.is-standalone {
 
 body.light-minimalist.is-ios-pwa,
 body.light-minimalist.is-standalone {
-  background-color: #ffffff !important;
+  background-color: var(--c-bg) !important;
 }
 
 /* ==========================================================================
@@ -7902,7 +7902,7 @@ html:has(body.light-minimalist),
 body.light-minimalist,
 body.light-minimalist.dashboard-body,
 body.light-minimalist.cyberpunk-auth-body {
-  background-color: #ffffff !important;
+  background-color: var(--c-bg) !important;
 }
 
 button,
@@ -9094,13 +9094,15 @@ body.light-minimalist .project-overview-entry-btn:hover {
 }
 
 body.light-minimalist .session-card {
-  background: var(--c-bg) !important;
+  background: #ffffff !important;
   border-color: var(--c-line) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
 }
 
 body.light-minimalist .session-card:hover {
-  background: var(--c-soft) !important;
-  border-color: var(--c-line) !important;
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06) !important;
 }
 
 body.light-minimalist .session-card.active {

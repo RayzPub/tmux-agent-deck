@@ -51,12 +51,12 @@ export const state = {
       brightWhite: '#ffffff'
     },
     LIGHT: {
-      background: '#fafafd',
-      foreground: '#282b35',
+      background: '#f3f4f6',
+      foreground: '#1e232e',
       cursor: '#6952d9',
-      cursorAccent: '#fafafd',
+      cursorAccent: '#f3f4f6',
       selectionBackground: 'rgba(105, 82, 217, 0.18)',
-      black: '#282b35',
+      black: '#1e232e',
       red: '#dc2626',
       green: '#27916b',
       yellow: '#ca8a04',
@@ -64,14 +64,14 @@ export const state = {
       magenta: '#7c3aed',
       cyan: '#6952d9',
       white: '#ffffff',
-      brightBlack: '#7b7f8d',
+      brightBlack: '#646a78',
       brightRed: '#ef4444',
       brightGreen: '#22c55e',
       brightYellow: '#eab308',
       brightBlue: '#818cf8',
       brightMagenta: '#a855f7',
       brightCyan: '#818cf8',
-      brightWhite: '#f4f4f8'
+      brightWhite: '#eaedf1'
     }
   }
 };

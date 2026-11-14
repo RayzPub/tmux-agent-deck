@@ -24,10 +24,10 @@ export function updateThemeButtonUI(isLight) {
 }
 
 export function updateMetaThemeColor(isLight) {
-  const bg = isLight ? '#ffffff' : '#17191e';
+  const bg = isLight ? '#eaedf1' : '#17191e';
   const meta = document.getElementById('pwaThemeColor') || document.querySelector('meta[name="theme-color"]');
   if (meta) {
-    // In light mode: #ffffff; In dark mode: #17191e (matches --c-bg & --c-side)
+    // In light mode: #eaedf1; In dark mode: #17191e (matches --c-side)
     meta.setAttribute('content', bg);
     if (meta.parentNode) {
       const clone = meta.cloneNode(true);
