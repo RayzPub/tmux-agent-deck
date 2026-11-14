@@ -167,7 +167,7 @@ function initDeviceGateway(servers, io) {
           // Also broadcast directly to the owner's Socket.io private room
           if (io) {
             const deviceRecord = deviceService.getDeviceById(boundDeviceId);
-            if (deviceRecord && deviceRecord.userId) {
+            if (deviceRecord && deviceRecord.userId && typeof io.to === 'function') {
               io.to(`user:${deviceRecord.userId}`).emit(`device:agent_event:${sessionId}`, {
                 ...msg,
                 deviceId: boundDeviceId

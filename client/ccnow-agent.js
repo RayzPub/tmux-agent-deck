@@ -12,11 +12,12 @@ const path = require('path');
 const { spawn, execSync } = require('child_process');
 
 // Client Version
-const CLIENT_VERSION = '1.3.0';
+const CLIENT_VERSION = '1.4.0';
 
 // Configuration directory & file
 const CONFIG_DIR = path.join(os.homedir(), '.ccnow');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'device.json');
+const WORKSPACES_FILE = path.join(CONFIG_DIR, 'workspaces.json');
 
 // Ensure native or installed WebSocket
 let WSClient = typeof WebSocket !== 'undefined' ? WebSocket : null;
@@ -281,6 +282,8 @@ class AgentClient {
         name: msg.device?.name || 'Local Device'
       });
 
+      this.ensureLocalAgentScript();
+
       this.credentials = {
         deviceId: msg.deviceId,
         deviceSecret: msg.deviceSecret
@@ -337,9 +340,17 @@ class AgentClient {
       return;
     }
 
-    // 1.1 Remote Filesystem Workspaces Query
+    // 1.1 Remote Filesystem Workspaces Query & Management
     if (action === 'fs:workspaces') {
       this.handleFsWorkspaces(msg.reqId);
+      return;
+    }
+    if (action === 'fs:add_workspace') {
+      this.handleFsAddWorkspace(msg.reqId, msg);
+      return;
+    }
+    if (action === 'fs:remove_workspace') {
+      this.handleFsRemoveWorkspace(msg.reqId, msg);
       return;
     }
 
@@ -435,6 +446,11 @@ class AgentClient {
 
     if (action === 'agent:clear_context') {
       this.handleClearContext(msg.reqId, msg.sessionName);
+      return;
+    }
+
+    if (action === 'agent:chat_upload') {
+      this.handleChatUpload(msg.reqId, msg);
       return;
     }
 
@@ -559,12 +575,118 @@ class AgentClient {
     return process.cwd();
   }
 
+  ensureLocalAgentScript() {
+    const scriptPath = path.join(CONFIG_DIR, 'ccnow-agent.js');
+    try {
+      if (!fs.existsSync(CONFIG_DIR)) {
+        fs.mkdirSync(CONFIG_DIR, { recursive: true });
+      }
+      const currentScript = process.argv[1];
+      if (currentScript && fs.existsSync(currentScript) && path.resolve(currentScript) !== path.resolve(scriptPath)) {
+        fs.copyFileSync(currentScript, scriptPath);
+        fs.chmodSync(scriptPath, 0o755);
+        console.log(`💾 Agent script saved to ${scriptPath}`);
+        return;
+      }
+      if (!fs.existsSync(scriptPath) && typeof fetch === 'function') {
+        const cleanServer = this.serverUrl.replace(/\/+$/, '');
+        fetch(`${cleanServer}/agent.js`).then(r => r.ok ? r.text() : null).then(code => {
+          if (code && code.includes('ccnow-agent')) {
+            fs.writeFileSync(scriptPath, code, 'utf8');
+            fs.chmodSync(scriptPath, 0o755);
+            console.log(`💾 Agent script downloaded to ${scriptPath} (ready for \`service install\`)`);
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+
+  readCustomWorkspaces() {
+    try {
+      if (fs.existsSync(WORKSPACES_FILE)) {
+        const data = JSON.parse(fs.readFileSync(WORKSPACES_FILE, 'utf8'));
+        return Array.isArray(data) ? data : [];
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  writeCustomWorkspaces(list) {
+    try {
+      if (!fs.existsSync(CONFIG_DIR)) {
+        fs.mkdirSync(CONFIG_DIR, { recursive: true });
+      }
+      fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(list, null, 2), 'utf8');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   handleFsWorkspaces(reqId) {
-    const list = [
+    const defaults = [
       { name: 'Home (~)', path: os.homedir(), isDefault: true },
       { name: 'Current Working Dir', path: process.cwd() }
     ];
-    this.send({ action: 'fs:workspaces_result', reqId, workspaces: list });
+    const custom = this.readCustomWorkspaces();
+    const seenPaths = new Set(defaults.map(w => w.path));
+    const merged = [...defaults];
+    for (const ws of custom) {
+      if (ws && ws.path && !seenPaths.has(ws.path)) {
+        seenPaths.add(ws.path);
+        merged.push(ws);
+      }
+    }
+    this.send({ action: 'fs:workspaces_result', reqId, workspaces: merged });
+  }
+
+  handleFsAddWorkspace(reqId, msg) {
+    try {
+      const { name, path: wsPath } = msg;
+      if (!name || !String(name).trim()) {
+        return this.send({ action: 'fs:add_workspace_result', reqId, error: 'Workspace name is required.' });
+      }
+      const trimmedName = String(name).trim();
+      const rawPath = (wsPath && String(wsPath).trim()) ? String(wsPath).trim() : path.join(os.homedir(), trimmedName);
+      const resolvedPath = rawPath.startsWith('~/')
+        ? path.join(os.homedir(), rawPath.substring(2))
+        : (rawPath === '~' ? os.homedir() : path.resolve(rawPath));
+
+      if (!fs.existsSync(resolvedPath)) {
+        fs.mkdirSync(resolvedPath, { recursive: true });
+      }
+
+      const custom = this.readCustomWorkspaces();
+      const exists = custom.find(w => w.name.toLowerCase() === trimmedName.toLowerCase() || w.path === resolvedPath);
+      if (exists) {
+        return this.send({ action: 'fs:add_workspace_result', reqId, error: 'Workspace with this name or path already exists.' });
+      }
+
+      const newWs = { name: trimmedName, path: resolvedPath };
+      custom.push(newWs);
+      this.writeCustomWorkspaces(custom);
+      this.send({ action: 'fs:add_workspace_result', reqId, success: true, workspace: newWs });
+    } catch (e) {
+      this.send({ action: 'fs:add_workspace_result', reqId, error: e.message });
+    }
+  }
+
+  handleFsRemoveWorkspace(reqId, msg) {
+    try {
+      const { name } = msg;
+      if (!name) {
+        return this.send({ action: 'fs:remove_workspace_result', reqId, error: 'Workspace name is required.' });
+      }
+      const custom = this.readCustomWorkspaces();
+      const filtered = custom.filter(w => w.name.toLowerCase() !== String(name).toLowerCase());
+      if (filtered.length === custom.length) {
+        return this.send({ action: 'fs:remove_workspace_result', reqId, error: 'Workspace not found (built-in workspaces cannot be removed).' });
+      }
+      this.writeCustomWorkspaces(filtered);
+      this.send({ action: 'fs:remove_workspace_result', reqId, success: true });
+    } catch (e) {
+      this.send({ action: 'fs:remove_workspace_result', reqId, error: e.message });
+    }
   }
 
   handleFsList(reqId, workspacePath, relativePath) {
@@ -664,7 +786,8 @@ class AgentClient {
   }
 
   handleNewSession(reqId, msg) {
-    const { sessionName, workspace, agent } = msg;
+    const { sessionName, workspace } = msg;
+    const agent = msg.agent || msg.agentType;
     const hasTmux = hasCommand('tmux');
     if (hasTmux && sessionName) {
       try {
@@ -1108,6 +1231,48 @@ class AgentClient {
       this.send({ action: 'fs:upload_file_result', reqId, success: true });
     } catch (e) {
       this.send({ action: 'fs:upload_file_result', reqId, error: e.message });
+    }
+  }
+
+  handleChatUpload(reqId, msg) {
+    try {
+      const { sessionName, files } = msg;
+      let targetWorkspace = os.homedir();
+      if (hasCommand('tmux') && sessionName) {
+        try {
+          const out = execSync(`tmux display-message -p -t "${String(sessionName).replace(/"/g, '')}" "#{session_path}"`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+          if (out && fs.existsSync(out)) {
+            targetWorkspace = out;
+          }
+        } catch (e) {}
+      }
+      const uploadDir = path.join(targetWorkspace, '.deck', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const uploadedFiles = [];
+      for (const f of (files || [])) {
+        const cleanName = path.basename(f.originalName || 'upload').replace(/[\x00-\x1f\x80-\x9f]/g, '').trim() || 'upload';
+        const ext = path.extname(cleanName);
+        const base = path.basename(cleanName, ext);
+        const uniqueName = `${base}_${Date.now()}${ext}`;
+        const destPath = path.join(uploadDir, uniqueName);
+        const buf = Buffer.from(f.bufferBase64, 'base64');
+        fs.writeFileSync(destPath, buf);
+        const isImg = (f.mimeType && f.mimeType.startsWith('image/')) || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(uniqueName);
+        uploadedFiles.push({
+          name: uniqueName,
+          originalName: cleanName,
+          relativePath: `.deck/uploads/${uniqueName}`,
+          absolutePath: destPath,
+          size: buf.length,
+          mimeType: f.mimeType || 'application/octet-stream',
+          isImage: isImg
+        });
+      }
+      this.send({ action: 'agent:chat_upload_result', reqId, success: true, files: uploadedFiles });
+    } catch (e) {
+      this.send({ action: 'agent:chat_upload_result', reqId, error: e.message });
     }
   }
 

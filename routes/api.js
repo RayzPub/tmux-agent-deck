@@ -663,7 +663,7 @@ router.post('/sessions', requireAuth, async (req, res) => {
       if (result && result.error) {
         return res.status(400).json({ error: result.error });
       }
-      return res.json({ success: true, session: rawName });
+      return res.json({ success: true, session: rawName, name: rawName });
     } catch (e) {
       return res.status(500).json({ error: e.message });
     }
@@ -1036,10 +1036,27 @@ router.get('/workspaces', requireAuth, async (req, res) => {
   res.json(readWorkspaces(req.user.username));
 });
 
-router.post('/workspaces', requireAuth, (req, res) => {
-  const { name, path: wsPath } = req.body;
+router.post('/workspaces', requireAuth, async (req, res) => {
+  const { name, path: wsPath, deviceId } = req.body;
+  const targetDeviceId = deviceId || req.query.deviceId;
   if (!name) {
     return res.status(400).json({ error: 'Workspace name is required.' });
+  }
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    const dev = deviceService.getDeviceById(targetDeviceId);
+    if (!dev || dev.userId !== req.user.username) {
+      return res.status(404).json({ error: 'Device not found or not owned by you' });
+    }
+    try {
+      const result = await deviceService.remoteFsAddWorkspace(targetDeviceId, name, wsPath);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true, workspace: result.workspace });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   let resolvedPath;
@@ -1074,8 +1091,24 @@ router.post('/workspaces', requireAuth, (req, res) => {
   res.json({ success: true, workspace: { name, path: resolvedPath } });
 });
 
-router.delete('/workspaces/:name', requireAuth, (req, res) => {
+router.delete('/workspaces/:name', requireAuth, async (req, res) => {
   const { name } = req.params;
+  const targetDeviceId = req.query.deviceId || (req.body && req.body.deviceId);
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    const dev = deviceService.getDeviceById(targetDeviceId);
+    if (!dev || dev.userId !== req.user.username) {
+      return res.status(404).json({ error: 'Device not found or not owned by you' });
+    }
+    try {
+      const result = await deviceService.remoteFsRemoveWorkspace(targetDeviceId, name);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
   const workspaces = readWorkspaces(req.user.username);
   const filtered = workspaces.filter(w => w.name.toLowerCase() !== name.toLowerCase());
   if (filtered.length === workspaces.length) {
@@ -2243,6 +2276,35 @@ router.post('/sessions/:session/chat-upload', requireAuth, (req, res) => {
 
     const sessionName = req.params.session;
     const user = req.user.username;
+    const targetDeviceId = req.query.deviceId || (req.body && req.body.deviceId);
+
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const dev = deviceService.getDeviceById(targetDeviceId);
+      if (!dev || dev.userId !== user) {
+        return res.status(404).json({ error: 'Device not found or not owned by you' });
+      }
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: '未选择任何待上传文件' });
+      }
+      const filesPayload = req.files.map(f => ({
+        originalName: f.originalname || 'upload',
+        mimeType: f.mimetype || 'application/octet-stream',
+        bufferBase64: f.buffer.toString('base64')
+      }));
+      deviceService.remoteChatUpload(targetDeviceId, sessionName, filesPayload).then(result => {
+        if (result && result.error) {
+          return res.status(400).json({ error: result.error });
+        }
+        return res.json({
+          success: true,
+          message: `成功保存 ${(result.files || []).length} 个文件至远程工作区临时目录`,
+          files: result.files || []
+        });
+      }).catch(uploadErr => {
+        return res.status(500).json({ error: uploadErr.message });
+      });
+      return;
+    }
     const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
     const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
     const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
@@ -2453,5 +2515,46 @@ router.post('/devices/:deviceId/update', requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// Helper for forwarding authenticated remote device RPCs
+function registerDeviceRpcRoute(method, routePath, rpcHandler) {
+  router[method](routePath, requireAuth, async (req, res) => {
+    const user = req.user.username;
+    const { deviceId } = req.params;
+    const device = deviceService.getDeviceById(deviceId);
+    if (!device || device.userId !== user) {
+      return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+    }
+    try {
+      const result = await rpcHandler(deviceId, req);
+      if (result && result.error) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+}
+
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/create-file', (id, req) =>
+  deviceService.remoteFsCreateFile(id, req.body.workspacePath, req.body.filePath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/create-dir', (id, req) =>
+  deviceService.remoteFsCreateDir(id, req.body.workspacePath, req.body.dirPath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/delete', (id, req) =>
+  deviceService.remoteFsDelete(id, req.body.workspacePath, req.body.targetPath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/rename', (id, req) =>
+  deviceService.remoteFsRename(id, req.body.workspacePath, req.body.oldPath, req.body.newPath));
+
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/stage', (id, req) =>
+  deviceService.remoteGitStage(id, req.body.workspacePath, req.body.files));
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/unstage', (id, req) =>
+  deviceService.remoteGitUnstage(id, req.body.workspacePath, req.body.files));
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/commit', (id, req) =>
+  deviceService.remoteGitCommit(id, req.body.workspacePath, req.body.message));
+registerDeviceRpcRoute('get', '/devices/:deviceId/git/branches', (id, req) =>
+  deviceService.remoteGitBranches(id, req.query.workspacePath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/checkout', (id, req) =>
+  deviceService.remoteGitCheckout(id, req.body.workspacePath, req.body.branch));
 
 module.exports = router;

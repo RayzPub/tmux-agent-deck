@@ -870,7 +870,8 @@ async function uploadAttachedFiles(fileList) {
       formData.append('files', f.file);
     }
 
-    const res = await fetch(`/api/sessions/${encodeURIComponent(currentSess)}/chat-upload`, {
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const res = await fetch(`/api/sessions/${encodeURIComponent(currentSess)}/chat-upload${devParam}`, {
       method: 'POST',
       body: formData
     });

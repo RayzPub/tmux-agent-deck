@@ -246,12 +246,15 @@ function registerConnection(deviceId, ws, deviceRecord, io) {
 
   // Broadcast device status update strictly to the owner's private room via Socket.io
   if (io && deviceRecord.userId) {
-    io.to(`user:${deviceRecord.userId}`).emit('device:status_change', {
-      deviceId,
-      userId: deviceRecord.userId,
-      isOnline: true,
-      lastSeen: Date.now()
-    });
+    const target = typeof io.to === 'function' ? io.to(`user:${deviceRecord.userId}`) : io;
+    if (target && typeof target.emit === 'function') {
+      target.emit('device:status_change', {
+        deviceId,
+        userId: deviceRecord.userId,
+        isOnline: true,
+        lastSeen: Date.now()
+      });
+    }
   }
 }
 
@@ -286,12 +289,15 @@ function unregisterConnection(deviceId, wsOrIo, maybeIo) {
 
   // Broadcast device status update strictly to the owner's private room via Socket.io
   if (io && conn && conn.userId) {
-    io.to(`user:${conn.userId}`).emit('device:status_change', {
-      deviceId,
-      userId: conn.userId,
-      isOnline: false,
-      lastSeen: Date.now()
-    });
+    const target = typeof io.to === 'function' ? io.to(`user:${conn.userId}`) : io;
+    if (target && typeof target.emit === 'function') {
+      target.emit('device:status_change', {
+        deviceId,
+        userId: conn.userId,
+        isOnline: false,
+        lastSeen: Date.now()
+      });
+    }
   }
 }
 
@@ -540,6 +546,30 @@ function remoteFsWorkspaces(deviceId) {
   return sendDeviceRpc(deviceId, 'fs:workspaces', {});
 }
 
+function remoteFsAddWorkspace(deviceId, name, wsPath) {
+  return sendDeviceRpc(deviceId, 'fs:add_workspace', { name, path: wsPath });
+}
+
+function remoteFsRemoveWorkspace(deviceId, name) {
+  return sendDeviceRpc(deviceId, 'fs:remove_workspace', { name });
+}
+
+function remoteFsCreateFile(deviceId, workspacePath, filePath) {
+  return sendDeviceRpc(deviceId, 'fs:create_file', { workspacePath, filePath });
+}
+
+function remoteFsCreateDir(deviceId, workspacePath, dirPath) {
+  return sendDeviceRpc(deviceId, 'fs:create_dir', { workspacePath, dirPath });
+}
+
+function remoteFsDelete(deviceId, workspacePath, targetPath) {
+  return sendDeviceRpc(deviceId, 'fs:delete', { workspacePath, targetPath });
+}
+
+function remoteFsRename(deviceId, workspacePath, oldPath, newPath) {
+  return sendDeviceRpc(deviceId, 'fs:rename', { workspacePath, oldPath, newPath });
+}
+
 function remoteDirectories(deviceId, targetPath) {
   return sendDeviceRpc(deviceId, 'fs:directories', { targetPath });
 }
@@ -548,12 +578,36 @@ function remoteUploadFile(deviceId, workspacePath, filename, bufferBase64) {
   return sendDeviceRpc(deviceId, 'fs:upload_file', { workspacePath, filename, bufferBase64 });
 }
 
+function remoteChatUpload(deviceId, sessionName, files) {
+  return sendDeviceRpc(deviceId, 'agent:chat_upload', { sessionName, files }, 15000);
+}
+
 function remoteGitStatus(deviceId, workspacePath) {
   return sendDeviceRpc(deviceId, 'git:status', { workspacePath });
 }
 
 function remoteGitDiff(deviceId, workspacePath, filePath) {
   return sendDeviceRpc(deviceId, 'git:diff', { workspacePath, filePath });
+}
+
+function remoteGitStage(deviceId, workspacePath, files) {
+  return sendDeviceRpc(deviceId, 'git:stage', { workspacePath, files });
+}
+
+function remoteGitUnstage(deviceId, workspacePath, files) {
+  return sendDeviceRpc(deviceId, 'git:unstage', { workspacePath, files });
+}
+
+function remoteGitCommit(deviceId, workspacePath, message) {
+  return sendDeviceRpc(deviceId, 'git:commit', { workspacePath, message });
+}
+
+function remoteGitBranches(deviceId, workspacePath) {
+  return sendDeviceRpc(deviceId, 'git:branches', { workspacePath });
+}
+
+function remoteGitCheckout(deviceId, workspacePath, branch) {
+  return sendDeviceRpc(deviceId, 'git:checkout', { workspacePath, branch });
 }
 
 function remoteChatHistory(deviceId, sessionName) {
@@ -619,10 +673,22 @@ module.exports = {
   remoteFsRead,
   remoteFsWrite,
   remoteFsWorkspaces,
+  remoteFsAddWorkspace,
+  remoteFsRemoveWorkspace,
+  remoteFsCreateFile,
+  remoteFsCreateDir,
+  remoteFsDelete,
+  remoteFsRename,
   remoteDirectories,
   remoteUploadFile,
+  remoteChatUpload,
   remoteGitStatus,
   remoteGitDiff,
+  remoteGitStage,
+  remoteGitUnstage,
+  remoteGitCommit,
+  remoteGitBranches,
+  remoteGitCheckout,
   remoteChatHistory,
   remoteSystemUpdate,
   sendDeviceRpc,

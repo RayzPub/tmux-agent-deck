@@ -765,7 +765,8 @@ explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
   if (!confirmDelete) return;
 
   try {
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(ws.name)}`, { method: 'DELETE' });
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/workspaces/${encodeURIComponent(ws.name)}${devParam}`, { method: 'DELETE' });
     if (response.ok) {
       state.currentWorkspacePath = '';
       localStorage.setItem('lastWorkspacePath', '');
@@ -789,7 +790,13 @@ explorerNewWorkspaceBtn.addEventListener('click', () => {
   const pathLabel = document.getElementById('workspacePathLabel');
   const pathHint = document.getElementById('workspacePathHint');
   const browseBtn = document.getElementById('browseNewWorkspacePathBtn');
-  if (state.multiUserEnabled) {
+  const isRemoteDevice = state.currentDeviceId && state.currentDeviceId !== 'cloud';
+  if (isRemoteDevice) {
+    if (pathLabel) pathLabel.textContent = '// 远程设备工作区路径 (可选)';
+    if (pathHint) pathHint.classList.add('hidden');
+    if (browseBtn) browseBtn.style.display = '';
+    newWorkspacePathInput.placeholder = '例如 /Users/you/project 或 ~/project (留空默认 ~/名称)';
+  } else if (state.multiUserEnabled) {
     if (state.username === 'admin') {
       if (pathLabel) pathLabel.textContent = '// 工作区绝对路径 (可选)';
       if (pathHint) pathHint.classList.add('hidden');
@@ -821,8 +828,9 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
   const wsName = newWorkspaceNameInput.value.trim();
   const wsPath = newWorkspacePathInput.value.trim();
   if (!wsName) return;
-  // In single-user mode, path is required
-  if (!state.multiUserEnabled && !wsPath) {
+  // In single-user mode (on cloud), path is required
+  const isRemoteDevice = state.currentDeviceId && state.currentDeviceId !== 'cloud';
+  if (!state.multiUserEnabled && !isRemoteDevice && !wsPath) {
     alert('请输入工作区路径。');
     return;
   }
@@ -833,7 +841,11 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ name: wsName, path: wsPath })
+      body: JSON.stringify({
+        name: wsName,
+        path: wsPath,
+        deviceId: state.currentDeviceId || 'cloud'
+      })
     });
 
     if (response.ok) {
