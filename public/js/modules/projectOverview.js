@@ -839,6 +839,7 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
       if (input) {
         input.focus();
         input.addEventListener('keydown', (e) => {
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter') saveBtn.click();
           if (e.key === 'Escape') cancelBtn.click();
         });

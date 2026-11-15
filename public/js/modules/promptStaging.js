@@ -52,9 +52,10 @@ export function openDispatchModal(options = {}) {
     }
   }
 
-  overlay = document.createElement('div');
+  overlay = document.createElement('dialog');
   overlay.id = 'promptStagingModalOverlay';
   overlay.className = 'prompt-staging-modal-overlay';
+  overlay.setAttribute('closedby', 'any');
   overlay.innerHTML = `
     <div class="prompt-staging-card" role="dialog" aria-modal="true">
       <div class="prompt-staging-header">
@@ -158,32 +159,55 @@ export function openDispatchModal(options = {}) {
   `;
 
   document.body.appendChild(overlay);
+  if (typeof overlay.showModal === 'function') {
+    overlay.showModal();
+  }
 
   if (window.lucide) {
     window.lucide.createIcons();
   }
+
+  let isClosing = false;
+  const close = () => {
+    if (isClosing) return;
+    isClosing = true;
+    window.removeEventListener('keydown', handleEsc);
+    overlay.classList.add('fade-out');
+    setTimeout(() => {
+      if (overlay.open && typeof overlay.close === 'function') {
+        overlay.close();
+      }
+      overlay.remove();
+    }, 200);
+  };
 
   const handleEsc = (e) => {
     if (e.key === 'Escape') {
       close();
     }
   };
-  window.addEventListener('keydown', handleEsc);
-
-  const close = () => {
-    window.removeEventListener('keydown', handleEsc);
-    overlay.classList.add('fade-out');
-    setTimeout(() => overlay.remove(), 200);
-  };
+  if (typeof overlay.showModal !== 'function') {
+    window.addEventListener('keydown', handleEsc);
+  } else {
+    overlay.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      close();
+    });
+    overlay.addEventListener('close', () => {
+      if (!isClosing) overlay.remove();
+    });
+  }
 
   const closeBtn = overlay.querySelector('#stagingModalCloseBtn');
   const cancelBtn = overlay.querySelector('#stagingModalCancelBtn');
   if (closeBtn) closeBtn.addEventListener('click', close);
   if (cancelBtn) cancelBtn.addEventListener('click', close);
 
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
+  if (!('closedBy' in HTMLDialogElement.prototype)) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+  }
 
   const sessionSelect = overlay.querySelector('#stagingTargetSessionSelect');
   const promptTextarea = overlay.querySelector('#stagingModalPromptText');

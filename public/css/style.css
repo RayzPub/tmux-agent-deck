@@ -4953,25 +4953,25 @@ body.light-minimalist .markdown-preview h6 {
 
 .markdown-preview a {
   color: var(--neon-pink);
-  text-decoration: none;
-  border-bottom: 1px dashed var(--neon-pink);
+  text-decoration: underline dashed var(--neon-pink) 1px;
+  text-underline-offset: 3px;
   transition: all 0.2s ease;
 }
 
 .markdown-preview a:hover {
   color: var(--neon-cyan);
-  border-bottom-color: var(--neon-cyan);
+  text-decoration-color: var(--neon-cyan);
   text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
 }
 
 body.light-minimalist .markdown-preview a {
   color: #2563eb;
-  border-bottom: 1px dashed #2563eb;
+  text-decoration-color: #2563eb;
 }
 
 body.light-minimalist .markdown-preview a:hover {
   color: #1d4ed8;
-  border-bottom-color: #1d4ed8;
+  text-decoration-color: #1d4ed8;
   text-shadow: none;
 }
 

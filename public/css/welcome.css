@@ -1021,6 +1021,8 @@ body.welcome-body {
     -webkit-overflow-scrolling: touch;
     mask-image: linear-gradient(to right, black 85%, transparent 100%);
     -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 240, 255, 0.2) transparent;
   }
   
   /* Hide scrollbar of tab header but keep functionality */

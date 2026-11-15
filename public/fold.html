@@ -402,6 +402,7 @@
       color: #e9e9ee;
       font-family: inherit;
       resize: none;
+      field-sizing: content;
       min-height: 24px;
       max-height: 120px;
     }
@@ -610,11 +611,13 @@
       const input = document.getElementById('composerInput');
       const blankWorkspace = document.getElementById('blankWorkspace');
 
-      // 文本框自动弹性增高
-      input.addEventListener('input', function () {
-        this.style.height = 'auto';
-        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-      });
+      // 文本框自动弹性增高（支持 field-sizing: content 的浏览器由 CSS 原生接管）
+      if (!CSS.supports('field-sizing', 'content')) {
+        input.addEventListener('input', function () {
+          this.style.height = 'auto';
+          this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+      }
 
       // 完美复用主项目 mobileInput.js 验证过的 WebKit 视口恢复引擎
       function restorePwaViewportScroll() {
