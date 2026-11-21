@@ -8,6 +8,15 @@ import { state } from './state.js';
 import { fitTerminal, attachSession, isTouchDevice } from './terminal.js';
 import { stopVoiceInput, bindChatVoiceInput } from './voice.js';
 import { restorePwaViewportScroll } from './mobileInput.js';
+import { buildMermaidCardHtml, renderMermaidBlocks, handleMermaidContainerClick } from './mermaidRenderer.js';
+import { enhanceChatFileLinks, handleChatFileLinkClick, parseFilePathCandidate } from './chatFileLink.js';
+import {
+  resolveSessionAgentType,
+  getAgentDisplayName,
+  getAgentClearCommand,
+  isClearCommandForAgent,
+  filterSlashCommands
+} from './slashCommands.js';
 
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
@@ -21,25 +30,27 @@ let lastUserScrollAt = 0;
 let programmaticScrollUntil = 0;
 let isScrollPinned = true;
 
-// Slash Commands Registry for Composer Popover
-const SLASH_COMMANDS = [
-  { cmd: '/clear', desc: '清空当前智能体对话上下文并重置' },
-  { cmd: '/compact', desc: '压缩上下文历史并释放 Token 空间' },
-  { cmd: '/plan', desc: '进入任务分步规划模式 (Antigravity)' },
-  { cmd: '/goal', desc: '启动长程自主深度执行模式 (Antigravity)' },
-  { cmd: '/boost', desc: '开启复杂编码高阶多视角验证 (Antigravity)' },
-  { cmd: '/learn', desc: '沉淀开发者习惯与自定义规则 (Antigravity)' },
-  { cmd: '/browser', desc: '调用无头浏览器进行交互测试 (Antigravity)' },
-  { cmd: '/schedule', desc: '创建定时器或计划任务 (Antigravity)' },
-  { cmd: '/grill-me', desc: '交互式方案对齐与深度答辩 (Antigravity)' },
-  { cmd: '/status', desc: '查看当前会话与模型状态' },
-  { cmd: '/cost', desc: '查看当前会话 Token 消耗统计' },
-  { cmd: '/help', desc: '显示智能体内置帮助指令' }
-];
+// Slash Command Popover State (dynamically populated per active agent)
 let slashPopoverOpen = false;
 let slashActiveIndex = 0;
-let filteredSlashCommands = [...SLASH_COMMANDS];
+let filteredSlashCommands = [];
 let slashBlurTimer = null;
+
+function getActiveChatAgentType(sessionName) {
+  const sess = getCurrentSessionName(sessionName);
+  const cached = sess ? sessionHistoryCache.get(sess) : null;
+  const sessMode = sess ? sessionModeCache.get(sess) : null;
+  const hint = sessMode === 'chat_only' ? 'oar' : (cached?.agentType || '');
+  return resolveSessionAgentType(sess, hint);
+}
+
+function syncChatQuickClearButton(sessionName) {
+  const quickClearBtn = document.getElementById('chatQuickClearBtn');
+  if (!quickClearBtn) return;
+  const agentType = getActiveChatAgentType(sessionName);
+  const clearCmd = getAgentClearCommand(agentType);
+  quickClearBtn.title = `发送 ${clearCmd} 清空当前对话上下文`;
+}
 
 /**
  * Helper to safely resolve current active session name
@@ -634,9 +645,12 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
 
     isScrollPinned = true;
+    updateSlashPopover(null);
+    syncChatQuickClearButton(currentSess);
     loadAndRenderChatHistory(currentSess, true);
     startChatPolling(currentSess);
   } else {
+    updateSlashPopover(null);
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
     if (terminalWrapper) {
@@ -687,8 +701,9 @@ function updateSlashPopover(queryText) {
     return;
   }
 
-  const prefix = queryText.trim().toLowerCase();
-  filteredSlashCommands = SLASH_COMMANDS.filter(item => item.cmd.startsWith(prefix));
+  const agentType = getActiveChatAgentType();
+  const agentLabel = getAgentDisplayName(agentType);
+  filteredSlashCommands = filterSlashCommands(agentType, queryText);
 
   if (filteredSlashCommands.length === 0) {
     slashPopoverOpen = false;
@@ -711,11 +726,12 @@ function updateSlashPopover(queryText) {
     slashActiveIndex = 0;
   }
 
+  const shortcutHint = isTouchDevice() ? '' : ' (↑↓ 选择 · Enter 确认)';
   popover.innerHTML = `
-    <div class="chat-slash-popover-title">// 快捷指令 (↑↓ 选择 · Enter 确认)</div>
+    <div class="chat-slash-popover-title">// ${escapeHtml(agentLabel)} 快捷指令${shortcutHint}</div>
     <div class="chat-slash-list">
       ${filteredSlashCommands.map((item, idx) => `
-        <button type="button" class="chat-slash-item ${idx === slashActiveIndex ? 'active' : ''}" data-cmd="${escapeHtml(item.cmd)}">
+        <button type="button" class="chat-slash-item ${idx === slashActiveIndex ? 'active' : ''}" data-cmd="${escapeHtml(item.cmd)}" data-fill-only="${item.fillOnly ? '1' : '0'}">
           <span class="chat-slash-cmd">${escapeHtml(item.cmd)}</span>
           <span class="chat-slash-desc">${escapeHtml(item.desc)}</span>
         </button>
@@ -737,7 +753,8 @@ function updateSlashPopover(queryText) {
       e.preventDefault();
       e.stopPropagation();
       const cmd = btn.dataset.cmd;
-      if (cmd) executeOrFillSlashCommand(cmd);
+      const fillOnly = btn.dataset.fillOnly === '1';
+      if (cmd) executeOrFillSlashCommand(cmd, fillOnly);
     });
   });
 
@@ -907,10 +924,18 @@ async function uploadAttachedFiles(fileList) {
   }
 }
 
-function executeOrFillSlashCommand(cmd) {
+function executeOrFillSlashCommand(cmd, fillOnly = false) {
   const textarea = document.getElementById('chatComposerTextarea');
   updateSlashPopover(null);
   if (!textarea) return;
+  if (fillOnly) {
+    textarea.value = `${cmd} `;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    return;
+  }
   textarea.value = cmd;
   sendChatMessage(cmd);
 }
@@ -1008,23 +1033,24 @@ function bindComposerEvents() {
 
       // 2. Roving Focus inside Slash Popover if open
       if (slashPopoverOpen && filteredSlashCommands.length > 0) {
+        const currentQuery = textarea.value.startsWith('/') ? textarea.value : '/';
         if (e.key === 'ArrowDown') {
           e.preventDefault();
           slashActiveIndex = (slashActiveIndex + 1) % filteredSlashCommands.length;
-          updateSlashPopover(textarea.value);
+          updateSlashPopover(currentQuery);
           return;
         }
         if (e.key === 'ArrowUp') {
           e.preventDefault();
           slashActiveIndex = (slashActiveIndex - 1 + filteredSlashCommands.length) % filteredSlashCommands.length;
-          updateSlashPopover(textarea.value);
+          updateSlashPopover(currentQuery);
           return;
         }
         if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
           e.preventDefault();
           const chosen = filteredSlashCommands[slashActiveIndex];
           if (chosen) {
-            executeOrFillSlashCommand(chosen.cmd);
+            executeOrFillSlashCommand(chosen.cmd, Boolean(chosen.fillOnly));
             return;
           }
         }
@@ -1103,7 +1129,7 @@ function bindComposerEvents() {
 
   if (slashTriggerBtn && textarea) {
     slashTriggerBtn.addEventListener('mousedown', (e) => {
-      // Prevent textarea from blurring when clicking trigger button
+      // Prevent textarea from blurring when already focused
       e.preventDefault();
     });
 
@@ -1117,12 +1143,11 @@ function bindComposerEvents() {
       if (slashPopoverOpen) {
         updateSlashPopover(null);
       } else {
-        if (!textarea.value.startsWith('/')) {
-          textarea.value = '/';
-        }
+        // Open popover directly without forcing textarea focus (avoids popping up virtual keyboard on mobile)
+        const val = textarea.value || '';
+        const query = (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) ? val : '/';
         slashActiveIndex = 0;
-        updateSlashPopover(textarea.value);
-        textarea.focus();
+        updateSlashPopover(query);
       }
     });
   }
@@ -1217,7 +1242,17 @@ function bindComposerEvents() {
         return;
       }
 
-      // 4. Code Block Copy Button (2.5s Checkmark Decay State Machine)
+      // 4. Mermaid Diagram Actions (Toggle Source / Zoom Lightbox / Copy Source)
+      if (handleMermaidContainerClick(e)) {
+        return;
+      }
+
+      // 4.5 Highlighted File Path Click -> Open Editor / Preview Tab
+      if (handleChatFileLinkClick(e)) {
+        return;
+      }
+
+      // 5. Code Block Copy Button (2.5s Checkmark Decay State Machine)
       const copyBtn = e.target.closest('.chat-code-copy-btn');
       if (copyBtn) {
         const wrapper = copyBtn.closest('.chat-code-wrapper');
@@ -1360,10 +1395,11 @@ export async function clearChatContext() {
   // 4. Update status indicator
   updateStatusBadge('已清空上下文', 'idle');
 
-  // 5. Send /clear into tmux terminal if active
+  // 5. Send agent-specific clear command (/clear for Claude/AGY/Kimi, /new for Codex, clear for Bash) into tmux terminal if active
   const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
   if (sessMode !== 'chat_only') {
-    sendRawToTmux('/clear\r');
+    const clearCmd = getAgentClearCommand(getActiveChatAgentType(currentSess));
+    sendRawToTmux(`${clearCmd}\r`);
   }
 
   // 6. Request backend to clear context, unset @agent_session_id, and reset OAR session
@@ -1405,8 +1441,8 @@ export function sendChatMessage(overrideText) {
   const currentSess = getCurrentSessionName();
   if (!currentSess) return;
 
-  // Intercept slash clear command: cleanly clear context instead of rendering as user chat
-  if (text.toLowerCase() === '/clear' || text.toLowerCase() === 'clear') {
+  // Intercept agent-specific clear command (/clear or /new for Codex): cleanly clear context instead of rendering as user chat
+  if (isClearCommandForAgent(text, getActiveChatAgentType(currentSess))) {
     clearChatContext();
     return;
   }
@@ -1530,6 +1566,10 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
 function enhanceMarkdownCodeBlocks(rawHtml) {
   if (!rawHtml || !rawHtml.includes('<pre>')) return rawHtml;
   return rawHtml.replace(/<pre><code(?: class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g, (match, lang, codeContent) => {
+    const normalizedLang = (lang || '').trim().toLowerCase();
+    if (normalizedLang === 'mermaid') {
+      return buildMermaidCardHtml(codeContent);
+    }
     const displayLang = lang ? escapeHtml(lang) : 'code';
     return `
       <div class="chat-code-wrapper">
@@ -1576,6 +1616,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   if (agentNameEl) {
     agentNameEl.textContent = `${agentLabel} · ${displaySession}`;
   }
+  syncChatQuickClearButton(sessionName || currentSess);
 
   const messages = (data && data.messages) ? data.messages : [];
 
@@ -1673,13 +1714,20 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
           const inputSummary = t.input
             ? (t.input.command || t.input.file_path || t.input.filePath || t.input.pattern || JSON.stringify(t.input))
             : '';
+          const rawFilePath = t.input && (t.input.file_path || t.input.filePath || t.input.path);
+          const parsedToolFile = rawFilePath ? parseFilePathCandidate(String(rawFilePath)) : null;
+          const argsHtml = inputSummary
+            ? (parsedToolFile && String(inputSummary).trim() === String(rawFilePath).trim()
+                ? `<div class="cds-tool-item-args"><span class="chat-file-link" data-file-path="${escapeHtml(parsedToolFile.path)}" role="button" tabindex="0" title="点击打开预览: ${escapeHtml(parsedToolFile.path)}">${escapeHtml(String(inputSummary))}</span></div>`
+                : `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>`)
+            : '';
           return `
             <div class="cds-tool-item">
               <div class="cds-tool-item-head">
                 <i data-lucide="wrench" style="width: 11px; height: 11px;"></i>
                 <span>${escapeHtml(t.name)}</span>
               </div>
-              ${inputSummary ? `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>` : ''}
+              ${argsHtml}
             </div>
           `;
         }).join('');
@@ -1739,8 +1787,10 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
                   </div>
                 `;
               }
+              const parsedAtt = parseFilePathCandidate(item.relativePath) || parseFilePathCandidate(item.absolutePath);
+              const attPathAttr = parsedAtt ? ` data-file-path="${escapeHtml(parsedAtt.path)}" title="点击打开预览: ${escapeHtml(parsedAtt.path)}" role="button" tabindex="0"` : '';
               return `
-                <div class="chat-bubble-att-item">
+                <div class="chat-bubble-att-item${parsedAtt ? ' clickable' : ''}"${attPathAttr}>
                   <i data-lucide="file-text" style="width: 13px; height: 13px;"></i>
                   <span class="chat-bubble-att-name">${escapeHtml(item.name)}</span>
                 </div>
@@ -1753,7 +1803,8 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
         } else if (window.marked) {
           try {
             const parsedHtml = window.marked.parse(msg.content);
-            bodyHtml += `<div class="chat-prose-body">${enhanceMarkdownCodeBlocks(parsedHtml)}</div>`;
+            const enhancedHtml = enhanceChatFileLinks(enhanceMarkdownCodeBlocks(parsedHtml));
+            bodyHtml += `<div class="chat-prose-body">${enhancedHtml}</div>`;
           } catch (e) {
             bodyHtml += `<div>${escapeHtml(msg.content)}</div>`;
           }
@@ -1803,6 +1854,15 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+
+  // Render any unrendered Mermaid diagrams asynchronously (cached ones are already inlined)
+  renderMermaidBlocks(container, {
+    onRendered: () => {
+      if (isScrollPinned && (performance.now() - lastUserScrollAt) > SCROLL_COOL_DOWN_MS) {
+        scrollToChatBottom(false);
+      }
+    }
+  });
 
   // Apply open-claude-ui Scroll Pinning Physics:
   // Only auto-scroll to bottom if forced, actively in programmatic scroll window, or pinned (and user didn't scroll manually recently)

@@ -1,6 +1,186 @@
 import { state } from './state.js';
 import { stopVoiceInput } from './voice.js';
 import { fitTerminal } from './terminal.js';
+import {
+  resolveSessionAgentType,
+  getAgentDisplayName,
+  filterSlashCommands
+} from './slashCommands.js';
+
+let terminalSlashOpen = false;
+let terminalSlashActiveIndex = 0;
+let terminalFilteredCommands = [];
+let terminalSlashBlurTimer = null;
+
+function escapeHtmlBasic(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Sync terminal bottom quick buttons (such as /clear vs /new vs clear) with the active session's agent type
+ */
+export function syncTerminalAgentQuickButtons(sessionName) {
+  const sess = sessionName || state.currentSession;
+  const agentType = resolveSessionAgentType(sess);
+  const slashBtn = document.getElementById('terminalSlashTriggerBtn');
+  if (slashBtn) {
+    const agentLabel = getAgentDisplayName(agentType);
+    slashBtn.title = `${agentLabel} 快捷指令 (/)`;
+  }
+  if (terminalSlashOpen) {
+    updateTerminalSlashPopover(null);
+  }
+}
+
+/**
+ * Execute or fill a command selected from the terminal slash popover
+ */
+function executeOrFillTerminalSlashCommand(cmd, fillOnly = false) {
+  const mobileCommandInput = document.getElementById('mobileCommandInput');
+  updateTerminalSlashPopover(null);
+
+  if (fillOnly && mobileCommandInput) {
+    mobileCommandInput.value = `${cmd} `;
+    autoResizeMobileInput(mobileCommandInput);
+    mobileCommandInput.focus();
+    mobileCommandInput.setSelectionRange(mobileCommandInput.value.length, mobileCommandInput.value.length);
+    return;
+  }
+
+  // Clear filter prefix in mobileCommandInput if user typed `/...`
+  if (mobileCommandInput && mobileCommandInput.value.trim().startsWith('/')) {
+    mobileCommandInput.value = '';
+    autoResizeMobileInput(mobileCommandInput);
+  }
+
+  stopVoiceInput();
+  if (state.currentSession) {
+    const cached = state.sessionCache.get(state.currentSession);
+    if (cached && cached.socket) {
+      if (cached.term) {
+        cached.term.scrollToBottom();
+      }
+      // For interactive Agent TUIs with `/` completion popups, send command text first then `\r` after a short delay
+      if (cmd.startsWith('/')) {
+        const targetSocket = cached.socket;
+        targetSocket.emit('terminal-input', cmd, { exitCopyMode: true });
+        setTimeout(() => {
+          targetSocket.emit('terminal-input', '\r', { exitCopyMode: true });
+        }, 80);
+      } else {
+        cached.socket.emit('terminal-input', `${cmd}\r`, { exitCopyMode: true });
+      }
+    }
+  }
+}
+
+/**
+ * Render and manage the Terminal `/` Slash Command Popover
+ */
+export function updateTerminalSlashPopover(queryText) {
+  const popover = document.getElementById('terminalSlashPopover');
+  const triggerBtn = document.getElementById('terminalSlashTriggerBtn');
+  if (!popover) return;
+
+  if (terminalSlashBlurTimer) {
+    clearTimeout(terminalSlashBlurTimer);
+    terminalSlashBlurTimer = null;
+  }
+
+  if (queryText === null || !String(queryText).startsWith('/')) {
+    terminalSlashOpen = false;
+    popover.classList.add('hidden');
+    popover.innerHTML = '';
+    if (triggerBtn) {
+      triggerBtn.classList.remove('active');
+      triggerBtn.setAttribute('aria-expanded', 'false');
+    }
+    return;
+  }
+
+  const agentType = resolveSessionAgentType(state.currentSession);
+  const agentLabel = getAgentDisplayName(agentType);
+  terminalFilteredCommands = filterSlashCommands(agentType, queryText);
+
+  if (terminalFilteredCommands.length === 0) {
+    terminalSlashOpen = false;
+    popover.classList.add('hidden');
+    popover.innerHTML = '';
+    if (triggerBtn) {
+      triggerBtn.classList.remove('active');
+      triggerBtn.setAttribute('aria-expanded', 'false');
+    }
+    return;
+  }
+
+  terminalSlashOpen = true;
+  if (triggerBtn) {
+    triggerBtn.classList.add('active');
+    triggerBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  if (terminalSlashActiveIndex >= terminalFilteredCommands.length) {
+    terminalSlashActiveIndex = 0;
+  }
+
+  popover.innerHTML = `
+    <div class="terminal-slash-popover-title">// ${escapeHtmlBasic(agentLabel)} 快捷指令</div>
+    <div class="terminal-slash-list">
+      ${terminalFilteredCommands.map((item, idx) => `
+        <button type="button" class="terminal-slash-item ${idx === terminalSlashActiveIndex ? 'active' : ''}" data-cmd="${escapeHtmlBasic(item.cmd)}" data-fill-only="${item.fillOnly ? '1' : '0'}">
+          <span class="terminal-slash-cmd">${escapeHtmlBasic(item.cmd)}</span>
+          <span class="terminal-slash-desc">${escapeHtmlBasic(item.desc)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+  popover.classList.remove('hidden');
+
+  popover.onmousedown = (e) => {
+    e.preventDefault();
+  };
+
+  popover.querySelectorAll('.terminal-slash-item').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cmd = btn.dataset.cmd;
+      const fillOnly = btn.dataset.fillOnly === '1';
+      if (cmd) executeOrFillTerminalSlashCommand(cmd, fillOnly);
+    });
+  });
+
+  const activeItem = popover.querySelector('.terminal-slash-item.active');
+  if (activeItem) {
+    activeItem.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+/**
+ * Toggle terminal slash popover from the bottom `/` button WITHOUT popping up the soft keyboard
+ */
+export function toggleTerminalSlashPopover() {
+  if (terminalSlashBlurTimer) {
+    clearTimeout(terminalSlashBlurTimer);
+    terminalSlashBlurTimer = null;
+  }
+  if (terminalSlashOpen) {
+    updateTerminalSlashPopover(null);
+  } else {
+    const mobileCommandInput = document.getElementById('mobileCommandInput');
+    const val = mobileCommandInput ? (mobileCommandInput.value || '') : '';
+    const query = (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) ? val : '/';
+    terminalSlashActiveIndex = 0;
+    updateTerminalSlashPopover(query);
+  }
+}
 
 /**
  * Auto-resize the mobile input textarea elastically between 36px and 120px
@@ -404,18 +584,44 @@ export function initMobileInput() {
     mobileCommandInput.setAttribute('spellcheck', 'false');
     mobileCommandInput.setAttribute('enterkeyhint', 'send');
 
-    // Elastic auto-resize on input events
+    // Elastic auto-resize on input events + agent slash command popover trigger
     mobileCommandInput.addEventListener('input', () => {
       autoResizeMobileInput(mobileCommandInput);
+      const val = mobileCommandInput.value || '';
+      if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
+        terminalSlashActiveIndex = 0;
+        updateTerminalSlashPopover(val);
+      } else {
+        updateTerminalSlashPopover(null);
+      }
     });
 
     mobileCommandInput.addEventListener('blur', () => {
       restorePwaViewportScroll();
+      if (terminalSlashBlurTimer) clearTimeout(terminalSlashBlurTimer);
+      terminalSlashBlurTimer = setTimeout(() => {
+        const active = document.activeElement;
+        const popover = document.getElementById('terminalSlashPopover');
+        const triggerBtn = document.getElementById('terminalSlashTriggerBtn');
+        if (popover && (popover === active || popover.contains(active))) return;
+        if (triggerBtn && (triggerBtn === active || triggerBtn.contains(active))) return;
+        updateTerminalSlashPopover(null);
+      }, 200);
     });
 
     // Initial resize to single-line baseline
     autoResizeMobileInput(mobileCommandInput);
   }
+
+  // Dismiss terminal slash popover when clicking/tapping anywhere outside
+  document.addEventListener('pointerdown', (e) => {
+    if (!terminalSlashOpen) return;
+    const popover = document.getElementById('terminalSlashPopover');
+    const triggerBtn = document.getElementById('terminalSlashTriggerBtn');
+    if (popover && !popover.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
+      updateTerminalSlashPopover(null);
+    }
+  });
 
   if (mobileCommandInput && mobileSendBtn) {
     let lastSendCommandTime = 0;
@@ -427,6 +633,7 @@ export function initMobileInput() {
 
       const text = mobileCommandInput.value;
       stopVoiceInput();
+      updateTerminalSlashPopover(null);
 
       if (state.currentSession) {
         const cached = state.sessionCache.get(state.currentSession);
@@ -456,10 +663,39 @@ export function initMobileInput() {
     });
 
     mobileCommandInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        // Guard against IME composition confirmation (Chinese Pinyin candidate selection)
-        if (e.isComposing || e.keyCode === 229) return;
+      // Guard against IME composition confirmation (Chinese Pinyin candidate selection)
+      if (e.isComposing || e.keyCode === 229) return;
 
+      if (terminalSlashOpen && terminalFilteredCommands.length > 0) {
+        const currentQuery = mobileCommandInput.value.startsWith('/') ? mobileCommandInput.value : '/';
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          terminalSlashActiveIndex = (terminalSlashActiveIndex + 1) % terminalFilteredCommands.length;
+          updateTerminalSlashPopover(currentQuery);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          terminalSlashActiveIndex = (terminalSlashActiveIndex - 1 + terminalFilteredCommands.length) % terminalFilteredCommands.length;
+          updateTerminalSlashPopover(currentQuery);
+          return;
+        }
+        if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+          e.preventDefault();
+          const chosen = terminalFilteredCommands[terminalSlashActiveIndex];
+          if (chosen) {
+            executeOrFillTerminalSlashCommand(chosen.cmd, Boolean(chosen.fillOnly));
+            return;
+          }
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          updateTerminalSlashPopover(null);
+          return;
+        }
+      }
+
+      if (e.key === 'Enter') {
         // Enter sends command; Shift+Enter inserts newline
         if (!e.shiftKey) {
           e.preventDefault();

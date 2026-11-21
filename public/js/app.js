@@ -14,7 +14,7 @@ import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 import { initProjectOverviewEvents, openProjectTab } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
-import { initMobileInput, initPreventZoom } from './modules/mobileInput.js';
+import { initMobileInput, initPreventZoom, syncTerminalAgentQuickButtons } from './modules/mobileInput.js';
 import { initDeviceManager } from './modules/deviceManager.js';
 
 // Lock zoom immediately at script evaluation
@@ -255,6 +255,9 @@ export async function loadSessions() {
     const sessions = await response.json();
     state.sessionListCache = Array.isArray(sessions) ? sessions : [];
     renderSessions(state.sessionListCache);
+    if (state.currentSession) {
+      syncTerminalAgentQuickButtons(state.currentSession);
+    }
   } catch (err) {
     console.error('Failed to load sessions:', err);
     sessionList.innerHTML = `
@@ -1668,13 +1671,31 @@ loadWorkspaces().then(async () => {
   const deckControlDropdownMenu = document.getElementById('deckControlDropdownMenu');
 
   if (deckControlToggleBtn && deckControlDropdownMenu) {
+    const repositionDeckDropupMenu = () => {
+      if (deckControlDropdownMenu.classList.contains('hidden')) return;
+      const btnRect = deckControlToggleBtn.getBoundingClientRect();
+      // Keep top edge safely inside viewport top (accounting for notch / status bar)
+      const topSafeMargin = 14;
+      const availableAbove = Math.max(180, Math.floor(btnRect.top - topSafeMargin - 8));
+      deckControlDropdownMenu.style.setProperty('max-height', `${Math.min(460, availableAbove)}px`, 'important');
+    };
+
     deckControlToggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const isHidden = deckControlDropdownMenu.classList.toggle('hidden');
       deckControlToggleBtn.classList.toggle('active', !isHidden);
       if (!isHidden) {
+        // Close device switcher dropdown so the two popovers never collide
+        const switcherDropdown = document.getElementById('deviceSwitcherDropdown');
+        if (switcherDropdown) switcherDropdown.classList.add('hidden');
+        repositionDeckDropupMenu();
         deckControlDropdownMenu.scrollTop = 0;
       }
+    });
+
+    window.addEventListener('resize', repositionDeckDropupMenu);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(repositionDeckDropupMenu, 120);
     });
 
     // Touch event guard on iPhone / Surface Duo: prevent drawer swipes from hijacking menu scrolls

@@ -115,6 +115,13 @@
           </div>
         </div>
 
+        <!-- Task Board Overview Entry Button (Global across workspaces on current device) -->
+        <button id="openProjectOverviewBtn" class="project-overview-entry-btn" title="查看所有会话任务的卡片看板总览">
+          <i data-lucide="kanban" class="entry-btn-icon"></i>
+          <span class="entry-btn-text">任务看板总览</span>
+          <span class="entry-btn-indicator"><span class="pulse-dot"></span></span>
+        </button>
+
         <!-- Context 2: Workspace Selector (当前工作区) -->
         <div class="sidebar-context-group">
           <div class="workspace-tech-header">
@@ -132,13 +139,6 @@
             <button id="explorerDeleteWorkspaceBtn" style="display: none !important;" title="删除工作区" aria-hidden="true" tabindex="-1"></button>
           </div>
         </div>
-
-        <!-- Project Progress HUD Entry Button -->
-        <button id="openProjectOverviewBtn" class="project-overview-entry-btn" title="查看当前工作区项目推进总览">
-          <i data-lucide="activity" class="entry-btn-icon"></i>
-          <span class="entry-btn-text">项目推进总览</span>
-          <span class="entry-btn-indicator"><span class="pulse-dot"></span></span>
-        </button>
       </div>
 
       <!-- Sidebar Navigation Tabs (CDS Segmented Pill Control) -->
@@ -394,25 +394,23 @@
 
         <!-- Terminal Bottom Shortcut Controls (Rearranged for Duo & Mobile) -->
         <div class="mobile-bottom-controls hidden">
+          <!-- Terminal Agent-Aware Slash Command Popover -->
+          <div class="terminal-slash-popover hidden" id="terminalSlashPopover"></div>
+
           <!-- Mobile Keyboard Helper Bar (Row 1) -->
           <div class="mobile-keyboard-bar" id="mobileKeyboardBar">
             <div class="helper-key-group main-keys">
-              <button class="helper-key" data-key="esc">ESC</button>
-              <button class="helper-key" data-key="tab">TAB</button>
-              <button class="helper-key" data-key="ctrl-c">C-c</button>
-              <button class="helper-key" data-key="clear" title="发送 /clear">/clear</button>
-              <button class="helper-key modifier-key" data-key="paste" title="粘贴"><i data-lucide="clipboard-paste"></i></button>
-              <button class="helper-key" data-key="pgup" title="Page Up">PgUp</button>
-              <button class="helper-key" data-key="pgdn" title="Page Down">PgDn</button>
+              <button class="helper-key" data-key="esc" title="ESC">ESC</button>
+              <button class="helper-key" data-key="tab" title="TAB 补全">TAB</button>
+              <button class="helper-key" data-key="shift-tab" title="Shift+Tab 切换模式">S-Tab</button>
+              <button class="helper-key" data-key="ctrl-c" title="Ctrl+C 中断">C-c</button>
+              <button class="helper-key slash-trigger-key" id="terminalSlashTriggerBtn" data-key="slash" title="快捷指令 (/)" aria-expanded="false">/</button>
             </div>
             <div class="helper-key-group arrow-keys">
-              <button class="helper-key arrow-key" data-key="left"><i data-lucide="chevron-left"></i></button>
-              <button class="helper-key arrow-key" data-key="up"><i data-lucide="chevron-up"></i></button>
-              <button class="helper-key arrow-key" data-key="down"><i data-lucide="chevron-down"></i></button>
-              <button class="helper-key arrow-key" data-key="right"><i data-lucide="chevron-right"></i></button>
-              <button class="helper-key keyboard-toggle" id="keyboardToggleBtn" data-key="keyboard-toggle" title="呼出/隐藏软键盘">
-                <i data-lucide="keyboard"></i>
-              </button>
+              <button class="helper-key arrow-key" data-key="left" title="左移"><i data-lucide="chevron-left"></i></button>
+              <button class="helper-key arrow-key" data-key="up" title="上移"><i data-lucide="chevron-up"></i></button>
+              <button class="helper-key arrow-key" data-key="down" title="下移"><i data-lucide="chevron-down"></i></button>
+              <button class="helper-key arrow-key" data-key="right" title="右移"><i data-lucide="chevron-right"></i></button>
             </div>
           </div>
 
@@ -943,8 +941,14 @@
         <button id="closeDeviceManagerModalBtn" class="modal-close"><i data-lucide="x"></i></button>
       </div>
 
+      <!-- Managed Docker Sandbox Section -->
+      <div class="device-section-title">// 云端托管沙箱 (Docker 强隔离算力)</div>
+      <div id="sandboxControlPanel" class="sandbox-control-panel">
+        <div class="sandbox-loading-text">正在检测云端 Docker 沙箱状态...</div>
+      </div>
+
       <!-- Device List Section -->
-      <div class="device-section-title">// 已绑定的个人设备列表</div>
+      <div class="device-section-title">// 已绑定的算力设备列表</div>
       <div id="deviceListContainer" class="device-list">
         <!-- Rendered dynamically -->
         <div class="device-empty-state">

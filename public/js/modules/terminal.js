@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { closeTab, renderTabs, switchMainPanel } from './tabs.js';
 import { refreshFileTree } from './explorer.js';
+import { toggleTerminalSlashPopover, syncTerminalAgentQuickButtons } from './mobileInput.js';
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches || 
@@ -271,6 +272,7 @@ export function attachSession(sessionName) {
   const activeSessionNameText = document.getElementById('activeSessionName');
   activeSessionNameText.textContent = sessionName;
   reportFocusStatus();
+  syncTerminalAgentQuickButtons(sessionName);
   
   // Auto-scope Explorer to session's working directory
   const sessionObj = state.sessionListCache.find(s => s.name === sessionName);
@@ -895,69 +897,40 @@ export function initMobileKeyboard(mobileKeyboardBar) {
 
   const triggerHelperKey = (btn) => {
     const key = btn.getAttribute('data-key');
-    console.log('[MobileKeyboard] Helper key triggered:', key);
     if (!key) return;
 
-    if (key === 'ctrl') {
-      btn.classList.toggle('active');
-      return;
-    }
-
-    if (key === 'paste') {
-      pasteFromClipboard();
+    if (key === 'slash') {
+      toggleTerminalSlashPopover();
       return;
     }
 
     const activeSession = state.sessionCache.get(state.currentSession);
-    console.log('[MobileKeyboard] activeSession:', activeSession, 'currentSession:', state.currentSession);
-
-    if (key === 'keyboard-toggle') {
-      const mobileInput = document.getElementById('mobileCommandInput');
-      if (mobileInput) {
-        if (document.activeElement === mobileInput) {
-          mobileInput.blur();
-        } else {
-          mobileInput.focus();
-        }
-        return;
-      }
-      if (activeSession && activeSession.term) {
-        activeSession.term.focus();
-      }
-      return;
-    }
-
-    if (key === 'clear') {
-      if (activeSession && activeSession.socket) {
-        // Send /clear command to agent running in the PTY
-        activeSession.socket.emit('terminal-input', '/clear\r');
-      }
-      return;
-    }
+    if (!activeSession || !activeSession.socket) return;
 
     // Send sequence directly
     let seq = '';
+    let exitCopyMode = false;
     switch (key) {
       case 'esc': seq = '\x1b'; break;
-      case 'tab': seq = '\x09'; break;
-      case 'enter': seq = '\r'; break;
-      case 'ctrl-c': seq = '\x03'; break; // Ctrl+C
+      case 'tab': seq = '\x09'; exitCopyMode = true; break;
+      case 'shift-tab': seq = '\x1b[Z'; exitCopyMode = true; break;
+      case 'enter': seq = '\r'; exitCopyMode = true; break;
+      case 'ctrl-c': seq = '\x03'; exitCopyMode = true; break;
       case 'up': seq = '\x1b[A'; break;
       case 'down': seq = '\x1b[B'; break;
       case 'left': seq = '\x1b[D'; break;
       case 'right': seq = '\x1b[C'; break;
-      case 'pgup': seq = '\x1b[5~'; break;
-      case 'pgdn': seq = '\x1b[6~'; break;
     }
 
-    if (seq && activeSession && activeSession.socket) {
-      activeSession.socket.emit('terminal-input', seq);
+    if (seq) {
+      activeSession.socket.emit('terminal-input', seq, exitCopyMode ? { exitCopyMode: true } : undefined);
     }
   };
 
   let touchStartX = 0;
   let touchStartY = 0;
   let touchHasMoved = false;
+  let lastTouchTriggerAt = 0;
 
   // Track touch start to detect dragging/scrolling vs tapping
   mobileKeyboardBar.addEventListener('touchstart', (e) => {
@@ -984,10 +957,10 @@ export function initMobileKeyboard(mobileKeyboardBar) {
     const btn = e.target.closest('.helper-key');
     if (!btn) return;
 
-    console.log('[MobileKeyboard] touchend. touchHasMoved:', touchHasMoved);
     if (!touchHasMoved) {
       // It was a short tap (not a drag/scroll gesture)!
       e.preventDefault(); // Prevent focus loss and double tap zoom
+      lastTouchTriggerAt = Date.now();
       triggerHelperKey(btn);
     }
   });
@@ -996,6 +969,7 @@ export function initMobileKeyboard(mobileKeyboardBar) {
     const btn = e.target.closest('.helper-key');
     if (!btn) return;
     e.preventDefault(); // Prevent focus loss
+    if (Date.now() - lastTouchTriggerAt < 500) return;
     triggerHelperKey(btn);
   });
 }
