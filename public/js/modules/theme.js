@@ -36,14 +36,10 @@ export function updateMetaThemeColor(isLight) {
     }
   }
   const statusBarMeta = document.getElementById('appleStatusBarMeta') || document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-  if (statusBarMeta) {
-    // In light mode, use 'default' so iOS uses dark icons/text without rendering dark gradient scrim overlay
-    // In dark mode, use 'black-translucent' so the dark space theme blends with system status bar
-    statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
-    if (statusBarMeta.parentNode) {
-      const statusClone = statusBarMeta.cloneNode(true);
-      statusBarMeta.parentNode.replaceChild(statusClone, statusBarMeta);
-    }
+  if (statusBarMeta && statusBarMeta.getAttribute('content') !== 'black-translucent') {
+    // Keep 'black-translucent' so iOS standalone PWA always extends edge-to-edge under the status bar
+    // (avoiding a blank top status-bar inset). Theme contrast is driven by meta[name="theme-color"] + colorScheme.
+    statusBarMeta.setAttribute('content', 'black-translucent');
   }
   if (document.documentElement) {
     document.documentElement.style.removeProperty('background-color');

@@ -5,7 +5,7 @@
  */
 
 import { state } from './state.js';
-import { fitTerminal, attachSession, isTouchDevice } from './terminal.js';
+import { fitTerminal, attachSession, isTouchDevice, showTipToast } from './terminal.js';
 import { stopVoiceInput, bindChatVoiceInput } from './voice.js';
 import { restorePwaViewportScroll } from './mobileInput.js';
 import { buildMermaidCardHtml, renderMermaidBlocks, handleMermaidContainerClick } from './mermaidRenderer.js';
@@ -22,6 +22,7 @@ const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
 const expandedAccordions = new Set();  // Set of `${sessionName}::${accordionKey}` to persist user toggle across polls
 let currentPollTimer = null;
+let currentPollIntervalMs = 2000;
 let activePollSession = null;
 
 // Scroll Pinning Physics State (open-claude-ui cooldown + bottom anchor tracking)
@@ -69,77 +70,6 @@ export function getCurrentSessionName(passedName) {
 }
 
 /**
- * Curated Pool of Beginner-Friendly Starter Missions (Single-Page HTML Mini-Apps)
- */
-const STARTER_TIPS_POOL = [
-  {
-    id: 'weekly-report',
-    icon: 'file-text',
-    label: '周五周报排版器',
-    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：周五周报与工作总结排版器。要求界面简洁现代，支持输入零散工作流水账后一键按本周完成、下周规划、风险协同进行排版，支持一键复制富文本和本地存储，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中，方便我直接在浏览器中打开使用。'
-  },
-  {
-    id: 'lunch-wheel',
-    icon: 'disc',
-    label: '中午吃什么转盘',
-    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：中午吃什么 / 聚餐幸运大转盘。要求界面精致好看，使用纯 HTML5 Canvas 绘制丝滑旋转的大转盘，支持自定义添加/删除餐厅选项，抽中后有全屏彩色纸屑撒花庆祝动画，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中。'
-  },
-  {
-    id: 'pomodoro-timer',
-    icon: 'timer',
-    label: '专注番茄钟看板',
-    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：极简办公专注番茄钟看板。要求界面具有暗黑极简科技感，包含 25 分钟专注 / 5 分钟休息倒计时、今日专注时长打卡统计，以及久坐放松提醒，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中，开箱即用。'
-  },
-  {
-    id: 'salary-calc',
-    icon: 'calculator',
-    label: '薪资个税测算器',
-    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：白领薪资与五险一金个税测算器。要求界面整洁专业，输入税前月薪和社保公积金比例，动态计算出个人与公司缴纳明细、税后到手收入，并通过 CSS 进度条直观展示各项扣除比例，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中。'
-  },
-  {
-    id: 'matrix-board',
-    icon: 'layout-grid',
-    label: '四象限任务便签',
-    prompt: '请在当前工作目录下帮我编写一个单文件 HTML 网页应用：四象限工作任务便签板。要求根据“重要-紧急”法则划分四个清晰的色彩区域，支持双击或点击新建任务卡片、拖拽移动卡片象限、勾选完成与本地 LocalStorage 自动保存，所有 CSS 和 JS 均内嵌在同一个 HTML 文件中。'
-  }
-];
-
-let currentTipIndices = [0, 1, 2];
-
-function renderStarterPillsHtml() {
-  const tips = currentTipIndices.map(i => STARTER_TIPS_POOL[i]);
-  const tipsHtml = tips.map(t => `
-    <button class="chat-starter-pill" data-prompt="${escapeHtml(t.prompt)}" title="${escapeHtml(t.prompt)}">
-      <i data-lucide="${escapeHtml(t.icon)}"></i>
-      <span>${escapeHtml(t.label)}</span>
-    </button>
-  `).join('');
-
-  return `
-    ${tipsHtml}
-    <button class="chat-starter-pill shuffle" id="btnShuffleStarterTips" title="换一批灵感">
-      <i data-lucide="refresh-cw"></i>
-      <span>换个灵感</span>
-    </button>
-  `;
-}
-
-function shuffleStarterTips() {
-  const poolLen = STARTER_TIPS_POOL.length;
-  const indices = [];
-  while (indices.length < Math.min(3, poolLen)) {
-    const r = Math.floor(Math.random() * poolLen);
-    if (!indices.includes(r)) indices.push(r);
-  }
-  currentTipIndices = indices;
-  const pillsContainer = document.getElementById('chatStarterPills');
-  if (pillsContainer) {
-    pillsContainer.innerHTML = renderStarterPillsHtml();
-    if (window.lucide) window.lucide.createIcons();
-  }
-}
-
-/**
  * Initialize the Chat Mode extension
  */
 export function initChatMode() {
@@ -169,9 +99,9 @@ export function initChatMode() {
         <i data-lucide="terminal"></i>
         <span>终端</span>
       </button>
-      <button class="deck-mode-btn" id="modeBtnChat" title="智能体对话模式">
-        <i data-lucide="message-square-code"></i>
-        <span>对话</span>
+      <button class="deck-mode-btn" id="modeBtnChat" title="切换至会话界面">
+        <i data-lucide="messages-square"></i>
+        <span>会话</span>
       </button>
     `;
 
@@ -620,7 +550,7 @@ export async function applySessionViewMode(sessionName, forceMode) {
   } else {
     btnTerminal.style.opacity = '1';
     btnTerminal.title = '切换至终端交互界面';
-    btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>智能体会话</span>';
+    btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>会话</span>';
   }
 
   if (switcher) switcher.style.display = 'inline-flex';
@@ -1186,7 +1116,8 @@ function bindComposerEvents() {
       const currentSess = getCurrentSessionName();
       const sessMode = currentSess ? (sessionModeCache.get(currentSess) || 'hybrid') : 'hybrid';
       if (sessMode === 'chat_only') {
-        fetch(`/api/sessions/${encodeURIComponent(currentSess)}/oar-abort`, { method: 'POST' }).catch(() => {});
+        const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+        fetch(`/api/sessions/${encodeURIComponent(currentSess)}/oar-abort${devParam}`, { method: 'POST' }).catch(() => {});
         updateStatusBadge('已请求中止 OAR 生成', 'waiting');
       } else {
         sendRawToTmux('\x03');
@@ -1195,39 +1126,12 @@ function bindComposerEvents() {
     });
   }
 
-  // Delegate clicks on starter tips, accordions, and code copy buttons within agentChatMessages
+  // Delegate clicks on accordions and code copy buttons within agentChatMessages
   const msgContainer = document.getElementById('agentChatMessages');
   if (msgContainer && !msgContainer.dataset.delegatedBound) {
     msgContainer.dataset.delegatedBound = 'true';
     msgContainer.addEventListener('click', (e) => {
-      // 1. Starter tips shuffle
-      const shuffleBtn = e.target.closest('#btnShuffleStarterTips');
-      if (shuffleBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        shuffleStarterTips();
-        return;
-      }
-
-      // 2. Starter pill click
-      const pill = e.target.closest('.chat-starter-pill:not(.shuffle)');
-      if (pill && pill.dataset.prompt) {
-        e.preventDefault();
-        e.stopPropagation();
-        const ta = document.getElementById('chatComposerTextarea');
-        if (ta) {
-          ta.value = pill.dataset.prompt;
-          ta.style.height = 'auto';
-          ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
-          if (!isTouchDevice()) {
-            ta.focus();
-            ta.setSelectionRange(ta.value.length, ta.value.length);
-          }
-        }
-        return;
-      }
-
-      // 3. CSS Grid 0fr -> 1fr Accordion toggle
+      // 1. CSS Grid 0fr -> 1fr Accordion toggle
       const accHeader = e.target.closest('.cds-accordion-header');
       if (accHeader) {
         const acc = accHeader.closest('.cds-accordion');
@@ -1447,6 +1351,18 @@ export function sendChatMessage(overrideText) {
     return;
   }
 
+  const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
+
+  // Intercept /compact in OAR Pure Chat Mode to invoke native OAR session.compact()
+  if (sessMode === 'chat_only' && text.toLowerCase() === '/compact') {
+    if (textarea) {
+      textarea.value = '';
+      textarea.style.height = 'auto';
+    }
+    triggerOarCompact(currentSess);
+    return;
+  }
+
   // Build full prompt text with injected file paths inside the workspace to avoid agent permission prompts
   let fullPrompt = text;
   if (attachmentsToSend.length > 0) {
@@ -1468,9 +1384,11 @@ export function sendChatMessage(overrideText) {
   clearCurrentAttachments();
 
   // 3. Pipe to tmux or dispatch to OAR engine
-  const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
   if (sessMode === 'chat_only') {
-    sendToOarEngine(currentSess, fullPrompt);
+    const imagePaths = attachmentsToSend
+      .filter(f => /\.(png|jpe?g|gif|webp)$/i.test(f.name || f.relativePath || ''))
+      .map(f => ({ relativePath: f.relativePath, path: f.absolutePath }));
+    sendToOarEngine(currentSess, fullPrompt, imagePaths);
   } else {
     // Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
     sendRawToTmux(fullPrompt + '\r');
@@ -1490,28 +1408,64 @@ export function sendChatMessage(overrideText) {
 }
 
 /**
- * Dispatch message directly to OAR Pure Chat Engine API
+ * Trigger OAR 0.128.1 native manual context compaction (/compact)
  */
-async function sendToOarEngine(sessionName, content) {
-  updateStatusBadge('OAR 智能体推理与工具调度中...', 'working');
+async function triggerOarCompact(sessionName) {
+  updateStatusBadge('正在压缩上下文...', 'working');
   try {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/oar-message`, {
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/oar-compact${devParam}`, {
+      method: 'POST'
+    });
+    const data = await res.json().catch(() => ({}));
+    updateStatusBadge('就绪', 'ready');
+    if (data && data.message && !data.supported) {
+      showTipToast(data.message);
+    }
+    loadAndRenderChatHistory(sessionName, false);
+  } catch (e) {
+    updateStatusBadge('异常', 'idle');
+    console.error('[OAR] Compact failed:', e);
+  }
+}
+
+/**
+ * Dispatch message directly to OAR Pure Chat Engine API (with fast streaming poll & deviceId routing)
+ */
+async function sendToOarEngine(sessionName, content, images = []) {
+  updateStatusBadge('OAR 智能体思考中...', 'working');
+  // Switch to high-frequency polling (500ms) while OAR is streaming events
+  startChatPolling(sessionName, 500);
+
+  try {
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/oar-message${devParam}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content })
+      body: JSON.stringify({ content, images })
     });
     if (res.ok) {
-      updateStatusBadge('就绪', 'ready');
+      const payload = await res.json().catch(() => ({}));
       loadAndRenderChatHistory(sessionName, false);
+      // Only restore slow polling immediately if the turn already finished synchronously (cloud mode)
+      if (!payload.streaming && !payload.isGenerating && getCurrentSessionName() === sessionName) {
+        startChatPolling(sessionName, 2000);
+      }
     } else {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       updateStatusBadge('异常', 'idle');
       console.error('[OAR] Send message error:', err);
       loadAndRenderChatHistory(sessionName, false);
+      if (getCurrentSessionName() === sessionName) {
+        startChatPolling(sessionName, 2000);
+      }
     }
   } catch (e) {
     updateStatusBadge('网络错误', 'idle');
     console.error('[OAR] Send message fetch failed:', e);
+    if (getCurrentSessionName() === sessionName) {
+      startChatPolling(sessionName, 2000);
+    }
   }
 }
 
@@ -1555,6 +1509,14 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
 
     sessionHistoryCache.set(sessionName, data);
     renderMessages(sessionName, data, isSessionSwitch);
+
+    // Dynamically adjust polling cadence for OAR streaming sessions (500ms active -> 2000ms idle)
+    if (data && data.sessionMode === 'chat_only' && activePollSession === sessionName) {
+      const desiredInterval = data.isGenerating ? 500 : 2000;
+      if (currentPollIntervalMs !== desiredInterval) {
+        startChatPolling(sessionName, desiredInterval);
+      }
+    }
   } catch (err) {
     console.warn('[ChatMode] Failed to fetch chat history for', sessionName, err.message);
   }
@@ -1614,7 +1576,8 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     }
   }
   if (agentNameEl) {
-    agentNameEl.textContent = `${agentLabel} · ${displaySession}`;
+    const modelSuffix = (data && data.sessionMode === 'chat_only' && data.activeModel) ? ` (${data.activeModel})` : '';
+    agentNameEl.textContent = `${agentLabel} · ${displaySession}${modelSuffix}`;
   }
   syncChatQuickClearButton(sessionName || currentSess);
 
@@ -1628,10 +1591,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
         </div>
         <div class="chat-empty-title">会话「${escapeHtml(displaySession)}」已就绪</div>
         <div class="chat-empty-desc">
-          在下方输入需求，或点击灵感胶囊快速填入：
-        </div>
-        <div class="chat-starter-pills" id="chatStarterPills">
-          ${renderStarterPillsHtml()}
+          在下方输入需求，开启智能体协作对话
         </div>
       </div>
     `;
@@ -1721,11 +1681,17 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
                 ? `<div class="cds-tool-item-args"><span class="chat-file-link" data-file-path="${escapeHtml(parsedToolFile.path)}" role="button" tabindex="0" title="点击打开预览: ${escapeHtml(parsedToolFile.path)}">${escapeHtml(String(inputSummary))}</span></div>`
                 : `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>`)
             : '';
+          const statusTag = t.status === 'running'
+            ? '<span style="margin-left:auto;font-size:10px;opacity:0.75;">执行中...</span>'
+            : (t.exitCode !== undefined && t.exitCode !== null
+              ? `<span style="margin-left:auto;font-size:10px;opacity:0.7;font-variant-numeric:tabular-nums;">exit ${escapeHtml(String(t.exitCode))}</span>`
+              : '');
           return `
             <div class="cds-tool-item">
               <div class="cds-tool-item-head">
                 <i data-lucide="wrench" style="width: 11px; height: 11px;"></i>
                 <span>${escapeHtml(t.name)}</span>
+                ${statusTag}
               </div>
               ${argsHtml}
             </div>
@@ -1841,6 +1807,8 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     } else {
       updateStatusBadge('就绪', 'ready');
     }
+  } else if (data.isGenerating) {
+    updateStatusBadge(data.statusText || 'OAR 智能体思考中...', 'working');
   } else {
     updateStatusBadge('就绪', 'ready');
   }
@@ -2351,17 +2319,18 @@ function updateStatusBadge(text, stateType) {
 /**
  * Polling controller for active session
  */
-function startChatPolling(sessionName) {
+function startChatPolling(sessionName, intervalMs = 2000) {
   stopChatPolling();
   if (!sessionName) return;
   activePollSession = sessionName;
+  currentPollIntervalMs = intervalMs;
   currentPollTimer = setInterval(() => {
     if (getCurrentSessionName() === sessionName) {
       loadAndRenderChatHistory(sessionName, false);
     } else {
       stopChatPolling();
     }
-  }, 2000);
+  }, intervalMs);
 }
 
 function stopChatPolling() {

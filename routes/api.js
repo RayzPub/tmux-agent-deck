@@ -2120,7 +2120,14 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
         agentSessionId: result?.agentSessionId || null,
         sessionMode: result?.sessionMode || 'hybrid',
         supported: result?.supported !== false,
+        hasHistory: result?.hasHistory !== undefined ? result.hasHistory : (Array.isArray(result?.messages) && result.messages.length > 0),
         pendingAction: result?.pendingAction || null,
+        isGenerating: Boolean(result?.isGenerating),
+        statusText: result?.statusText || (result?.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+        activeModel: result?.activeModel || null,
+        usage: result?.usage || null,
+        contextUsage: result?.contextUsage || null,
+        oarCapabilities: result?.oarCapabilities || null,
         lastUpdated: result?.lastUpdated || Date.now(),
         messages: result?.messages || []
       });
@@ -2165,12 +2172,18 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
           supported: true,
           hasHistory: (oarSess.messages && oarSess.messages.length > 0),
           sessionName: name,
-          agentType: agentType || 'oar',
+          agentType: oarSess.agentType || agentType || 'oar',
           sessionMode: 'chat_only',
           workspacePath: targetWorkspace,
           messages: oarSess.messages || [],
           pendingAction: null,
-          isGenerating: oarSess.isGenerating || false
+          isGenerating: Boolean(oarSess.isGenerating),
+          statusText: oarSess.statusText || (oarSess.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+          activeModel: oarSess.activeModel || oarSess.model || null,
+          usage: oarSess.usage || null,
+          contextUsage: oarSess.contextUsage || null,
+          oarCapabilities: oarSess.oarCapabilities || null,
+          lastUpdated: oarSess.lastUpdated || Date.now()
         });
       } catch (oarErr) {
         console.error('[OAR] Error reading pure chat session:', oarErr);
@@ -2333,19 +2346,72 @@ router.post('/sessions/:name/clear-context', requireAuth, async (req, res) => {
   }, user);
 });
 
-// API: Send user message to OAR Pure Chat Session
+// API: Probe available OAR built-in runtimes and capabilities (Control Plane or Remote Device)
+router.get('/oar/runtimes', requireAuth, async (req, res) => {
+  const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId;
+  try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarRuntimes(targetDeviceId);
+      if (result && result.error) return res.status(502).json({ error: result.error });
+      return res.json({ success: true, runtimes: result?.runtimes || [] });
+    }
+    const oarService = require('../services/oarService');
+    const runtimes = await oarService.listAvailableRuntimes(user);
+    res.json({ success: true, runtimes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Send user message to OAR Pure Chat Session (supports Control Plane & Remote Device separation)
 router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const { content } = req.body;
+  const { content, images } = req.body;
   const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId || req.body.deviceId;
 
-  if (!content || !content.trim()) {
-    return res.status(400).json({ error: 'Message content is required' });
+  const hasText = Boolean(content && String(content).trim());
+  const rawImages = Array.isArray(images) ? images : [];
+  if (!hasText && rawImages.length === 0) {
+    return res.status(400).json({ error: 'Message content or images required' });
   }
 
   try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarMessage(targetDeviceId, name, {
+        content: content || '',
+        images: rawImages
+      });
+      if (result && result.error && !result.accepted) {
+        return res.status(502).json({ error: result.error });
+      }
+      return res.json({ success: true, ...result });
+    }
+
     const oarService = require('../services/oarService');
-    const reply = await oarService.sendUserMessage(user, name, content);
+    const oarSess = await oarService.getOrCreateSession(user, name);
+    const workspaceRoot = oarSess.workspacePath || getDefaultWorkspacePath(user);
+
+    // Validate image paths strictly inside the session workspace via safeResolve
+    const validatedImages = [];
+    for (const img of rawImages) {
+      const candidate = typeof img === 'string' ? img : (img && (img.relativePath || img.path));
+      if (!candidate || typeof candidate !== 'string') continue;
+      try {
+        const rel = path.isAbsolute(candidate) ? path.relative(workspaceRoot, candidate) : candidate;
+        const resolved = safeResolve(workspaceRoot, rel);
+        if (resolved && fs.existsSync(resolved)) {
+          validatedImages.push({ path: resolved });
+        }
+      } catch (e) {
+        // Ignore out-of-workspace image paths
+      }
+    }
+
+    const reply = await oarService.sendUserMessage(user, name, content || '', null, {
+      images: validatedImages
+    });
     res.json({ success: true, message: reply });
   } catch (err) {
     console.error('[OAR] sendUserMessage error:', err);
@@ -2353,13 +2419,39 @@ router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
   }
 });
 
-// API: Abort generation in OAR Pure Chat Session
-router.post('/sessions/:name/oar-abort', requireAuth, (req, res) => {
+// API: Trigger OAR native manual context compaction (/compact)
+router.post('/sessions/:name/oar-compact', requireAuth, async (req, res) => {
   const { name } = req.params;
   const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId || req.body?.deviceId;
   try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarCompact(targetDeviceId, name);
+      if (result && result.error) return res.status(502).json({ error: result.error });
+      return res.json({ success: true, ...result });
+    }
     const oarService = require('../services/oarService');
-    const aborted = oarService.abortSession(user, name);
+    const result = await oarService.compactSession(user, name);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[OAR] compactSession error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Abort generation in OAR Pure Chat Session
+router.post('/sessions/:name/oar-abort', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId || req.body?.deviceId;
+  try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarAbort(targetDeviceId, name);
+      if (result && result.error) return res.status(502).json({ error: result.error });
+      return res.json({ success: true, aborted: Boolean(result?.aborted) });
+    }
+    const oarService = require('../services/oarService');
+    const aborted = await oarService.abortSession(user, name);
     res.json({ success: true, aborted });
   } catch (err) {
     res.status(500).json({ error: err.message });

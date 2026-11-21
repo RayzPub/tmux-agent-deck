@@ -7,7 +7,7 @@
   <!-- iOS & Android PWA Standalone Optimization -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
   <title>CCNOW - 登录控制台</title>
   <!-- Google Fonts -->
@@ -38,8 +38,6 @@
       document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
       const meta = document.getElementById('pwaThemeColor');
       if (meta) meta.setAttribute('content', isLight ? '#eaedf1' : '#17191e');
-      const statusBarMeta = document.getElementById('appleStatusBarMeta');
-      if (statusBarMeta) statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
     })();
   </script>
   <!-- Scanning Line Effect -->
@@ -165,13 +163,6 @@
             meta.setAttribute('content', isLight ? '#eaedf1' : '#17191e');
             if (meta.parentNode) {
               meta.parentNode.replaceChild(meta.cloneNode(true), meta);
-            }
-          }
-          const statusBarMeta = document.getElementById('appleStatusBarMeta');
-          if (statusBarMeta) {
-            statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
-            if (statusBarMeta.parentNode) {
-              statusBarMeta.parentNode.replaceChild(statusBarMeta.cloneNode(true), statusBarMeta);
             }
           }
           syncAuthThemeUI();

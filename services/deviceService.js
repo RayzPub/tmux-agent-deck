@@ -702,6 +702,22 @@ function remoteChatHistory(deviceId, sessionName) {
   return sendDeviceRpc(deviceId, 'agent:chat_history', { sessionName });
 }
 
+function remoteOarRuntimes(deviceId) {
+  return sendDeviceRpc(deviceId, 'oar:runtimes', {}, 15000);
+}
+
+function remoteOarMessage(deviceId, sessionName, payload = {}) {
+  return sendDeviceRpc(deviceId, 'oar:message', { sessionName, ...payload }, 30000);
+}
+
+function remoteOarCompact(deviceId, sessionName) {
+  return sendDeviceRpc(deviceId, 'oar:compact', { sessionName }, 65000);
+}
+
+function remoteOarAbort(deviceId, sessionName) {
+  return sendDeviceRpc(deviceId, 'oar:abort', { sessionName }, 10000);
+}
+
 /**
  * Remote Trigger: System Update on Edge Device
  */
@@ -781,6 +797,10 @@ module.exports = {
   remoteGitBranches,
   remoteGitCheckout,
   remoteChatHistory,
+  remoteOarRuntimes,
+  remoteOarMessage,
+  remoteOarCompact,
+  remoteOarAbort,
   remoteSystemUpdate,
   sendDeviceRpc,
   resolveDeviceRpc,

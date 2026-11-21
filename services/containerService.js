@@ -309,6 +309,7 @@ async function ensureUserSandbox(username, options = {}) {
 
   const existing = await inspectContainer(containerName);
   const agentScriptHostPath = path.join(PROJECT_ROOT, 'client', 'ccnow-agent.js');
+  const oarRuntimeHostPath = path.join(PROJECT_ROOT, 'client', 'oar-runtime.js');
   const controlPort = options.port || PORT || 80;
   const serverUrl = `http://host.docker.internal:${controlPort}`;
 
@@ -372,6 +373,7 @@ async function ensureUserSandbox(username, options = {}) {
     '-v', `${workspaceDir}:/workspace`,
     '-v', `${sandboxHomeDir}:/home/node`,
     '-v', `${agentScriptHostPath}:/opt/ccnow/ccnow-agent.js:ro`,
+    '-v', `${oarRuntimeHostPath}:/opt/ccnow/oar-runtime.js:ro`,
     '-e', `CCNOW_SERVER_URL=${serverUrl}`,
     '-e', `CCNOW_DEVICE_ID=${managed.deviceId}`,
     '-e', `CCNOW_DEVICE_SECRET=${deviceSecret}`,

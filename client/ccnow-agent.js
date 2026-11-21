@@ -13,12 +13,36 @@ const crypto = require('crypto');
 const { spawn, execSync, execFileSync } = require('child_process');
 
 // Client Version
-const CLIENT_VERSION = '1.5.2';
+const CLIENT_VERSION = '1.6.0';
 
 // Configuration directory & file (supports env override for managed host/container agents)
 const CONFIG_DIR = process.env.CCNOW_CONFIG_DIR || path.join(os.homedir(), '.ccnow');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'device.json');
 const WORKSPACES_FILE = path.join(CONFIG_DIR, 'workspaces.json');
+
+// Lazy-loaded Device-Side OAR Pure Chat Manager (supports host-admin, docker-sandbox, external)
+let deviceOarManager = null;
+function getDeviceOarManager() {
+  if (deviceOarManager) return deviceOarManager;
+  const candidates = [
+    path.join(__dirname, 'oar-runtime.js'),
+    path.join(CONFIG_DIR, 'oar-runtime.js')
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      try {
+        const { createDeviceOarManager } = require(candidate);
+        deviceOarManager = createDeviceOarManager({
+          storageDir: path.join(CONFIG_DIR, 'oar_sessions')
+        });
+        return deviceOarManager;
+      } catch (err) {
+        console.warn('⚠️ [ccnow-agent] Failed to initialize oar-runtime:', err.message);
+      }
+    }
+  }
+  return null;
+}
 
 // Ensure native or installed WebSocket
 let WSClient = typeof WebSocket !== 'undefined' ? WebSocket : null;
@@ -455,6 +479,27 @@ class AgentClient {
       return;
     }
 
+    // 1.9 Device-Side OAR Pure Chat Engine RPCs
+    if (action === 'oar:runtimes') {
+      this.handleOarRuntimes(msg.reqId);
+      return;
+    }
+
+    if (action === 'oar:message') {
+      this.handleOarMessage(msg.reqId, msg);
+      return;
+    }
+
+    if (action === 'oar:compact') {
+      this.handleOarCompact(msg.reqId, msg.sessionName);
+      return;
+    }
+
+    if (action === 'oar:abort') {
+      this.handleOarAbort(msg.reqId, msg.sessionName);
+      return;
+    }
+
     // 2. Interactive Terminal Open
     if (action === 'term:open') {
       this.handleOpenTerminal(msg);
@@ -834,8 +879,22 @@ class AgentClient {
           } catch (_) {}
         }
 
-        // Auto-launch selected agent CLI with explicit session binding & aligned permission flags
-        if (agent && agent !== 'default' && agent !== 'terminal') {
+        // Auto-launch selected agent CLI (or keep lightweight placeholder for OAR Pure Chat Mode)
+        if (targetMode === 'chat_only') {
+          const oarMgr = getDeviceOarManager();
+          if (oarMgr) {
+            oarMgr.deleteSession(finalName);
+            oarMgr.getOrCreateSession(finalName, {
+              agentType: agent !== 'default' ? agent : 'claude',
+              workspacePath: targetDir,
+              model: agentModel || modelName || ''
+            });
+          }
+          try {
+            const bannerCmd = `printf '\\033[1;36m[OAR Pure Chat Session]\\033[0m\\n此会话由设备端 Open Agent Runtime 直接驱动（纯会话模式）。\\n'`;
+            execFileSync('tmux', ['send-keys', '-t', finalName, bannerCmd, 'C-m'], { stdio: 'ignore' });
+          } catch (_) {}
+        } else if (agent && agent !== 'default' && agent !== 'terminal') {
           let agentCmd = String(agent).replace(/"/g, '');
           if (agent === 'agy') {
             agentCmd = 'agy --dangerously-skip-permissions';
@@ -864,6 +923,10 @@ class AgentClient {
   }
 
   handleKillSession(reqId, sessionName) {
+    const oarMgr = getDeviceOarManager();
+    if (oarMgr && sessionName) {
+      try { oarMgr.deleteSession(sessionName); } catch (_) {}
+    }
     const hasTmux = hasCommand('tmux');
     if (hasTmux && sessionName) {
       try {
@@ -1001,7 +1064,11 @@ class AgentClient {
     }
   }
 
-  handleClearContext(reqId, sessionName) {
+  async handleClearContext(reqId, sessionName) {
+    const oarMgr = getDeviceOarManager();
+    if (oarMgr && sessionName) {
+      try { await oarMgr.clearSession(sessionName); } catch (_) {}
+    }
     const hasTmux = hasCommand('tmux');
     if (hasTmux && sessionName) {
       try {
@@ -1011,6 +1078,95 @@ class AgentClient {
     }
     if (reqId) {
       this.send({ action: 'agent:clear_context_result', reqId, success: true });
+    }
+  }
+
+  /**
+   * Read tmux metadata (cwd, agentType, sessionMode, agentModel) for an OAR session
+   */
+  readTmuxSessionMeta(sessionName) {
+    let workspacePath = process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd();
+    let agentType = 'claude';
+    let sessionMode = 'hybrid';
+    let model = '';
+    if (hasCommand('tmux') && sessionName) {
+      try {
+        const fmt = '#{session_path}|#{@agent_type}|#{@session_mode}|#{@agent_model}';
+        const out = execFileSync('tmux', ['display-message', '-p', '-t', sessionName, fmt], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore']
+        }).trim();
+        const parts = out.split('|');
+        if (parts[0] && fs.existsSync(parts[0])) workspacePath = parts[0];
+        if (parts[1] && parts[1].trim()) agentType = parts[1].trim();
+        if (parts[2] && parts[2].trim()) sessionMode = parts[2].trim();
+        if (parts[3] && parts[3].trim()) model = parts[3].trim();
+      } catch (_) {}
+    }
+    return { workspacePath, agentType, sessionMode, model };
+  }
+
+  async handleOarRuntimes(reqId) {
+    const oarMgr = getDeviceOarManager();
+    if (!oarMgr) {
+      return this.send({ action: 'oar:runtimes_result', reqId, runtimes: [], error: 'Device does not have oar-runtime.js installed' });
+    }
+    try {
+      const runtimes = await oarMgr.listAvailableRuntimes();
+      this.send({ action: 'oar:runtimes_result', reqId, runtimes });
+    } catch (err) {
+      this.send({ action: 'oar:runtimes_result', reqId, runtimes: [], error: err.message });
+    }
+  }
+
+  async handleOarMessage(reqId, msg) {
+    const { sessionName, content, images } = msg;
+    const oarMgr = getDeviceOarManager();
+    if (!oarMgr) {
+      return this.send({ action: 'oar:message_result', reqId, accepted: false, error: '当前设备未加载 OAR 纯会话引擎 (oar-runtime.js)' });
+    }
+    try {
+      const meta = this.readTmuxSessionMeta(sessionName);
+      const result = await oarMgr.sendMessage(sessionName, content || '', {
+        agentType: meta.agentType,
+        workspacePath: meta.workspacePath,
+        model: meta.model,
+        images: Array.isArray(images) ? images : []
+      });
+      this.send({ action: 'oar:message_result', reqId, ...result });
+    } catch (err) {
+      this.send({ action: 'oar:message_result', reqId, accepted: false, error: err.message });
+    }
+  }
+
+  async handleOarCompact(reqId, sessionName) {
+    const oarMgr = getDeviceOarManager();
+    if (!oarMgr) {
+      return this.send({ action: 'oar:compact_result', reqId, supported: false, message: '当前设备未加载 OAR 引擎' });
+    }
+    try {
+      const meta = this.readTmuxSessionMeta(sessionName);
+      const result = await oarMgr.compactSession(sessionName, {
+        agentType: meta.agentType,
+        workspacePath: meta.workspacePath,
+        model: meta.model
+      });
+      this.send({ action: 'oar:compact_result', reqId, ...result });
+    } catch (err) {
+      this.send({ action: 'oar:compact_result', reqId, supported: false, error: err.message });
+    }
+  }
+
+  async handleOarAbort(reqId, sessionName) {
+    const oarMgr = getDeviceOarManager();
+    if (!oarMgr) {
+      return this.send({ action: 'oar:abort_result', reqId, aborted: false });
+    }
+    try {
+      const aborted = await oarMgr.abortSession(sessionName);
+      this.send({ action: 'oar:abort_result', reqId, aborted });
+    } catch (err) {
+      this.send({ action: 'oar:abort_result', reqId, aborted: false, error: err.message });
     }
   }
 
@@ -1188,6 +1344,22 @@ class AgentClient {
           const rawMode = (parts[5] && parts[5].trim()) ? parts[5].trim() : '';
           sessionMode = rawMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
         } catch (e) {}
+      }
+
+      // 1. Pure Chat Mode (Device-Side OAR Engine)
+      if (sessionMode === 'chat_only') {
+        const oarMgr = getDeviceOarManager();
+        if (oarMgr) {
+          const snapshot = oarMgr.getHistorySnapshot(sessionName, {
+            agentType: agentType || 'claude',
+            workspacePath: sessionCwd
+          });
+          return this.send({
+            action: 'agent:chat_history_result',
+            reqId,
+            ...snapshot
+          });
+        }
       }
 
       // Preferred path: reuse full server-side agentChatService when running inside repo (e.g. host-admin)

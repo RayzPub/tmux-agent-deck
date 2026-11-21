@@ -7,7 +7,7 @@
   <!-- iOS & Android PWA Standalone Optimization -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" id="appleStatusBarMeta" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CCNOW">
   <script>
     (function() {
@@ -20,8 +20,6 @@
         document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
         const meta = document.getElementById('pwaThemeColor');
         if (meta) meta.setAttribute('content', isLight ? '#eaedf1' : '#17191e');
-        const statusBarMeta = document.getElementById('appleStatusBarMeta');
-        if (statusBarMeta) statusBarMeta.setAttribute('content', isLight ? 'default' : 'black-translucent');
       } catch (e) {}
     })();
   </script>

@@ -408,6 +408,7 @@ export function initVisualViewportLinkage() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       handleResize();
+      restorePwaViewportScroll();
     }
   });
 
