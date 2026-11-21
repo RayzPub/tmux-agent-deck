@@ -303,8 +303,8 @@ async function getProjectProgress(workspaceIdentifier, username = null) {
 
     // Check if this is a supported agent session with JSONL logs (Claude Code or Antigravity)
     let effectiveSessionId = agentSessionId;
-    if ((agentType === 'agy' || agentType === 'antigravity') && panePid) {
-      const liveAgyId = getAgySessionIdFromPanePid(panePid);
+    if ((agentType === 'agy' || agentType === 'antigravity') && panePid && typeof getSessionIdFromPanePid === 'function') {
+      const liveAgyId = getSessionIdFromPanePid(panePid);
       if (liveAgyId) {
         if (effectiveSessionId && liveAgyId !== effectiveSessionId && fullName) {
           execTmux(['set-option', '-t', fullName, '@agent_session_id', liveAgyId], () => {}, effectiveUser);
@@ -503,10 +503,464 @@ async function dispatchTask(workspaceIdentifier, sessionName, promptText, userna
   };
 }
 
+/**
+ * Helper: Safe per-user task board JSON store path under data/
+ */
+function getTaskBoardStorePath(username) {
+  const dataDir = path.join(PROJECT_ROOT, 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  const safeUser = String(username || 'default').replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
+  return safeResolve(dataDir, `task_board_${safeUser}.json`);
+}
+
+function readTaskBoardStore(username) {
+  const effectiveUser = username || (MULTI_USER_ENABLED ? 'admin' : 'default');
+  try {
+    const filePath = getTaskBoardStorePath(effectiveUser);
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      return {
+        todos: Array.isArray(parsed.todos) ? parsed.todos : [],
+        cardMeta: (parsed.cardMeta && typeof parsed.cardMeta === 'object') ? parsed.cardMeta : {}
+      };
+    }
+  } catch (err) {
+    // ignore corrupted/missing file
+  }
+  return { todos: [], cardMeta: {} };
+}
+
+function writeTaskBoardStore(username, store) {
+  const effectiveUser = username || (MULTI_USER_ENABLED ? 'admin' : 'default');
+  const filePath = getTaskBoardStorePath(effectiveUser);
+  const payload = {
+    todos: Array.isArray(store.todos) ? store.todos : [],
+    cardMeta: (store.cardMeta && typeof store.cardMeta === 'object') ? store.cardMeta : {},
+    updatedAt: new Date().toISOString()
+  };
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+  const runUser = getRunUser();
+  if (runUser && process.getuid && process.getuid() === 0) {
+    try {
+      const { execSync } = require('child_process');
+      execSync(`chown ${runUser}:${runUser} "${filePath}"`);
+    } catch (e) {}
+  }
+  return payload;
+}
+
+function upsertTodoItem(username, item) {
+  const store = readTaskBoardStore(username);
+  const now = new Date().toISOString();
+  let todo;
+  if (item.id) {
+    const idx = store.todos.findIndex(t => String(t.id) === String(item.id));
+    if (idx >= 0) {
+      todo = { ...store.todos[idx], ...item, updatedAt: now };
+      store.todos[idx] = todo;
+    }
+  }
+  if (!todo) {
+    todo = {
+      id: `todo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      title: item.title,
+      description: item.description || '',
+      workspaceName: item.workspaceName || '',
+      workspacePath: item.workspacePath || '',
+      agentType: item.agentType || 'agy',
+      priority: item.priority || 'medium',
+      createdAt: now,
+      updatedAt: now
+    };
+    store.todos.unshift(todo);
+  }
+  writeTaskBoardStore(username, store);
+  return { todo, todos: store.todos };
+}
+
+function deleteTodoItem(username, todoId) {
+  const store = readTaskBoardStore(username);
+  store.todos = store.todos.filter(t => String(t.id) !== String(todoId));
+  writeTaskBoardStore(username, store);
+  return store.todos;
+}
+
+function updateCardMeta(username, sessionName, patch) {
+  const store = readTaskBoardStore(username);
+  const existing = store.cardMeta[sessionName] || {};
+  const next = {
+    ...existing,
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
+  if (next.customTitle === '') {
+    delete next.customTitle;
+  }
+  if (!next.customTitle && !next.pinned) {
+    delete store.cardMeta[sessionName];
+  } else {
+    store.cardMeta[sessionName] = next;
+  }
+  writeTaskBoardStore(username, store);
+  return store.cardMeta[sessionName] || {};
+}
+
+/**
+ * Detect live agent execution state from captured tmux pane lines
+ */
+function detectSessionLiveStatus(paneOutput) {
+  const nonBlankLines = (paneOutput || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const lastFewLines = nonBlankLines.slice(-6);
+  const recentText = lastFewLines.join('\n');
+
+  const waitingPatterns = [
+    /\[y\/N\]/i,
+    /\[Y\/n\]/i,
+    /\[y\/n\]/i,
+    /\(y\/n\)/i,
+    /allow\s+.*?\?/i,
+    /confirm\s+.*?\?/i,
+    /please\s+authorize/i,
+    /authorize\s+.*?\?/i,
+    /waiting\s+for\s+(approval|input|feedback)/i,
+    /escalate_admin/i,
+    /enter\s+to\s+continue/i,
+    /password\s+for\s+.*?:/i
+  ];
+  const isWaiting = waitingPatterns.some(p => p.test(recentText));
+
+  const busyPatterns = [
+    /thinking\.\.\./i,
+    /working\.\.\./i,
+    /running\.\.\./i,
+    /ctrl\+c\s+to\s+interrupt/i,
+    /[⣾⣽⣻⢿⡿⣟⣯⣷⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+    /●\s+(bash|read|write|view|tool)/i
+  ];
+  const isBusy = busyPatterns.some(p => p.test(recentText));
+
+  if (isWaiting) {
+    return { status: 'waiting', statusLabel: '需确认', nonBlankLines };
+  }
+  if (isBusy) {
+    return { status: 'busy', statusLabel: '执行中', nonBlankLines };
+  }
+  return { status: 'idle', statusLabel: '待命', nonBlankLines };
+}
+
+/**
+ * Clean a raw user prompt into a concise single-line card title
+ */
+function summarizePromptAsTitle(promptText) {
+  if (!promptText) return '';
+  const cleaned = String(promptText)
+    .replace(/\s+/g, ' ')
+    .replace(/^【任务】\s*/, '')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned.length > 72 ? cleaned.slice(0, 72) + '…' : cleaned;
+}
+
+/**
+ * Get unified global (or workspace-filtered) Task Board across all sessions
+ */
+async function getGlobalTaskBoard(username = null, options = {}) {
+  const effectiveUser = username || (MULTI_USER_ENABLED ? 'admin' : null);
+  const filterWorkspace = (options.workspace || '').trim();
+  const deviceId = options.deviceId || 'cloud';
+  const store = readTaskBoardStore(effectiveUser);
+  const workspaces = readWorkspaces(effectiveUser) || [];
+
+  // Pre-build resolved workspace lookup
+  const resolvedWorkspaces = workspaces.map(w => {
+    let resolved = '';
+    try {
+      resolved = resolveWorkspacePath(w.path, effectiveUser).replace(/\/+$/, '');
+    } catch (e) {
+      resolved = String(w.path || '').replace(/\/+$/, '');
+    }
+    return {
+      name: w.name || path.basename(resolved || w.path || 'default'),
+      path: w.path,
+      resolvedPath: resolved
+    };
+  });
+
+  const matchWorkspaceInfo = (wsName, sessionPath) => {
+    const normSessionPath = sessionPath ? path.resolve(sessionPath).replace(/\/+$/, '') : '';
+    const byName = wsName
+      ? resolvedWorkspaces.find(w => w.name.toLowerCase() === wsName.toLowerCase())
+      : null;
+    if (byName) return byName;
+    const byPath = normSessionPath
+      ? resolvedWorkspaces.find(w => w.resolvedPath && (w.resolvedPath === normSessionPath || normSessionPath.startsWith(w.resolvedPath + '/')))
+      : null;
+    if (byPath) return byPath;
+    return {
+      name: wsName || (normSessionPath ? path.basename(normSessionPath) : '默认工作区'),
+      path: sessionPath || '',
+      resolvedPath: normSessionPath
+    };
+  };
+
+  let sessions = [];
+
+  if (deviceId && deviceId !== 'cloud' && Array.isArray(options.remoteSessions)) {
+    // Remote edge device sessions
+    sessions = options.remoteSessions.map(s => {
+      const name = s.name;
+      const wsName = s.workspaceName || s.workspace || (s.path ? path.basename(s.path) : '远程工作区');
+      const customMeta = store.cardMeta[name] || {};
+      return {
+        name,
+        fullName: name,
+        attached: Boolean(s.attached),
+        created: s.created ? new Date(s.created).toLocaleString() : '',
+        createdTimestamp: s.created ? new Date(s.created).getTime() : Date.now(),
+        lastActiveAt: s.created ? new Date(s.created).getTime() : Date.now(),
+        workspaceName: wsName,
+        workspacePath: s.path || '',
+        agentType: s.agentType || 'terminal',
+        agentModel: s.agentModel || '',
+        sessionMode: s.sessionMode || 'hybrid',
+        status: s.attached ? 'busy' : 'idle',
+        statusLabel: s.attached ? '活跃中' : '待命',
+        taskTitle: customMeta.customTitle || name,
+        customTitle: customMeta.customTitle || '',
+        lastActivity: { role: 'terminal', text: '远程节点会话已连接', userPrompt: '', timestamp: null },
+        isRemote: true,
+        deviceId
+      };
+    });
+  } else {
+    // Local / cloud tmux sessions
+    const sessionLines = await new Promise((resolve) => {
+      execTmux(
+        ['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}'],
+        (err, stdout) => {
+          if (err || !stdout) return resolve([]);
+          resolve(stdout.trim().split('\n').filter(Boolean));
+        },
+        effectiveUser
+      );
+    });
+
+    const prefix = (MULTI_USER_ENABLED && effectiveUser) ? `u_${effectiveUser}_` : '';
+    const userHome = getUserHomeDir(effectiveUser);
+    const sysHome = getHomeDir();
+
+    const filteredLines = sessionLines.filter(line => {
+      const fullName = line.split('|')[0];
+      if (MULTI_USER_ENABLED && effectiveUser && !fullName.startsWith(prefix)) {
+        return false;
+      }
+      return true;
+    });
+
+    sessions = await Promise.all(filteredLines.map(async (line) => {
+      const [fullName, attached, created, sessionPath, wsName, agentType, agentModel, agentSessionId, panePid, rawSessionMode] = line.split('|');
+      const shortName = (MULTI_USER_ENABLED && effectiveUser && fullName.startsWith(prefix))
+        ? fullName.substring(prefix.length)
+        : fullName;
+      const wsInfo = matchWorkspaceInfo(wsName, sessionPath);
+      const createdTs = (parseInt(created, 10) || 0) * 1000;
+
+      const sessionObj = {
+        name: shortName,
+        fullName,
+        attached: parseInt(attached, 10) > 0,
+        created: createdTs ? new Date(createdTs).toLocaleString() : '',
+        createdTimestamp: createdTs,
+        lastActiveAt: createdTs,
+        workspaceName: wsInfo.name,
+        workspacePath: wsInfo.resolvedPath || sessionPath || '',
+        agentType: agentType || 'terminal',
+        agentModel: agentModel || '',
+        sessionMode: rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid'),
+        lastActivity: null,
+        isRemote: false,
+        deviceId: 'cloud'
+      };
+
+      // Parse recent agent chat log if available
+      let effectiveSessionId = agentSessionId;
+      if ((agentType === 'agy' || agentType === 'antigravity') && panePid && typeof getSessionIdFromPanePid === 'function') {
+        const liveAgyId = getSessionIdFromPanePid(panePid);
+        if (liveAgyId) {
+          if (effectiveSessionId && liveAgyId !== effectiveSessionId && fullName) {
+            execTmux(['set-option', '-t', fullName, '@agent_session_id', liveAgyId], () => {}, effectiveUser);
+          }
+          effectiveSessionId = liveAgyId;
+        }
+      }
+
+      const targetLookupPath = wsInfo.resolvedPath || sessionPath || PROJECT_ROOT;
+      const sessionFileInfo = findAgentSessionFile(agentType, targetLookupPath, effectiveSessionId, panePid, userHome, sysHome);
+      if (sessionFileInfo && sessionFileInfo.sessionId && !agentSessionId && fullName) {
+        execTmux(['set-option', '-t', fullName, '@agent_session_id', sessionFileInfo.sessionId], () => {}, effectiveUser);
+      }
+      if (sessionFileInfo && sessionFileInfo.filePath) {
+        try {
+          const parsed = await parseAgentChat(sessionFileInfo.agentType, sessionFileInfo.filePath, 10);
+          if (parsed && parsed.messages && parsed.messages.length > 0) {
+            const lastMsg = parsed.messages[parsed.messages.length - 1];
+            const lastUserMsg = [...parsed.messages].reverse().find(m => m.role === 'user');
+            const msgTs = lastMsg.timestamp ? new Date(lastMsg.timestamp).getTime() : 0;
+            if (msgTs && !isNaN(msgTs)) {
+              sessionObj.lastActiveAt = Math.max(sessionObj.lastActiveAt, msgTs);
+            }
+            sessionObj.lastActivity = {
+              role: lastMsg.role,
+              text: String(lastMsg.content || lastMsg.text || '').replace(/\s+/g, ' ').trim().substring(0, 180),
+              userPrompt: lastUserMsg ? String(lastUserMsg.content || lastUserMsg.text || '').replace(/\s+/g, ' ').trim().substring(0, 140) : '',
+              timestamp: lastMsg.timestamp || null
+            };
+          }
+        } catch (err) {}
+      }
+
+      // Capture live tmux pane output for real-time status
+      const paneOutput = await new Promise((resPane) => {
+        execTmux(['capture-pane', '-p', '-t', fullName, '-S', '-15'], (err, out) => {
+          resPane(out || '');
+        }, effectiveUser);
+      });
+
+      const live = detectSessionLiveStatus(paneOutput);
+      sessionObj.status = live.status;
+      sessionObj.statusLabel = live.statusLabel;
+
+      if (!sessionObj.lastActivity && live.nonBlankLines.length > 0) {
+        const paneSnippet = live.nonBlankLines.slice(-3).join(' ');
+        sessionObj.lastActivity = {
+          role: 'terminal',
+          text: paneSnippet.substring(0, 180),
+          userPrompt: '',
+          timestamp: null
+        };
+      }
+
+      const customMeta = store.cardMeta[shortName] || {};
+      const promptTitle = sessionObj.lastActivity ? summarizePromptAsTitle(sessionObj.lastActivity.userPrompt) : '';
+      sessionObj.customTitle = customMeta.customTitle || '';
+      sessionObj.taskTitle = customMeta.customTitle || promptTitle || shortName;
+
+      return sessionObj;
+    }));
+  }
+
+  // Sort: waiting first (urgent), then busy, then idle; within same status by lastActiveAt desc
+  sessions.sort((a, b) => {
+    const statusWeight = { waiting: 3, busy: 2, idle: 1 };
+    const diff = (statusWeight[b.status] || 0) - (statusWeight[a.status] || 0);
+    if (diff !== 0) return diff;
+    return (b.lastActiveAt || 0) - (a.lastActiveAt || 0);
+  });
+
+  // Build workspace summary pills with lightweight git info (parallel)
+  const wsMap = new Map();
+  for (const w of resolvedWorkspaces) {
+    wsMap.set(w.name, {
+      name: w.name,
+      path: w.resolvedPath || w.path,
+      sessionCount: 0,
+      waitingCount: 0,
+      busyCount: 0,
+      idleCount: 0,
+      todoCount: 0,
+      git: { isRepo: false, branch: '', changedFilesCount: 0 }
+    });
+  }
+  for (const s of sessions) {
+    if (!wsMap.has(s.workspaceName)) {
+      wsMap.set(s.workspaceName, {
+        name: s.workspaceName,
+        path: s.workspacePath,
+        sessionCount: 0,
+        waitingCount: 0,
+        busyCount: 0,
+        idleCount: 0,
+        todoCount: 0,
+        git: { isRepo: false, branch: '', changedFilesCount: 0 }
+      });
+    }
+    const entry = wsMap.get(s.workspaceName);
+    entry.sessionCount += 1;
+    if (s.status === 'waiting') entry.waitingCount += 1;
+    else if (s.status === 'busy') entry.busyCount += 1;
+    else entry.idleCount += 1;
+  }
+  for (const t of store.todos) {
+    if (t.workspaceName && wsMap.has(t.workspaceName)) {
+      wsMap.get(t.workspaceName).todoCount += 1;
+    }
+  }
+
+  const workspaceSummaries = Array.from(wsMap.values());
+  if (!deviceId || deviceId === 'cloud') {
+    await Promise.all(workspaceSummaries.map(async (ws) => {
+      if (!ws.path || !fs.existsSync(ws.path)) return;
+      const check = await runGit(['rev-parse', '--is-inside-work-tree'], ws.path);
+      if (!check.ok || check.stdout !== 'true') return;
+      ws.git.isRepo = true;
+      const [branchRes, statusRes] = await Promise.all([
+        runGit(['rev-parse', '--abbrev-ref', 'HEAD'], ws.path),
+        runGit(['status', '--porcelain'], ws.path)
+      ]);
+      ws.git.branch = branchRes.ok ? branchRes.stdout : 'HEAD';
+      if (statusRes.ok && statusRes.stdout) {
+        ws.git.changedFilesCount = statusRes.stdout.split('\n').map(l => l.trim()).filter(Boolean).length;
+      }
+    }));
+  }
+
+  // Apply optional workspace filter
+  const filteredSessions = filterWorkspace
+    ? sessions.filter(s => s.workspaceName.toLowerCase() === filterWorkspace.toLowerCase())
+    : sessions;
+  const filteredTodos = filterWorkspace
+    ? store.todos.filter(t => !t.workspaceName || t.workspaceName.toLowerCase() === filterWorkspace.toLowerCase())
+    : store.todos;
+
+  const waitingCount = filteredSessions.filter(s => s.status === 'waiting').length;
+  const busyCount = filteredSessions.filter(s => s.status === 'busy').length;
+  const idleCount = filteredSessions.filter(s => s.status === 'idle').length;
+
+  let workspaceStatus = 'empty';
+  if (filteredSessions.length > 0) {
+    if (waitingCount > 0) workspaceStatus = 'waiting';
+    else if (busyCount > 0) workspaceStatus = 'busy';
+    else workspaceStatus = 'idle';
+  }
+
+  return {
+    deviceId,
+    filterWorkspace,
+    sessions: filteredSessions,
+    todos: filteredTodos,
+    workspaces: workspaceSummaries,
+    summary: {
+      totalSessions: filteredSessions.length,
+      waitingCount,
+      busyCount,
+      idleCount,
+      todoCount: filteredTodos.length,
+      workspaceStatus
+    },
+    timestamp: Date.now()
+  };
+}
+
 module.exports = {
   getProjectProgress,
   readProjectMetadata,
   writeProjectMetadata,
   writeProjectTasks,
-  dispatchTask
+  dispatchTask,
+  getGlobalTaskBoard,
+  upsertTodoItem,
+  deleteTodoItem,
+  updateCardMeta
 };

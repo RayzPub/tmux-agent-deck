@@ -27,6 +27,7 @@ const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaude
 const llmGatewayService = require('../services/llmGatewayService');
 const projectService = require('../services/projectService');
 const deviceService = require('../services/deviceService');
+const containerService = require('../services/containerService');
 const { requireDeviceOwnership } = require('../middlewares/deviceGuard');
 
 // Global middleware to guard device access across all API endpoints
@@ -569,17 +570,23 @@ router.get('/sessions', requireAuth, (req, res) => {
   const targetDeviceId = req.query.deviceId;
   if (targetDeviceId && targetDeviceId !== 'cloud') {
     deviceService.getRemoteSessions(targetDeviceId).then((sessions) => {
-      const mapped = (sessions || []).map(s => ({
-        name: s.name,
-        attached: s.attached ? '1' : '0',
-        created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
-        workspace: s.workspace || s.name,
-        agentType: s.agentType || 'shell',
-        agentModel: '',
-        sessionMode: 'terminal',
-        isRemote: true,
-        deviceId: targetDeviceId
-      }));
+      const mapped = (sessions || []).map(s => {
+        const agentType = s.agentType || '';
+        const sessionMode = s.sessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+        return {
+          name: s.name,
+          attached: Boolean(s.attached),
+          created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
+          path: s.path || '',
+          workspace: s.workspaceName || s.workspace || s.name,
+          workspaceName: s.workspaceName || s.workspace || '',
+          agentType,
+          agentModel: s.agentModel || '',
+          sessionMode,
+          isRemote: true,
+          deviceId: targetDeviceId
+        };
+      });
       res.json(mapped);
     }).catch(err => {
       console.error('[API] Error getting remote sessions:', err);
@@ -651,19 +658,22 @@ router.post('/sessions', requireAuth, async (req, res) => {
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
 
   if (deviceId && deviceId !== 'cloud') {
-    const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (agent || 'remote-agent');
+    const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (agent && agent !== 'default' ? agent : 'shell');
     try {
       const result = await deviceService.remoteTmuxNewSession(deviceId, {
         sessionName: rawName,
         workspace: workspacePath || '~',
+        workspaceName: workspaceName || '',
         sessionMode: targetMode,
-        agentType: agent,
-        agentModel: modelName
+        agentType: agent || 'default',
+        agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || modelName || '',
+        modelName: modelName || ''
       });
       if (result && result.error) {
         return res.status(400).json({ error: result.error });
       }
-      return res.json({ success: true, session: rawName, name: rawName });
+      const createdName = result?.sessionName || rawName;
+      return res.json({ success: true, session: createdName, name: createdName });
     } catch (e) {
       return res.status(500).json({ error: e.message });
     }
@@ -1197,6 +1207,97 @@ router.post('/workspaces/:name/dispatch-task', requireAuth, async (req, res) => 
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to dispatch task' });
+  }
+});
+
+// API: Global / Filtered Task Board (Session-as-Task Kanban View)
+router.get('/task-board', requireAuth, async (req, res) => {
+  try {
+    const workspace = req.query.workspace || '';
+    const targetDeviceId = req.query.deviceId || 'cloud';
+    let remoteSessions = null;
+
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      try {
+        remoteSessions = await deviceService.getRemoteSessions(targetDeviceId);
+      } catch (e) {
+        remoteSessions = [];
+      }
+    }
+
+    const board = await projectService.getGlobalTaskBoard(req.user.username, {
+      workspace,
+      deviceId: targetDeviceId,
+      remoteSessions
+    });
+    res.json(board);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to load task board' });
+  }
+});
+
+// API: Create or update a backlog Todo card on the Task Board
+router.post('/task-board/todos', requireAuth, (req, res) => {
+  try {
+    const { id, title, description, workspaceName, workspacePath, agentType, priority } = req.body || {};
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: '任务标题不能为空' });
+    }
+    const result = projectService.upsertTodoItem(req.user.username, {
+      id,
+      title: String(title).trim(),
+      description: String(description || '').trim(),
+      workspaceName: String(workspaceName || '').trim(),
+      workspacePath: String(workspacePath || '').trim(),
+      agentType: String(agentType || 'agy').trim(),
+      priority: ['high', 'medium', 'low'].includes(priority) ? priority : 'medium'
+    });
+    res.json({ success: true, todo: result.todo, todos: result.todos });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to save todo item' });
+  }
+});
+
+// API: Delete a backlog Todo card
+router.delete('/task-board/todos/:id', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    const todos = projectService.deleteTodoItem(req.user.username, id);
+    res.json({ success: true, todos });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to delete todo item' });
+  }
+});
+
+// API: Update custom metadata (e.g. customTitle) for a session card
+router.post('/task-board/card-meta', requireAuth, (req, res) => {
+  try {
+    const { sessionName, customTitle } = req.body || {};
+    if (!sessionName || !String(sessionName).trim()) {
+      return res.status(400).json({ error: 'sessionName is required' });
+    }
+    const meta = projectService.updateCardMeta(req.user.username, String(sessionName).trim(), {
+      customTitle: customTitle !== undefined ? String(customTitle).trim() : undefined
+    });
+    res.json({ success: true, meta });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update card metadata' });
+  }
+});
+
+// API: Quick dispatch instruction directly to a session card
+router.post('/task-board/dispatch', requireAuth, async (req, res) => {
+  try {
+    const { sessionName, promptText, clearHistory } = req.body || {};
+    if (!sessionName || !promptText || !String(promptText).trim()) {
+      return res.status(400).json({ error: 'sessionName and promptText are required' });
+    }
+    const result = await projectService.dispatchTask('', sessionName, promptText, req.user.username, {
+      clearHistory: !!clearHistory
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to dispatch to session' });
   }
 });
 
@@ -2014,8 +2115,11 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
       const result = await deviceService.remoteChatHistory(targetDeviceId, name);
       return res.json({
         sessionName: name,
+        agentType: result?.agentType || '',
+        agentSessionId: result?.agentSessionId || null,
         sessionMode: result?.sessionMode || 'hybrid',
-        supported: true,
+        supported: result?.supported !== false,
+        pendingAction: result?.pendingAction || null,
         lastUpdated: result?.lastUpdated || Date.now(),
         messages: result?.messages || []
       });
@@ -2438,6 +2542,16 @@ router.get('/devices', requireAuth, (req, res) => {
 router.delete('/devices/:deviceId', requireAuth, (req, res) => {
   const user = req.user.username;
   const { deviceId } = req.params;
+  const existing = deviceService.getDeviceById(deviceId);
+  if (!existing || existing.userId !== user) {
+    return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+  }
+  if (existing.deviceKind === 'host-admin' && req.query.force !== 'true') {
+    return res.status(400).json({
+      success: false,
+      error: 'Host Admin device is protected from accidental unbinding. Pass ?force=true to remove.'
+    });
+  }
   const removed = deviceService.removeDevice(user, deviceId);
   if (!removed) {
     return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
@@ -2556,5 +2670,54 @@ registerDeviceRpcRoute('get', '/devices/:deviceId/git/branches', (id, req) =>
   deviceService.remoteGitBranches(id, req.query.workspacePath));
 registerDeviceRpcRoute('post', '/devices/:deviceId/git/checkout', (id, req) =>
   deviceService.remoteGitCheckout(id, req.body.workspacePath, req.body.branch));
+
+// ==========================================
+// Docker Sandbox Isolation Lifecycle APIs
+// ==========================================
+
+// API: Get current user's Docker sandbox status
+router.get('/sandbox/status', requireAuth, async (req, res) => {
+  try {
+    const status = await containerService.getSandboxStatus(req.user.username);
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Provision or wake current user's isolated Docker sandbox container
+router.post('/sandbox/start', requireAuth, async (req, res) => {
+  try {
+    const result = await containerService.ensureUserSandbox(req.user.username, {
+      name: req.body?.name
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Sleep / stop current user's Docker sandbox container to free host RAM
+router.post('/sandbox/stop', requireAuth, async (req, res) => {
+  try {
+    const result = await containerService.stopUserSandbox(req.user.username);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Admin overview of all managed Docker sandboxes
+router.get('/admin/sandboxes', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Admin privileges required' });
+  }
+  try {
+    const result = await containerService.listSandboxes();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 module.exports = router;

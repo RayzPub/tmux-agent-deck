@@ -1,13 +1,17 @@
 import { state } from './state.js';
-import { activateTab, renderTabs, updateProjectTabStatus } from './tabs.js';
+import { activateTab, updateProjectTabStatus } from './tabs.js';
 import { attachSession } from './terminal.js';
-import { renderDagCanvas, getSelectedTaskId, setSelectedTaskId } from './projectDagCanvas.js';
-import { openAgyDrawer, closeAgyDrawer, updateDrawerSelectedTask } from './projectAgyDrawer.js';
-import { openDispatchModal } from './promptStaging.js';
 
-let isEditingMission = false;
 let autoStatusInterval = null;
-let roadmapViewMode = localStorage.getItem('deck_roadmap_view_mode') || 'dag';
+let boardViewMode = localStorage.getItem('deck_taskboard_view_mode') || 'kanban'; // 'kanban' | 'grid'
+let selectedWorkspaceFilter = localStorage.getItem('deck_taskboard_ws_filter') || ''; // '' = all workspaces
+let searchQuery = '';
+let lastBoardData = null;
+
+// Track active inline interactions so background polling never interrupts typing
+let activeQuickReplySession = null;
+let activeRenameSession = null;
+let isModalOpen = false;
 
 function closeSidebarOnMobile() {
   const sidebar = document.querySelector('.sidebar');
@@ -22,9 +26,6 @@ function closeSidebarOnMobile() {
   }
 }
 
-/**
- * Helper to resolve agent brand info, labels and styling
- */
 function getAgentInfo(agentType, agentModel) {
   const type = (agentType || '').toLowerCase();
   let brand = 'Terminal';
@@ -47,18 +48,15 @@ function getAgentInfo(agentType, agentModel) {
     brand = 'Kimi Code';
     icon = 'zap';
     badgeClass = 'kimi';
-  } else if (agentType) {
+  } else if (agentType && type !== 'default') {
     brand = agentType.toUpperCase();
   }
 
-  // Clean up and compact model name for tag display
   let shortModel = (agentModel || '').trim();
   if (shortModel.includes(' · ')) {
-    // e.g. "Moonshot Kimi · Kimi K3 (256k)" -> "Kimi K3"
     const parts = shortModel.split(' · ');
     shortModel = parts[parts.length - 1];
   }
-  // Strip trailing context window parentheses like "(256k)", "(128k)" to keep it clean
   shortModel = shortModel.replace(/\s*\(\d+k\)/i, '').trim();
 
   return {
@@ -72,8 +70,22 @@ function getAgentInfo(agentType, agentModel) {
   };
 }
 
+function formatRelativeTime(ts) {
+  if (!ts) return '';
+  const time = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  if (!time || isNaN(time)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (diffSec < 60) return '刚刚';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}小时前`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}天前`;
+}
+
 /**
- * Open or focus the Project Progress HUD tab (ALWAYS at Index 0)
+ * Open or focus the Task Board tab (ALWAYS at Index 0)
  */
 export function openProjectTab() {
   closeSidebarOnMobile();
@@ -82,14 +94,13 @@ export function openProjectTab() {
   if (!tab) {
     tab = {
       id: tabId,
-      name: '项目进度',
+      name: '任务看板',
       type: 'project',
       path: 'project'
     };
-    // Ensure it is ALWAYS inserted at the very beginning (index 0)
     state.tabs.unshift(tab);
   } else {
-    // If already exists, ensure it is moved to index 0
+    tab.name = '任务看板';
     const idx = state.tabs.indexOf(tab);
     if (idx > 0) {
       state.tabs.splice(idx, 1);
@@ -100,415 +111,561 @@ export function openProjectTab() {
 }
 
 /**
- * Fetch and render the comprehensive project progression dashboard
+ * Fetch and render the Session-as-Task Kanban Board
  */
-export async function renderProjectOverview() {
+export async function renderProjectOverview(options = {}) {
   const container = document.getElementById('projectPanelContainer');
   if (!container) return;
 
-  // Determine current active workspace name
-  const workspaceSelect = document.getElementById('explorerWorkspaceSelect');
-  const currentPath = state.currentWorkspacePath || (workspaceSelect ? workspaceSelect.value : '');
-  const matchedWs = state.workspacesList.find(w => w.path === currentPath);
-  const workspaceName = matchedWs ? matchedWs.name : (currentPath ? currentPath.split('/').filter(Boolean).pop() : '');
+  const { silent = false } = options;
 
-  if (!workspaceName && !currentPath) {
-    container.innerHTML = `
-      <div class="project-empty-lanes">
-        <i data-lucide="alert-circle" style="width: 32px; height: 32px;"></i>
-        <span>请先选择一个有效的工作区</span>
-      </div>
-    `;
-    if (window.lucide) window.lucide.createIcons();
-    return;
-  }
-
-  const queryIdentifier = workspaceName || currentPath;
-
-  // Show loading state if container is empty
-  if (!container.querySelector('.project-hero-card')) {
+  if (!silent && !container.querySelector('.tb-root')) {
     container.innerHTML = `
       <div class="loading-placeholder">
         <div class="cyber-spinner"></div>
-        <span>正在扫描工作区项目脉络与智能体工位...</span>
+        <span>正在汇总全部会话任务与状态...</span>
       </div>
     `;
-    if (window.lucide) window.lucide.createIcons();
   }
 
   try {
-    const res = await fetch(`/api/workspaces/${encodeURIComponent(queryIdentifier)}/project-progress`);
+    const params = new URLSearchParams();
+    if (state.currentDeviceId && state.currentDeviceId !== 'cloud') {
+      params.set('deviceId', state.currentDeviceId);
+    }
+    const res = await fetch(`/api/task-board${params.toString() ? `?${params.toString()}` : ''}`);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.error || `HTTP ${res.status}`);
     }
     const data = await res.json();
-    buildOverviewDOM(container, data, queryIdentifier);
+    lastBoardData = data;
+
+    // Reset workspace filter if the selected workspace no longer exists in list
+    if (selectedWorkspaceFilter) {
+      const wsExists = (data.workspaces || []).some(w => w.name === selectedWorkspaceFilter);
+      if (!wsExists) {
+        selectedWorkspaceFilter = '';
+        localStorage.setItem('deck_taskboard_ws_filter', '');
+      }
+    }
+
+    if (data.summary && data.summary.workspaceStatus) {
+      updateProjectTabStatus(data.summary.workspaceStatus);
+    }
+
+    buildBoardDOM(container, data);
   } catch (err) {
+    if (silent) return;
     container.innerHTML = `
       <div class="project-empty-lanes">
-        <i data-lucide="alert-triangle" style="width: 36px; height: 36px; color: var(--neon-pink, #ff007f);"></i>
-        <span style="font-weight: 600; color: #ffffff;">无法读取工作区项目进度</span>
-        <span style="font-size: 12px; color: var(--text-muted);">${err.message}</span>
-        <button id="projectRetryBtn" class="cyber-btn-outline" style="margin-top: 8px;">
-          <i data-lucide="refresh-cw"></i> 重试
+        <i data-lucide="alert-triangle" style="width: 34px; height: 34px; color: var(--neon-pink, #ff007f);"></i>
+        <span style="font-weight: 600;">无法加载任务看板</span>
+        <span style="font-size: 12px; color: var(--text-muted);">${escapeHtml(err.message)}</span>
+        <button id="tbRetryBtn" class="tb-btn" style="margin-top: 8px;">
+          <i data-lucide="refresh-cw" style="width: 13px; height: 13px;"></i> 重试
         </button>
       </div>
     `;
-    const retryBtn = document.getElementById('projectRetryBtn');
+    const retryBtn = container.querySelector('#tbRetryBtn');
     if (retryBtn) retryBtn.addEventListener('click', () => renderProjectOverview());
     if (window.lucide) window.lucide.createIcons();
   }
 }
 
-/**
- * Build the full Project Overview DOM tree
- */
-function buildOverviewDOM(container, data, queryIdentifier) {
-  const { workspaceName, git, mission, sessions, workspaceStatus, tasks = [] } = data;
+function filterItems(data) {
+  const allSessions = data.sessions || [];
+  const allTodos = data.todos || [];
+  const q = searchQuery.trim().toLowerCase();
 
-  // Update tab status badge immediately
-  if (workspaceStatus) {
-    updateProjectTabStatus(workspaceStatus);
-  }
+  const matchesSearch = (textParts) => {
+    if (!q) return true;
+    return textParts.some(p => String(p || '').toLowerCase().includes(q));
+  };
 
-  const gitChangesBadge = git.isRepo
-    ? (git.changedFilesCount > 0
-      ? `<span class="project-git-changes-badge dirty"><i data-lucide="file-diff" style="width: 12px; height: 12px;"></i> ${git.changedFilesCount} 项修改</span>`
-      : `<span class="project-git-changes-badge clean"><i data-lucide="check" style="width: 12px; height: 12px;"></i> 工作区干净</span>`)
-    : '';
+  const sessions = allSessions.filter(s => {
+    if (selectedWorkspaceFilter && s.workspaceName !== selectedWorkspaceFilter) return false;
+    return matchesSearch([
+      s.taskTitle,
+      s.name,
+      s.workspaceName,
+      s.agentType,
+      s.agentModel,
+      s.lastActivity?.text,
+      s.lastActivity?.userPrompt
+    ]);
+  });
 
-  const gitBranchBadge = git.isRepo
-    ? `<span class="project-git-badge"><i data-lucide="git-branch" style="width: 12px; height: 12px;"></i> ${git.branch}</span>`
-    : `<span class="project-git-badge"><i data-lucide="folder" style="width: 12px; height: 12px;"></i> 本地目录</span>`;
+  const todos = allTodos.filter(t => {
+    if (selectedWorkspaceFilter && t.workspaceName && t.workspaceName !== selectedWorkspaceFilter) return false;
+    return matchesSearch([t.title, t.description, t.workspaceName, t.agentType]);
+  });
 
-  // 1. Hero / Header Card
-  let html = `
-    <div class="project-hero-card">
-      <div class="project-hero-top">
-        <div class="project-identity">
-          <div class="project-name">
-            <i data-lucide="layers" style="color: var(--neon-cyan, #00f0ff); width: 22px; height: 22px;"></i>
-            <span>${escapeHtml(workspaceName)}</span>
-          </div>
-          ${gitBranchBadge}
-          ${gitChangesBadge}
+  return { sessions, todos };
+}
+
+function renderSessionCard(sess) {
+  const agent = getAgentInfo(sess.agentType, sess.agentModel);
+  const status = sess.status || 'idle';
+  const statusLabel = sess.statusLabel || (status === 'waiting' ? '需确认' : status === 'busy' ? '执行中' : '待命');
+  const snippet = (sess.lastActivity && sess.lastActivity.text)
+    ? sess.lastActivity.text
+    : '会话已就绪，等待下达指令...';
+  const relTime = formatRelativeTime(sess.lastActiveAt || sess.createdTimestamp);
+  const showSessionId = sess.taskTitle && sess.taskTitle !== sess.name;
+  const isRenaming = activeRenameSession === sess.name;
+  const isReplying = activeQuickReplySession === sess.name;
+
+  return `
+    <div class="tb-card status-${status}" data-session-card="${escapeHtml(sess.name)}">
+      <div class="tb-card-top">
+        <div class="tb-card-meta-left">
+          <span class="tb-status-tag ${status}">${escapeHtml(statusLabel)}</span>
+          <span class="tb-ws-badge" title="工作区: ${escapeHtml(sess.workspaceName)}">
+            <i data-lucide="folder" style="width: 11px; height: 11px; flex-shrink: 0;"></i>
+            <span>${escapeHtml(sess.workspaceName)}</span>
+          </span>
+          ${sess.isRemote ? `<span class="tb-ws-badge" title="远程节点">远程</span>` : ''}
         </div>
-        <div class="project-hero-actions">
-          <button id="projectRefreshDataBtn" class="cyber-btn-outline" title="刷新项目实时动态" style="height: 32px; padding: 0 10px; font-size: 11px;">
-            <i data-lucide="refresh-cw" style="width: 13px; height: 13px;"></i>
-            <span>刷新</span>
-          </button>
-        </div>
+        <button class="tb-card-edit-btn" data-action="rename-card" data-session="${escapeHtml(sess.name)}" title="重命名任务卡片标题">
+          <i data-lucide="pencil" style="width: 12px; height: 12px;"></i>
+        </button>
       </div>
 
-      <div class="project-mission-box" id="projectMissionBox">
-        <div class="project-mission-content">
-          <div class="mission-label">
-            <i data-lucide="target" style="width: 13px; height: 13px;"></i>
-            <span>当前推进目标 (MISSION)</span>
+      <div class="tb-card-body">
+        ${isRenaming ? `
+          <div class="tb-rename-row" data-no-open="1">
+            <input type="text" class="tb-rename-input" data-rename-input="${escapeHtml(sess.name)}" value="${escapeHtml(sess.customTitle || sess.taskTitle || '')}" placeholder="输入任务标题，留空恢复默认">
+            <button class="tb-mini-btn primary" data-action="save-rename" data-session="${escapeHtml(sess.name)}">保存</button>
+            <button class="tb-mini-btn" data-action="cancel-rename">取消</button>
           </div>
-          <div class="mission-text ${!mission ? 'placeholder' : ''}" id="projectMissionDisplay">
-            ${mission ? escapeHtml(mission) : '点击右侧按钮设定当前项目的核心推进目标...'}
-          </div>
+        ` : `
+          <div class="tb-card-title" title="${escapeHtml(sess.taskTitle)}">${escapeHtml(sess.taskTitle)}</div>
+          ${showSessionId ? `<div class="tb-card-session-id">#${escapeHtml(sess.name)}</div>` : ''}
+        `}
+        <div class="tb-card-snippet" title="${escapeHtml(snippet)}">${escapeHtml(snippet)}</div>
+      </div>
+
+      ${isReplying ? `
+        <div class="tb-quick-reply" data-no-open="1">
+          <input type="text" class="tb-quick-reply-input" data-reply-input="${escapeHtml(sess.name)}" placeholder="直接发送下一步指令或回复 (Enter 发送)...">
+          <button class="tb-mini-btn primary" data-action="send-reply" data-session="${escapeHtml(sess.name)}">
+            <i data-lucide="send" style="width: 11px; height: 11px;"></i>
+          </button>
         </div>
-        <div class="mission-actions">
-          ${(mission || tasks.length > 0) ? `
-            <button id="resetMissionBtn" class="mission-reset-btn" title="重置当前目标并清空大盘所有旧任务">
-              <i data-lucide="rotate-ccw" style="width: 12px; height: 12px;"></i>
-              <span>重置目标</span>
+      ` : ''}
+
+      <div class="tb-card-footer">
+        <div class="tb-card-agent">
+          <span class="tb-agent-pill ${agent.badgeClass}">
+            <i data-lucide="${agent.icon}" style="width: 11px; height: 11px;"></i>
+            <span>${escapeHtml(agent.brand)}</span>
+          </span>
+          ${agent.shortModel ? `<span class="tb-model-pill" title="${escapeHtml(agent.model)}">${escapeHtml(agent.shortModel)}</span>` : ''}
+          ${relTime ? `<span class="tb-time-label">${escapeHtml(relTime)}</span>` : ''}
+        </div>
+        <div class="tb-card-actions" data-no-open="1">
+          ${!sess.isRemote ? `
+            <button class="tb-mini-btn" data-action="toggle-reply" data-session="${escapeHtml(sess.name)}" title="在卡片内快捷续发指令">
+              <i data-lucide="message-square-plus" style="width: 11px; height: 11px;"></i>
+              <span>续发</span>
             </button>
           ` : ''}
-          <button id="decomposeMissionBtn" class="mission-decompose-btn" title="呼叫 AGY 结合当前核心推进目标，自动生成任务拆解草稿">
-            <i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>
-            <span>让 AGY 拆解</span>
-          </button>
-          <button id="editMissionBtn" class="mission-edit-btn" title="设定或修改推进目标">
-            <i data-lucide="edit-3" style="width: 12px; height: 12px;"></i>
-            <span>${mission ? '修改' : '设定'}</span>
+          <button class="tb-mini-btn primary" data-action="open-session" data-session="${escapeHtml(sess.name)}" title="进入该会话终端 / Chat">
+            <span>进入</span>
+            <i data-lucide="arrow-up-right" style="width: 11px; height: 11px;"></i>
           </button>
         </div>
       </div>
     </div>
   `;
+}
 
-  // 2. Roadmap & Tasks Board (目标拆解大盘)
-  const totalTasks = tasks.length;
-  const doneTasks = tasks.filter(t => t.status === 'done').length;
-  const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length;
-  const todoTasks = tasks.filter(t => t.status === 'todo' || !t.status).length;
-  const progressPercent = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+function renderTodoCard(todo) {
+  const agent = getAgentInfo(todo.agentType || 'agy', '');
+  const relTime = formatRelativeTime(todo.updatedAt || todo.createdAt);
 
-  html += `
-    <div class="project-roadmap-card" id="projectRoadmapCard">
-      <div class="roadmap-header">
-        <div class="roadmap-title-row">
-          <div class="roadmap-title">
-            <i data-lucide="kanban" style="width: 15px; height: 15px;"></i>
-            <span class="roadmap-title-text">
-              <span class="title-main">推进大盘</span>
-              <span class="title-sub">(ROADMAP & TASKS)</span>
+  return `
+    <div class="tb-card status-todo" data-todo-card="${escapeHtml(todo.id)}">
+      <div class="tb-card-top">
+        <div class="tb-card-meta-left">
+          <span class="tb-status-tag todo">待办</span>
+          ${todo.priority === 'high' ? `<span class="tb-priority-tag high">高优</span>` : ''}
+          ${todo.workspaceName ? `
+            <span class="tb-ws-badge" title="目标工作区: ${escapeHtml(todo.workspaceName)}">
+              <i data-lucide="folder" style="width: 11px; height: 11px; flex-shrink: 0;"></i>
+              <span>${escapeHtml(todo.workspaceName)}</span>
             </span>
-            <span class="roadmap-count-pill">${doneTasks}/${totalTasks} 完成 (${progressPercent}%)</span>
-          </div>
-
-          <div class="roadmap-controls-bar">
-            <div class="roadmap-view-switcher">
-              <button class="roadmap-switch-btn ${roadmapViewMode === 'dag' ? 'active' : ''}" data-view="dag" title="切换到 DAG 拓扑画布模式">
-                <i data-lucide="network" style="width: 12px; height: 12px;"></i>
-                <span>DAG 画布</span>
-              </button>
-              <button class="roadmap-switch-btn ${roadmapViewMode === 'list' ? 'active' : ''}" data-view="list" title="切换到清单列表模式">
-                <i data-lucide="list" style="width: 12px; height: 12px;"></i>
-                <span>列表</span>
-              </button>
-            </div>
-            <div class="roadmap-actions">
-              <button id="openDispatchBtn" class="roadmap-action-btn primary" title="选择智能体工位，自由编辑并发送指令到终端">
-                <i data-lucide="send" style="width: 13px; height: 13px;"></i>
-                <span class="btn-text-full">🚀 发送到终端</span>
-                <span class="btn-text-short">🚀 发送</span>
-              </button>
-              <button id="openNewTaskModalBtn" class="roadmap-action-btn secondary" title="手动添加子任务">
-                <i data-lucide="plus" style="width: 12px; height: 12px;"></i>
-                <span>新建任务</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="roadmap-progress-bar-bg">
-          <div class="roadmap-progress-bar-fill" style="width: ${progressPercent}%;"></div>
+          ` : ''}
         </div>
       </div>
-  `;
 
-  if (tasks.length === 0) {
-    html += `
-      <div class="roadmap-onboarding-card">
-        <div class="onboarding-header">
-          <i data-lucide="compass" style="width: 18px; height: 18px; color: var(--neon-cyan, #00f0ff);"></i>
-          <span>首次使用指引：人机协同推进 3 步法</span>
-        </div>
-        <div class="onboarding-steps">
-          <div class="onboarding-step">
-            <span class="step-num">1</span>
-            <div class="step-info">
-              <span class="step-title">设定目标 (MISSION)</span>
-              <span class="step-desc">上方设定本次迭代核心目标</span>
-            </div>
-          </div>
-          <div class="onboarding-arrow"><i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i></div>
-          <div class="onboarding-step">
-            <span class="step-num">2</span>
-            <div class="step-info">
-              <span class="step-title">唤起 AGY 拆解</span>
-              <span class="step-desc">自动注入指令，生成 DAG 依赖图</span>
-            </div>
-          </div>
-          <div class="onboarding-arrow"><i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i></div>
-          <div class="onboarding-step">
-            <span class="step-num">3</span>
-            <div class="step-info">
-              <span class="step-title">审阅推进与细化</span>
-              <span class="step-desc">派发工位执行，卡片可就地细化</span>
-            </div>
-          </div>
-        </div>
-        <button id="onboardingLaunchAgyBtn" class="roadmap-action-btn primary large" style="margin-top: 14px; padding: 6px 16px; font-size: 12px;">
-          <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i>
-          <span>立即开始：唤起 AGY 拆解当前目标</span>
-        </button>
+      <div class="tb-card-body">
+        <div class="tb-card-title">${escapeHtml(todo.title)}</div>
+        ${todo.description ? `<div class="tb-card-snippet">${escapeHtml(todo.description)}</div>` : ''}
       </div>
-    </div>
-    `;
-  } else if (roadmapViewMode === 'dag') {
-    html += `
-      <div class="roadmap-dag-wrapper" id="roadmapDagWrapper"></div>
-    </div>
-    `;
-  } else {
-    html += `
-      <div class="roadmap-tasks-list" id="roadmapTasksList">
-    `;
-    tasks.forEach(task => {
-      const isDone = task.status === 'done';
-      const isInProgress = task.status === 'in_progress';
-      const statusClass = isDone ? 'done' : (isInProgress ? 'in-progress' : 'todo');
-      const statusIcon = isDone ? 'check-circle-2' : (isInProgress ? 'play-circle' : 'circle');
 
-      html += `
-        <div class="roadmap-task-row ${statusClass}" data-task-id="${escapeHtml(task.id)}">
-          <button class="task-check-btn ${isDone ? 'checked' : ''}" data-task-id="${escapeHtml(task.id)}" title="${isDone ? '标记为未完成' : '标记为已完成'}">
-            <i data-lucide="${statusIcon}" style="width: 15px; height: 15px;"></i>
+      <div class="tb-card-footer">
+        <div class="tb-card-agent">
+          <span class="tb-agent-pill ${agent.badgeClass}">
+            <i data-lucide="${agent.icon}" style="width: 11px; height: 11px;"></i>
+            <span>${escapeHtml(agent.brand)}</span>
+          </span>
+          ${relTime ? `<span class="tb-time-label">${escapeHtml(relTime)}</span>` : ''}
+        </div>
+        <div class="tb-card-actions" data-no-open="1">
+          <button class="tb-mini-btn primary" data-action="launch-todo" data-todo-id="${escapeHtml(todo.id)}" title="基于此待办立即拉起智能体会话并执行">
+            <i data-lucide="play" style="width: 11px; height: 11px;"></i>
+            <span>启动</span>
           </button>
-          <div class="task-content">
-            <div class="task-title-line">
-              <span class="task-title ${isDone ? 'done-text' : ''}">${escapeHtml(task.title)}</span>
-              ${task.priority === 'high' ? '<span class="task-priority-tag high">高优</span>' : ''}
-              ${task.assignee ? `<span class="task-assignee-tag"><i data-lucide="user" style="width: 10px; height: 10px;"></i> ${escapeHtml(task.assignee)}</span>` : ''}
+          <button class="tb-mini-btn danger" data-action="delete-todo" data-todo-id="${escapeHtml(todo.id)}" title="删除待办卡片">
+            <i data-lucide="trash-2" style="width: 11px; height: 11px;"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildBoardDOM(container, data) {
+  const { sessions, todos } = filterItems(data);
+  const workspaces = data.workspaces || [];
+
+  const waitingSessions = sessions.filter(s => s.status === 'waiting');
+  const busySessions = sessions.filter(s => s.status === 'busy');
+  const idleSessions = sessions.filter(s => s.status === 'idle');
+  const totalAllSessions = (data.sessions || []).length;
+
+  let bodyHtml = '';
+
+  if (boardViewMode === 'kanban') {
+    bodyHtml = `
+      <div class="tb-kanban-grid">
+        <!-- Column 1: Needs Attention / Waiting -->
+        <div class="tb-column col-waiting ${waitingSessions.length > 0 ? 'has-items' : ''}">
+          <div class="tb-col-header">
+            <div class="tb-col-title">
+              <span class="tb-col-dot waiting"></span>
+              <span>需确认 / 待介入</span>
+              <span class="tb-col-count">${waitingSessions.length}</span>
             </div>
-            ${task.description ? `<div class="task-desc">${escapeHtml(task.description)}</div>` : ''}
           </div>
-          <div class="task-actions">
-            ${!isDone ? `
-              <button class="task-btn-dispatch" data-task-id="${escapeHtml(task.id)}" data-title="${escapeHtml(task.title)}" data-desc="${escapeHtml(task.description || '')}" title="将此任务填入派发输入框">
-                <i data-lucide="send" style="width: 12px; height: 12px;"></i>
-                <span>派发</span>
-              </button>
-            ` : ''}
-            <button class="task-btn-delete" data-task-id="${escapeHtml(task.id)}" title="删除此任务">
-              <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i>
-            </button>
+          <div class="tb-col-cards">
+            ${waitingSessions.length > 0
+              ? waitingSessions.map(renderSessionCard).join('')
+              : `<div class="tb-col-empty"><i data-lucide="check-circle-2" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>暂无等待审批的任务</span></div>`
+            }
           </div>
         </div>
-      `;
-    });
-  }
 
-  html += `
-      </div>
-    </div>
-  `;
+        <!-- Column 2: Running / Busy -->
+        <div class="tb-column col-busy">
+          <div class="tb-col-header">
+            <div class="tb-col-title">
+              <span class="tb-col-dot busy"></span>
+              <span>执行中</span>
+              <span class="tb-col-count">${busySessions.length}</span>
+            </div>
+          </div>
+          <div class="tb-col-cards">
+            ${busySessions.length > 0
+              ? busySessions.map(renderSessionCard).join('')
+              : `<div class="tb-col-empty"><i data-lucide="cpu" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>当前没有运行中的 Agent</span></div>`
+            }
+          </div>
+        </div>
 
-  // 3. Active Workstreams Section
-  html += `
-    <div class="project-section-header">
-      <div class="project-section-title">
-        <i data-lucide="cpu" style="width: 15px; height: 15px;"></i>
-        <span>活跃智能体工位 (WORKSTREAMS)</span>
-        <span class="project-section-badge">${sessions.length}</span>
-      </div>
-    </div>
-  `;
+        <!-- Column 3: Idle / Ready -->
+        <div class="tb-column col-idle">
+          <div class="tb-col-header">
+            <div class="tb-col-title">
+              <span class="tb-col-dot idle"></span>
+              <span>待命 / 待验收</span>
+              <span class="tb-col-count">${idleSessions.length}</span>
+            </div>
+          </div>
+          <div class="tb-col-cards">
+            ${idleSessions.length > 0
+              ? idleSessions.map(renderSessionCard).join('')
+              : `<div class="tb-col-empty"><i data-lucide="coffee" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>暂无空闲待命会话</span></div>`
+            }
+          </div>
+        </div>
 
-  if (sessions.length === 0) {
-    html += `
-      <div class="project-empty-lanes">
-        <i data-lucide="terminal" style="width: 32px; height: 32px;"></i>
-        <span>当前工作区暂无运行中的智能体会话</span>
-        <button id="projectLaunchSessionBtn" class="cyber-btn-outline" style="margin-top: 6px;">
-          <i data-lucide="plus"></i> 启动第一个会话
-        </button>
+        <!-- Column 4: Todo Backlog -->
+        <div class="tb-column col-todo">
+          <div class="tb-col-header">
+            <div class="tb-col-title">
+              <span class="tb-col-dot todo"></span>
+              <span>待办任务</span>
+              <span class="tb-col-count">${todos.length}</span>
+            </div>
+            <button class="tb-col-add-btn" data-action="open-new-task" title="新建待办任务卡片">
+              <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+            </button>
+          </div>
+          <div class="tb-col-cards">
+            ${todos.length > 0
+              ? todos.map(renderTodoCard).join('')
+              : `<div class="tb-col-empty"><i data-lucide="inbox" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>随手记下待办，随时一键拉起会话</span></div>`
+            }
+          </div>
+        </div>
       </div>
     `;
   } else {
-    html += `<div class="project-lanes-grid">`;
-    sessions.forEach(sess => {
-      const agentMeta = getAgentInfo(sess.agentType, sess.agentModel);
-      const badgeClass = agentMeta.badgeClass;
-      const badgeLabel = agentMeta.label;
-      const agentIcon = agentMeta.icon;
+    // Grid mode: Grouped by Workspace
+    const groupMap = new Map();
+    for (const s of sessions) {
+      const key = s.workspaceName || '默认工作区';
+      if (!groupMap.has(key)) groupMap.set(key, { sessions: [], todos: [] });
+      groupMap.get(key).sessions.push(s);
+    }
+    for (const t of todos) {
+      const key = t.workspaceName || '未分配工作区';
+      if (!groupMap.has(key)) groupMap.set(key, { sessions: [], todos: [] });
+      groupMap.get(key).todos.push(t);
+    }
 
-      let snippetText = '会话已挂载就绪，等待输入...';
-      if (sess.lastActivity && sess.lastActivity.text) {
-        snippetText = sess.lastActivity.text;
+    if (groupMap.size === 0) {
+      bodyHtml = `
+        <div class="project-empty-lanes">
+          <i data-lucide="kanban" style="width: 34px; height: 34px; opacity: 0.65;"></i>
+          <span>当前筛选条件下暂无任务卡片</span>
+          <button class="tb-btn tb-btn-primary" data-action="open-new-task" style="margin-top: 6px;">
+            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+            <span>新建任务 / 启动会话</span>
+          </button>
+        </div>
+      `;
+    } else {
+      bodyHtml = `<div class="tb-ws-groups">`;
+      for (const [wsName, group] of groupMap.entries()) {
+        const wsMeta = workspaces.find(w => w.name === wsName);
+        const branchBadge = (wsMeta && wsMeta.git && wsMeta.git.isRepo)
+          ? `<span class="tb-ws-badge"><i data-lucide="git-branch" style="width: 11px; height: 11px;"></i> ${escapeHtml(wsMeta.git.branch)}${wsMeta.git.changedFilesCount > 0 ? ` · ${wsMeta.git.changedFilesCount}改` : ''}</span>`
+          : '';
+        const count = group.sessions.length + group.todos.length;
+        bodyHtml += `
+          <div class="tb-ws-group">
+            <div class="tb-ws-group-header">
+              <div class="tb-ws-group-title">
+                <i data-lucide="folder-git-2" style="width: 15px; height: 15px;"></i>
+                <span>${escapeHtml(wsName)}</span>
+                ${branchBadge}
+                <span class="tb-col-count">${count}</span>
+              </div>
+            </div>
+            <div class="tb-ws-group-grid">
+              ${group.sessions.map(renderSessionCard).join('')}
+              ${group.todos.map(renderTodoCard).join('')}
+            </div>
+          </div>
+        `;
       }
+      bodyHtml += `</div>`;
+    }
+  }
 
-      const statusCls = sess.status === 'busy' ? 'status-busy' : (sess.status === 'waiting' ? 'status-waiting' : 'status-idle');
-
-      html += `
-        <div class="project-lane-card" data-session-name="${escapeHtml(sess.name)}">
-          <div class="lane-card-top">
-            <div class="lane-agent-info">
-              <span class="lane-session-name">${escapeHtml(sess.name)}</span>
-              <span class="lane-agent-badge ${badgeClass}">
-                <i data-lucide="${agentIcon}" style="width: 12px; height: 12px;"></i>
-                ${escapeHtml(badgeLabel)}
-              </span>
-              ${agentMeta.shortModel ? `<span class="lane-model-tag" title="完整模型: ${escapeHtml(agentMeta.model)}">${escapeHtml(agentMeta.shortModel)}</span>` : ''}
-            </div>
-            <div class="lane-status-pill ${statusCls}">
-              <span class="lane-status-dot ${sess.status || 'idle'}"></span>
-              <span>${escapeHtml(sess.statusLabel || (sess.attached ? '活跃中' : '空闲'))}</span>
+  container.innerHTML = `
+    <div class="tb-root">
+      <!-- 1. Top Command Header -->
+      <div class="tb-header">
+        <div class="tb-header-left">
+          <div class="tb-title-group">
+            <span class="tb-title-icon">
+              <i data-lucide="kanban" style="width: 16px; height: 16px;"></i>
+            </span>
+            <div class="tb-title-text">
+              <span class="tb-title-main">任务看板</span>
+              <span class="tb-title-sub">以会话为任务卡片，一屏掌控全部 Agent 进展</span>
             </div>
           </div>
 
-          <div class="lane-activity-snippet" title="${escapeHtml(snippetText)}">
-            ${escapeHtml(snippetText)}
+          <div class="tb-kpi-strip">
+            <span class="tb-kpi-pill ${waitingSessions.length > 0 ? 'is-waiting' : ''}">
+              <span class="tb-dot" style="background: #f59e0b;"></span>
+              <span>需确认 ${waitingSessions.length}</span>
+            </span>
+            <span class="tb-kpi-pill ${busySessions.length > 0 ? 'is-busy' : ''}">
+              <span class="tb-dot" style="background: var(--neon-cyan, #00f0ff);"></span>
+              <span>执行中 ${busySessions.length}</span>
+            </span>
+            <span class="tb-kpi-pill ${idleSessions.length > 0 ? 'is-idle' : ''}">
+              <span class="tb-dot" style="background: #10b981;"></span>
+              <span>待命 ${idleSessions.length}</span>
+            </span>
+            <span class="tb-kpi-pill">
+              <span class="tb-dot" style="background: #94a3b8;"></span>
+              <span>待办 ${todos.length}</span>
+            </span>
           </div>
+        </div>
 
-          <div class="lane-card-actions">
-            <button class="btn-jump-session" data-session="${escapeHtml(sess.name)}">
-              <i data-lucide="arrow-up-right" style="width: 13px; height: 13px;"></i>
-              <span>进入终端 / Chat</span>
+        <div class="tb-header-right">
+          <div class="tb-segmented" role="tablist" aria-label="视图切换">
+            <button class="tb-seg-btn ${boardViewMode === 'kanban' ? 'active' : ''}" data-action="switch-view" data-view="kanban" title="按状态分列看板视图">
+              <i data-lucide="columns-3" style="width: 13px; height: 13px;"></i>
+              <span>看板</span>
+            </button>
+            <button class="tb-seg-btn ${boardViewMode === 'grid' ? 'active' : ''}" data-action="switch-view" data-view="grid" title="按工作区分组卡片视图">
+              <i data-lucide="layout-grid" style="width: 13px; height: 13px;"></i>
+              <span>按项目</span>
             </button>
           </div>
-        </div>
-      `;
-    });
-    html += `</div>`;
-  }
 
-  // 4. Unified Timeline & Feed Section
-  if (git.isRepo && git.recentCommits && git.recentCommits.length > 0) {
-    html += `
-      <div class="project-section-header" style="margin-top: 10px;">
-        <div class="project-section-title">
-          <i data-lucide="git-commit" style="width: 15px; height: 15px;"></i>
-          <span>项目大事记 (TIMELINE & COMMITS)</span>
+          <button class="tb-btn tb-btn-primary" data-action="open-new-task" title="新建待办卡片或直接启动新会话任务">
+            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+            <span class="tb-btn-label-hide-sm">新建任务</span>
+          </button>
+
+          <button class="tb-btn tb-btn-icon" id="tbRefreshBtn" title="立即刷新看板状态">
+            <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+          </button>
         </div>
       </div>
 
-      <div class="project-timeline-card">
-        <div class="project-timeline-list">
-    `;
-
-    git.recentCommits.forEach(c => {
-      html += `
-        <div class="timeline-item">
-          <div class="timeline-item-dot"></div>
-          <div class="timeline-item-header">
-            <span class="timeline-hash-badge">${escapeHtml(c.hash)}</span>
-            <span class="timeline-item-author">${escapeHtml(c.author)}</span>
-            <span class="timeline-time">${escapeHtml(c.relativeTime)}</span>
-          </div>
-          <div class="timeline-item-message">${escapeHtml(c.subject)}</div>
+      <!-- 2. Workspace Filter Pills & Search -->
+      <div class="tb-filter-bar">
+        <div class="tb-ws-pills">
+          <button class="tb-ws-pill ${selectedWorkspaceFilter === '' ? 'active' : ''}" data-action="filter-ws" data-ws="">
+            <span>全部工作区</span>
+            <span class="tb-ws-count">${totalAllSessions}</span>
+          </button>
+          ${workspaces.map(ws => `
+            <button class="tb-ws-pill ${selectedWorkspaceFilter === ws.name ? 'active' : ''}" data-action="filter-ws" data-ws="${escapeHtml(ws.name)}" title="${escapeHtml(ws.path || ws.name)}">
+              <span>${escapeHtml(ws.name)}</span>
+              ${ws.git && ws.git.isRepo ? `<span class="tb-ws-branch">${escapeHtml(ws.git.branch)}</span>` : ''}
+              ${ws.git && ws.git.changedFilesCount > 0 ? `<span class="tb-ws-dirty-dot" title="${ws.git.changedFilesCount} 个未提交修改"></span>` : ''}
+              <span class="tb-ws-count">${ws.sessionCount}</span>
+            </button>
+          `).join('')}
         </div>
-      `;
-    });
 
-    html += `
+        <div class="tb-search-wrap">
+          <i data-lucide="search" class="tb-search-icon"></i>
+          <input type="text" id="tbSearchInput" class="tb-search-input" placeholder="搜索任务 / 会话 / 模型..." value="${escapeHtml(searchQuery)}">
+          ${searchQuery ? `
+            <button class="tb-search-clear" id="tbSearchClearBtn" title="清除搜索">
+              <i data-lucide="x" style="width: 12px; height: 12px;"></i>
+            </button>
+          ` : ''}
         </div>
       </div>
-    `;
-  }
 
-  container.innerHTML = html;
+      <!-- 3. Main Board Area -->
+      ${bodyHtml}
+    </div>
+  `;
 
-  // Re-bind Lucide icons
   if (window.lucide) {
     window.lucide.createIcons();
   }
 
-  // Attach event listeners
-  bindOverviewEvents(container, queryIdentifier, mission, sessions, tasks);
+  bindBoardEvents(container, data);
+
+  // Restore focus to inline input if active
+  if (activeRenameSession) {
+    const renameInput = container.querySelector(`[data-rename-input="${CSS.escape(activeRenameSession)}"]`);
+    if (renameInput) {
+      renameInput.focus();
+      renameInput.select();
+    }
+  } else if (activeQuickReplySession) {
+    const replyInput = container.querySelector(`[data-reply-input="${CSS.escape(activeQuickReplySession)}"]`);
+    if (replyInput) {
+      replyInput.focus();
+    }
+  }
 }
 
-/**
- * Bind interactive events in the Overview DOM
- */
-function bindOverviewEvents(container, workspaceIdentifier, currentMission, sessions, currentTasks = []) {
-  // Refresh button
-  const refreshBtn = container.querySelector('#projectRefreshDataBtn');
+function bindBoardEvents(container, data) {
+  // Refresh
+  const refreshBtn = container.querySelector('#tbRefreshBtn');
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-      renderProjectOverview();
+    refreshBtn.addEventListener('click', () => renderProjectOverview());
+  }
+
+  // Search input (with Chinese IME guard)
+  const searchInput = container.querySelector('#tbSearchInput');
+  if (searchInput) {
+    let isComposing = false;
+    searchInput.addEventListener('compositionstart', () => { isComposing = true; });
+    searchInput.addEventListener('compositionend', () => {
+      isComposing = false;
+      searchQuery = searchInput.value;
+      buildBoardDOM(container, data);
+      const nextInput = container.querySelector('#tbSearchInput');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+      }
+    });
+    searchInput.addEventListener('input', () => {
+      if (isComposing) return;
+      searchQuery = searchInput.value;
+      buildBoardDOM(container, data);
+      const nextInput = container.querySelector('#tbSearchInput');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+      }
     });
   }
 
-  // Launch first session button (empty state)
-  const launchBtn = container.querySelector('#projectLaunchSessionBtn');
-  if (launchBtn) {
-    launchBtn.addEventListener('click', () => {
-      const newSessionBtn = document.getElementById('newSessionBtn');
-      if (newSessionBtn) newSessionBtn.click();
+  const clearBtn = container.querySelector('#tbSearchClearBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      searchQuery = '';
+      buildBoardDOM(container, data);
     });
   }
 
-  // Jump to session buttons
-  const jumpBtns = container.querySelectorAll('.btn-jump-session');
-  jumpBtns.forEach(btn => {
+  // View mode switcher
+  container.querySelectorAll('[data-action="switch-view"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.getAttribute('data-view');
+      if (view && view !== boardViewMode) {
+        boardViewMode = view;
+        localStorage.setItem('deck_taskboard_view_mode', view);
+        buildBoardDOM(container, data);
+      }
+    });
+  });
+
+  // Workspace filter pills
+  container.querySelectorAll('[data-action="filter-ws"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedWorkspaceFilter = btn.getAttribute('data-ws') || '';
+      localStorage.setItem('deck_taskboard_ws_filter', selectedWorkspaceFilter);
+      buildBoardDOM(container, data);
+    });
+  });
+
+  // Open new task modal
+  container.querySelectorAll('[data-action="open-new-task"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openNewTaskModal(data);
+    });
+  });
+
+  // Click session card body -> open session
+  container.querySelectorAll('.tb-card[data-session-card]').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('[data-no-open]') || e.target.closest('button') || e.target.closest('input')) {
+        return;
+      }
+      const sessionName = card.getAttribute('data-session-card');
+      if (sessionName) {
+        attachSession(sessionName);
+        closeSidebarOnMobile();
+      }
+    });
+  });
+
+  // Open session button
+  container.querySelectorAll('[data-action="open-session"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const sessionName = btn.getAttribute('data-session');
@@ -519,359 +676,396 @@ function bindOverviewEvents(container, workspaceIdentifier, currentMission, sess
     });
   });
 
-  // --- Roadmap & Tasks Interactive Handlers ---
-  // View Switcher (DAG vs List)
-  const switchBtns = container.querySelectorAll('.roadmap-switch-btn');
-  switchBtns.forEach(btn => {
+  // Inline Rename Card
+  container.querySelectorAll('[data-action="rename-card"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const view = btn.getAttribute('data-view');
-      if (view && view !== roadmapViewMode) {
-        roadmapViewMode = view;
-        localStorage.setItem('deck_roadmap_view_mode', view);
-        renderProjectOverview();
-      }
+      const sessionName = btn.getAttribute('data-session');
+      activeRenameSession = activeRenameSession === sessionName ? null : sessionName;
+      activeQuickReplySession = null;
+      buildBoardDOM(container, data);
     });
   });
 
-  // Open "发送到终端" button in Roadmap Actions bar
-  const openDispatchBtn = container.querySelector('#openDispatchBtn');
-  if (openDispatchBtn) {
-    openDispatchBtn.addEventListener('click', (e) => {
+  container.querySelectorAll('[data-action="cancel-rename"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openDispatchModal({
-        workspaceIdentifier,
-        sessions,
-        defaultPrompt: '',
-        title: '🚀 发送任务到终端',
-        subtitle: '选择目标工位，输入指令后直接派发执行并切换到终端',
-        mode: 'free',
-        onSuccess: () => renderProjectOverview()
-      });
+      activeRenameSession = null;
+      buildBoardDOM(container, data);
     });
-  }
+  });
 
-  // Decompose Mission button beside Mission Goal (Stages Mission Decompose Prompt in Draft Tray)
-  const decomposeMissionBtn = container.querySelector('#decomposeMissionBtn');
-  if (decomposeMissionBtn) {
-    decomposeMissionBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openAgyDrawer({
-        workspaceIdentifier,
-        mission: currentMission,
-        tasks: currentTasks,
-        sessions,
-        selectedTask: null,
-        stageDecompose: true,
-        stageRefine: false,
-        onRefreshBoard: () => renderProjectOverview()
+  const submitRename = async (sessionName, value) => {
+    try {
+      await fetch('/api/task-board/card-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionName, customTitle: value.trim() })
       });
-    });
-  }
-
-  // Onboarding launch AGY button in empty state
-  const onboardingBtn = container.querySelector('#onboardingLaunchAgyBtn');
-  if (onboardingBtn) {
-    onboardingBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openAgyDrawer({
-        workspaceIdentifier,
-        mission: currentMission,
-        tasks: currentTasks,
-        sessions,
-        selectedTask: null,
-        stageDecompose: true,
-        stageRefine: false,
-        onRefreshBoard: () => renderProjectOverview()
-      });
-    });
-  }
-
-  // Render DAG Canvas if in dag view mode
-  if (roadmapViewMode === 'dag') {
-    const dagWrapper = container.querySelector('#roadmapDagWrapper');
-    if (dagWrapper) {
-      renderDagCanvas(dagWrapper, {
-        tasks: currentTasks,
-        mission: currentMission,
-        onToggleTask: async (taskId) => {
-          const taskObj = currentTasks.find(t => String(t.id) === String(taskId));
-          if (!taskObj) return;
-          taskObj.status = taskObj.status === 'done' ? 'todo' : 'done';
-          taskObj.updatedAt = new Date().toISOString();
-          try {
-            await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tasks: currentTasks, mission: currentMission })
-            });
-            renderProjectOverview();
-          } catch (err) {
-            console.error('Failed to update task status:', err);
-          }
-        },
-        onRefineTask: (task) => {
-          updateDrawerSelectedTask(task);
-          openAgyDrawer({
-            workspaceIdentifier,
-            mission: currentMission,
-            tasks: currentTasks,
-            sessions,
-            selectedTask: task,
-            autoFillRefine: true,
-            onRefreshBoard: () => renderProjectOverview()
-          });
-        },
-        onDispatchTask: (task) => {
-          updateDrawerSelectedTask(task);
-          openDispatchModal({
-            workspaceIdentifier,
-            sessions,
-            defaultPrompt: task.description ? `【任务】${task.title}\n详细说明: ${task.description}` : `【任务】${task.title}`,
-            title: `⚡ 派发任务 [${task.id}] · 发送到终端`,
-            subtitle: '选择目标工位，微调指令后直接派发执行并切换到终端',
-            mode: 'dispatch',
-            selectedTask: task,
-            onSuccess: () => renderProjectOverview()
-          });
-        },
-        onDeleteTask: async (taskId) => {
-          if (!confirm('确定删除此任务项？')) return;
-          const updatedTasks = currentTasks.filter(t => String(t.id) !== String(taskId));
-          try {
-            await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tasks: updatedTasks, mission: currentMission })
-            });
-            renderProjectOverview();
-          } catch (err) {
-            console.error('Failed to delete task:', err);
-          }
-        },
-        onSelectTask: (task) => {
-          updateDrawerSelectedTask(task);
-        }
-      });
+    } catch (err) {
+      console.error('Failed to rename card:', err);
     }
-  }
+    activeRenameSession = null;
+    renderProjectOverview();
+  };
 
-  // 1. Task checkbox toggle (complete / uncomplete) for List View
-  const checkBtns = container.querySelectorAll('.task-check-btn');
-  checkBtns.forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const taskId = btn.getAttribute('data-task-id');
-      const taskObj = currentTasks.find(t => String(t.id) === String(taskId));
-      if (!taskObj) return;
-
-      taskObj.status = taskObj.status === 'done' ? 'todo' : 'done';
-      taskObj.updatedAt = new Date().toISOString();
-
-      try {
-        await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tasks: currentTasks, mission: currentMission })
-        });
-        renderProjectOverview();
-      } catch (err) {
-        console.error('Failed to update task status:', err);
-      }
-    });
-  });
-
-  // 2. Task quick dispatch to modal
-  const dispatchBtns = container.querySelectorAll('.task-btn-dispatch');
-  dispatchBtns.forEach(btn => {
+  container.querySelectorAll('[data-action="save-rename"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const taskId = btn.getAttribute('data-task-id');
-      const taskObj = currentTasks.find(t => String(t.id) === String(taskId)) || {
-        id: taskId,
-        title: btn.getAttribute('data-title') || '',
-        description: btn.getAttribute('data-desc') || ''
-      };
-      updateDrawerSelectedTask(taskObj);
-      openDispatchModal({
-        workspaceIdentifier,
-        sessions,
-        defaultPrompt: taskObj.description ? `【任务】${taskObj.title}\n详细说明: ${taskObj.description}` : `【任务】${taskObj.title}`,
-        title: `⚡ 派发任务 [${taskObj.id}] · 发送到终端`,
-        subtitle: '选择目标工位，微调指令后直接派发执行并切换到终端',
-        mode: 'dispatch',
-        selectedTask: taskObj,
-        onSuccess: () => renderProjectOverview()
-      });
+      const sessionName = btn.getAttribute('data-session');
+      const input = container.querySelector(`[data-rename-input="${CSS.escape(sessionName)}"]`);
+      if (input) submitRename(sessionName, input.value);
     });
   });
 
-  // 3. Task delete
-  const deleteBtns = container.querySelectorAll('.task-btn-delete');
-  deleteBtns.forEach(btn => {
+  container.querySelectorAll('.tb-rename-input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const sessionName = input.getAttribute('data-rename-input');
+        submitRename(sessionName, input.value);
+      } else if (e.key === 'Escape') {
+        activeRenameSession = null;
+        buildBoardDOM(container, data);
+      }
+    });
+  });
+
+  // Inline Quick Reply
+  container.querySelectorAll('[data-action="toggle-reply"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sessionName = btn.getAttribute('data-session');
+      activeQuickReplySession = activeQuickReplySession === sessionName ? null : sessionName;
+      activeRenameSession = null;
+      buildBoardDOM(container, data);
+    });
+  });
+
+  const submitQuickReply = async (sessionName, text, btnEl) => {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return;
+    if (btnEl) btnEl.disabled = true;
+    try {
+      const res = await fetch('/api/task-board/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionName, promptText: trimmed })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || '发送失败');
+      }
+      activeQuickReplySession = null;
+      renderProjectOverview();
+    } catch (err) {
+      alert('发送失败: ' + err.message);
+      if (btnEl) btnEl.disabled = false;
+    }
+  };
+
+  container.querySelectorAll('[data-action="send-reply"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sessionName = btn.getAttribute('data-session');
+      const input = container.querySelector(`[data-reply-input="${CSS.escape(sessionName)}"]`);
+      if (input) submitQuickReply(sessionName, input.value, btn);
+    });
+  });
+
+  container.querySelectorAll('.tb-quick-reply-input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const sessionName = input.getAttribute('data-reply-input');
+        const sendBtn = container.querySelector(`[data-action="send-reply"][data-session="${CSS.escape(sessionName)}"]`);
+        submitQuickReply(sessionName, input.value, sendBtn);
+      } else if (e.key === 'Escape') {
+        activeQuickReplySession = null;
+        buildBoardDOM(container, data);
+      }
+    });
+  });
+
+  // Delete Todo card
+  container.querySelectorAll('[data-action="delete-todo"]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const taskId = btn.getAttribute('data-task-id');
-      if (!confirm('确定删除此任务项？')) return;
-
-      const updatedTasks = currentTasks.filter(t => String(t.id) !== String(taskId));
+      const todoId = btn.getAttribute('data-todo-id');
+      if (!todoId) return;
       try {
-        await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tasks: updatedTasks, mission: currentMission })
-        });
+        await fetch(`/api/task-board/todos/${encodeURIComponent(todoId)}`, { method: 'DELETE' });
         renderProjectOverview();
       } catch (err) {
-        console.error('Failed to delete task:', err);
+        console.error('Failed to delete todo:', err);
       }
     });
   });
 
-  // Open new task prompt/dialog
-  const newTaskBtn = container.querySelector('#openNewTaskModalBtn');
-  if (newTaskBtn) {
-    newTaskBtn.addEventListener('click', async () => {
-      const title = prompt('请输入新子任务的名称:');
-      if (!title || !title.trim()) return;
-
-      const depInput = prompt('前置依赖任务ID（可选，例如 t-1，若无请直接留空点确定）:');
-      const dependsOn = (depInput && depInput.trim()) ? [depInput.trim()] : [];
-
-      const newTask = {
-        id: `t-${Date.now().toString(36)}`,
-        title: title.trim(),
-        description: '',
-        status: 'todo',
-        priority: 'medium',
-        assignee: (sessions && sessions.length > 0) ? sessions[0].name : '',
-        dependsOn,
-        updatedAt: new Date().toISOString()
-      };
-
-      currentTasks.push(newTask);
-      try {
-        await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tasks: currentTasks, mission: currentMission })
-        });
-        renderProjectOverview();
-      } catch (err) {
-        console.error('Failed to add new task:', err);
-      }
-    });
-  }
-
-  // Reset mission & clear tasks button
-  const resetMissionBtn = container.querySelector('#resetMissionBtn');
-  if (resetMissionBtn) {
-    resetMissionBtn.addEventListener('click', async (e) => {
+  // Launch Todo card directly into a live Agent Session
+  container.querySelectorAll('[data-action="launch-todo"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const taskCount = currentTasks.length;
-      const confirmMsg = taskCount > 0
-        ? `确定要重置当前推进目标并清空大盘全部旧任务 (${taskCount} 项) 吗？\n重置后可立即设定最新目标。`
-        : '确定要清空并重置当前推进目标吗？';
+      const todoId = btn.getAttribute('data-todo-id');
+      const todo = (data.todos || []).find(t => String(t.id) === String(todoId));
+      if (!todo) return;
 
-      if (!confirm(confirmMsg)) return;
-
-      resetMissionBtn.disabled = true;
+      btn.disabled = true;
       try {
-        await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-mission`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mission: '', clearTasks: true })
+        await launchTaskSession({
+          title: todo.title,
+          description: todo.description,
+          workspaceName: todo.workspaceName,
+          workspacePath: todo.workspacePath,
+          agentType: todo.agentType || 'agy',
+          todoIdToDelete: todo.id
         });
-        await renderProjectOverview();
-        // 自动激活编辑框，方便用户立即输入最新目标
-        const editBtn = document.querySelector('#editMissionBtn');
-        if (editBtn) {
-          editBtn.click();
-        }
       } catch (err) {
-        console.error('Failed to reset mission and tasks:', err);
-        alert('重置失败: ' + err.message);
-        resetMissionBtn.disabled = false;
+        alert('启动任务会话失败: ' + err.message);
+        btn.disabled = false;
       }
     });
+  });
+}
+
+/**
+ * Create a live session for a task, set its custom card title, optionally dispatch initial prompt, and attach it
+ */
+async function launchTaskSession({ title, description, workspaceName, workspacePath, agentType = 'agy', todoIdToDelete = null }) {
+  const workspaces = (lastBoardData && lastBoardData.workspaces) || state.workspacesList || [];
+  let targetWs = workspaces.find(w => w.name === workspaceName);
+  if (!targetWs && state.currentWorkspacePath) {
+    targetWs = workspaces.find(w => w.path === state.currentWorkspacePath);
+  }
+  if (!targetWs && workspaces.length > 0) {
+    targetWs = workspaces[0];
   }
 
-  // Mission Edit Button
-  const editMissionBtn = container.querySelector('#editMissionBtn');
-  const missionBox = container.querySelector('#projectMissionBox');
-  if (editMissionBtn && missionBox) {
-    editMissionBtn.addEventListener('click', () => {
-      if (isEditingMission) return;
-      isEditingMission = true;
+  const finalWsName = workspaceName || (targetWs ? targetWs.name : 'default');
+  const finalWsPath = workspacePath || (targetWs ? targetWs.path : state.currentWorkspacePath || '');
+  const slug = `${agentType || 'task'}-${Date.now().toString(36).slice(-4)}`;
 
-      const hasTasks = currentTasks && currentTasks.length > 0;
+  const res = await fetch('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: slug,
+      agent: agentType || 'agy',
+      workspaceName: finalWsName,
+      workspacePath: finalWsPath,
+      deviceId: state.currentDeviceId || 'cloud'
+    })
+  });
 
-      missionBox.innerHTML = `
-        <div class="mission-edit-wrapper">
-          <div class="mission-input-row">
-            <input type="text" id="projectMissionInput" class="mission-input" placeholder="输入当前工作区的推进目标（例如：重构后端鉴权并联调前端）" value="${escapeHtml(currentMission || '')}">
-            <button id="saveMissionBtn" class="cyber-btn-outline" style="height: 32px; padding: 0 10px;">
-              <i data-lucide="check"></i> 保存
-            </button>
-            <button id="cancelMissionBtn" class="cyber-btn-outline" style="height: 32px; padding: 0 10px;">
-              <i data-lucide="x"></i> 取消
-            </button>
-          </div>
-          ${hasTasks ? `
-            <div class="mission-edit-options">
-              <label class="mission-clear-tasks-toggle" title="勾选后，保存新目标将同步清空大盘已有的旧任务，便于围绕新目标重新拆解">
-                <input type="checkbox" id="missionClearOldTasksCheck" checked>
-                <span class="mission-checkbox-custom"></span>
-                <span>设定新目标时同步清空现有旧任务 (${currentTasks.length} 项)</span>
-              </label>
-            </div>
-          ` : ''}
-        </div>
-      `;
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `HTTP ${res.status}`);
+  }
 
-      if (window.lucide) window.lucide.createIcons();
+  const created = await res.json().catch(() => ({}));
+  const createdName = created.name || slug;
 
-      const input = missionBox.querySelector('#projectMissionInput');
-      const saveBtn = missionBox.querySelector('#saveMissionBtn');
-      const cancelBtn = missionBox.querySelector('#cancelMissionBtn');
-      const clearTasksCheck = missionBox.querySelector('#missionClearOldTasksCheck');
+  // Persist readable task title on the newly created session card
+  if (title) {
+    await fetch('/api/task-board/card-meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionName: createdName, customTitle: title })
+    }).catch(() => {});
+  }
 
-      if (input) {
-        input.focus();
-        input.addEventListener('keydown', (e) => {
-          if (e.isComposing || e.keyCode === 229) return;
-          if (e.key === 'Enter') saveBtn.click();
-          if (e.key === 'Escape') cancelBtn.click();
-        });
-      }
+  // Delete originating todo card if launched from Todo column
+  if (todoIdToDelete) {
+    await fetch(`/api/task-board/todos/${encodeURIComponent(todoIdToDelete)}`, { method: 'DELETE' }).catch(() => {});
+  }
 
-      saveBtn.addEventListener('click', async () => {
-        const val = input.value.trim();
-        const shouldClearTasks = clearTasksCheck ? clearTasksCheck.checked : false;
-        saveBtn.disabled = true;
-        try {
-          await fetch(`/api/workspaces/${encodeURIComponent(workspaceIdentifier)}/project-mission`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: val, clearTasks: shouldClearTasks })
-          });
-        } catch (e) {
-          console.error('Failed to update project mission:', e);
-        }
-        isEditingMission = false;
-        renderProjectOverview();
-      });
+  // Refresh sidebar session list
+  if (window.loadSessions) {
+    await window.loadSessions();
+  }
 
-      cancelBtn.addEventListener('click', () => {
-        isEditingMission = false;
-        renderProjectOverview();
-      });
-    });
+  // Attach to the new session immediately
+  attachSession(createdName);
+
+  // If user provided a task prompt/description, dispatch it after the CLI boots briefly
+  const promptText = description ? `${title}\n${description}` : title;
+  if (promptText && (!state.currentDeviceId || state.currentDeviceId === 'cloud')) {
+    setTimeout(() => {
+      fetch('/api/task-board/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionName: createdName, promptText })
+      }).catch(() => {});
+    }, 1800);
   }
 }
 
 /**
- * Initialize event listeners for opening the project overview from sidebar and background poller
+ * Open sleek modal to create a Todo card or directly launch a new Task Session
+ */
+function openNewTaskModal(data) {
+  const existing = document.getElementById('tbNewTaskModalOverlay');
+  if (existing) existing.remove();
+
+  isModalOpen = true;
+  const workspaces = (data && data.workspaces) || state.workspacesList || [];
+  const defaultWsName = selectedWorkspaceFilter ||
+    (state.workspacesList.find(w => w.path === state.currentWorkspacePath)?.name) ||
+    (workspaces[0]?.name || '');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'tbNewTaskModalOverlay';
+  overlay.className = 'tb-modal-overlay';
+  overlay.innerHTML = `
+    <div class="tb-modal-card" role="dialog" aria-modal="true" aria-label="新建任务卡片">
+      <div class="tb-modal-header">
+        <div class="tb-modal-title">
+          <i data-lucide="plus-circle" style="width: 17px; height: 17px;"></i>
+          <span>新建任务卡片</span>
+        </div>
+        <button class="tb-modal-close" id="tbModalCloseBtn" title="关闭">
+          <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+        </button>
+      </div>
+
+      <div class="tb-form-group">
+        <label class="tb-form-label" for="tbNewTaskTitle">任务标题 *</label>
+        <input type="text" id="tbNewTaskTitle" class="tb-input" placeholder="例如：优化登录页浅色主题对比度">
+      </div>
+
+      <div class="tb-form-group">
+        <label class="tb-form-label" for="tbNewTaskDesc">任务说明 / 初始指令（可选）</label>
+        <textarea id="tbNewTaskDesc" class="tb-textarea" placeholder="补充具体要求；选择「直接启动会话」时将作为首条指令发送给 Agent"></textarea>
+      </div>
+
+      <div class="tb-form-row">
+        <div class="tb-form-group">
+          <label class="tb-form-label" for="tbNewTaskWs">所属工作区</label>
+          <select id="tbNewTaskWs" class="tb-select">
+            ${workspaces.map(ws => `
+              <option value="${escapeHtml(ws.name)}" data-path="${escapeHtml(ws.path || '')}" ${ws.name === defaultWsName ? 'selected' : ''}>
+                ${escapeHtml(ws.name)}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+
+        <div class="tb-form-group">
+          <label class="tb-form-label" for="tbNewTaskAgent">执行智能体</label>
+          <select id="tbNewTaskAgent" class="tb-select">
+            <option value="agy">Antigravity (AGY)</option>
+            <option value="claude">Claude Code</option>
+            <option value="codex">Codex CLI</option>
+            <option value="kimi">Kimi Code</option>
+            <option value="default">纯终端 (Terminal)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tb-form-group">
+        <label class="tb-form-label" for="tbNewTaskPriority">优先级</label>
+        <select id="tbNewTaskPriority" class="tb-select">
+          <option value="medium" selected>普通</option>
+          <option value="high">高优先级</option>
+          <option value="low">低优先级</option>
+        </select>
+      </div>
+
+      <div class="tb-modal-footer">
+        <button class="tb-btn" id="tbModalCancelBtn">取消</button>
+        <button class="tb-btn" id="tbModalSaveTodoBtn">
+          <i data-lucide="inbox" style="width: 13px; height: 13px;"></i>
+          <span>加入待办列</span>
+        </button>
+        <button class="tb-btn tb-btn-primary" id="tbModalLaunchNowBtn">
+          <i data-lucide="play" style="width: 13px; height: 13px;"></i>
+          <span>直接启动会话</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  if (window.lucide) window.lucide.createIcons();
+
+  const closeModal = () => {
+    isModalOpen = false;
+    overlay.remove();
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+  overlay.querySelector('#tbModalCloseBtn').addEventListener('click', closeModal);
+  overlay.querySelector('#tbModalCancelBtn').addEventListener('click', closeModal);
+
+  const titleInput = overlay.querySelector('#tbNewTaskTitle');
+  const descInput = overlay.querySelector('#tbNewTaskDesc');
+  const wsSelect = overlay.querySelector('#tbNewTaskWs');
+  const agentSelect = overlay.querySelector('#tbNewTaskAgent');
+  const prioritySelect = overlay.querySelector('#tbNewTaskPriority');
+  const saveTodoBtn = overlay.querySelector('#tbModalSaveTodoBtn');
+  const launchNowBtn = overlay.querySelector('#tbModalLaunchNowBtn');
+
+  titleInput.focus();
+  titleInput.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape') closeModal();
+  });
+
+  const readForm = () => {
+    const title = titleInput.value.trim();
+    if (!title) {
+      titleInput.focus();
+      return null;
+    }
+    const selectedOpt = wsSelect.options[wsSelect.selectedIndex];
+    return {
+      title,
+      description: descInput.value.trim(),
+      workspaceName: wsSelect.value || '',
+      workspacePath: selectedOpt ? (selectedOpt.getAttribute('data-path') || '') : '',
+      agentType: agentSelect.value || 'agy',
+      priority: prioritySelect.value || 'medium'
+    };
+  };
+
+  saveTodoBtn.addEventListener('click', async () => {
+    const payload = readForm();
+    if (!payload) return;
+    saveTodoBtn.disabled = true;
+    try {
+      const res = await fetch('/api/task-board/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('保存待办失败');
+      closeModal();
+      renderProjectOverview();
+    } catch (err) {
+      alert(err.message);
+      saveTodoBtn.disabled = false;
+    }
+  });
+
+  launchNowBtn.addEventListener('click', async () => {
+    const payload = readForm();
+    if (!payload) return;
+    launchNowBtn.disabled = true;
+    try {
+      closeModal();
+      await launchTaskSession(payload);
+    } catch (err) {
+      alert('启动会话失败: ' + err.message);
+    }
+  });
+}
+
+/**
+ * Initialize event listeners for opening the Task Board from sidebar and background status poller
  */
 export function initProjectOverviewEvents() {
   const openBtn = document.getElementById('openProjectOverviewBtn');
@@ -881,25 +1075,32 @@ export function initProjectOverviewEvents() {
     });
   }
 
-  // Periodic status poller to keep tab status badge in sync
   if (!autoStatusInterval) {
     autoStatusInterval = setInterval(async () => {
       const hasProjectTab = state.tabs && state.tabs.some(t => t.type === 'project');
       if (!hasProjectTab) return;
 
-      const workspaceSelect = document.getElementById('explorerWorkspaceSelect');
-      const currentPath = state.currentWorkspacePath || (workspaceSelect ? workspaceSelect.value : '');
-      const matchedWs = state.workspacesList.find(w => w.path === currentPath);
-      const wsIdent = matchedWs ? matchedWs.name : currentPath;
+      const isViewingBoard = state.activeTabId === 'tab-project-overview';
+      const isUserInteracting = Boolean(activeQuickReplySession || activeRenameSession || isModalOpen);
+      const searchEl = document.getElementById('tbSearchInput');
+      const isTypingSearch = searchEl && document.activeElement === searchEl;
 
-      if (!wsIdent) return;
+      if (isViewingBoard && !isUserInteracting && !isTypingSearch) {
+        renderProjectOverview({ silent: true });
+        return;
+      }
 
+      // Lightweight status badge update when viewing other tabs
       try {
-        const res = await fetch(`/api/workspaces/${encodeURIComponent(wsIdent)}/project-progress`);
+        const params = new URLSearchParams();
+        if (state.currentDeviceId && state.currentDeviceId !== 'cloud') {
+          params.set('deviceId', state.currentDeviceId);
+        }
+        const res = await fetch(`/api/task-board${params.toString() ? `?${params.toString()}` : ''}`);
         if (res.ok) {
           const data = await res.json();
-          if (data && data.workspaceStatus) {
-            updateProjectTabStatus(data.workspaceStatus);
+          if (data && data.summary && data.summary.workspaceStatus) {
+            updateProjectTabStatus(data.summary.workspaceStatus);
           }
         }
       } catch (e) {}
