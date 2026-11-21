@@ -248,7 +248,15 @@ function closeSidebarOnMobile() {
   }
 }
 
-export function openFile(path) {
+export function openFile(path, options = {}) {
+  if (!path) return;
+  if (options && options.line) {
+    state.pendingEditorLocation = {
+      path,
+      line: options.line,
+      endLine: options.endLine || null
+    };
+  }
   const filename = path.split('/').pop();
   let tab = state.tabs.find(t => t.type === 'editor' && t.path === path);
   if (!tab) {

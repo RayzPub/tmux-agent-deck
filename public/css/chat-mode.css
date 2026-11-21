@@ -3167,4 +3167,503 @@ body.keyboard-open .chat-slash-popover {
   max-height: min(200px, 36vh) !important;
 }
 
+/* ===================================================
+   Mermaid Diagram Renderer (Dual-Theme CDS Card & Lightbox)
+   =================================================== */
+
+.chat-mermaid-wrapper {
+  margin: 10px 0;
+  border-radius: var(--radius-xl, 12px);
+  background: var(--surface-2, rgba(32, 44, 70, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 14px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.chat-mermaid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: var(--ring-hairline, 1px) solid rgba(255, 255, 255, 0.06);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.chat-mermaid-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--neon-cyan, #00f0ff);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-mermaid-title svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.chat-mermaid-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-mermaid-action-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-family: var(--font-body, sans-serif);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.chat-mermaid-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.chat-mermaid-action-btn.copied {
+  color: var(--neon-green, #39ff14);
+}
+
+.chat-mermaid-action-btn svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.chat-mermaid-stage {
+  padding: 16px 14px;
+  overflow-x: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--surface-0, #141a29);
+  min-height: 64px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-mermaid-svg {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.chat-mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chat-mermaid-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 12px 0;
+}
+
+.chat-mermaid-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 240, 255, 0.22);
+  border-top-color: var(--neon-cyan, #00f0ff);
+  animation: chatMermaidSpin 0.8s linear infinite;
+}
+
+@keyframes chatMermaidSpin {
+  to { transform: rotate(360deg); }
+}
+
+.chat-mermaid-error {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.28);
+  color: #fbbf24;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.chat-mermaid-source {
+  display: none;
+}
+
+.chat-mermaid-wrapper.is-source-view .chat-mermaid-stage {
+  display: none;
+}
+
+.chat-mermaid-wrapper.is-source-view .chat-mermaid-source {
+  display: block;
+}
+
+.chat-mermaid-wrapper.is-source-view .chat-mermaid-zoom-btn {
+  display: none;
+}
+
+.chat-mermaid-source pre {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* Lightbox Modal (Full-Screen Interactive Zoom Preview) */
+.chat-mermaid-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(6, 10, 20, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.chat-mermaid-lightbox-dialog {
+  width: min(1160px, 96vw);
+  height: min(860px, 90vh);
+  background: var(--surface-1, #1c253b);
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-mermaid-lightbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface-2, #202a42);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.chat-mermaid-lightbox-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.chat-mermaid-lightbox-title svg {
+  width: 15px;
+  height: 15px;
+  color: var(--neon-cyan, #00f0ff);
+}
+
+.chat-mermaid-lightbox-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-mermaid-lb-scale {
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: #cbd5e1;
+  min-width: 44px;
+  text-align: center;
+}
+
+.chat-mermaid-lb-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.chat-mermaid-lb-btn:hover {
+  background: rgba(0, 240, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.4);
+  color: #ffffff;
+}
+
+.chat-mermaid-lb-btn.close:hover {
+  background: rgba(239, 68, 68, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+.chat-mermaid-lb-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-mermaid-lightbox-canvas {
+  flex: 1 1 auto;
+  overflow: auto;
+  background: var(--surface-0, #141a29);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-mermaid-lightbox-stage {
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-mermaid-lightbox-stage svg {
+  max-width: none;
+  height: auto;
+}
+
+/* Light Minimalist Theme Adaptation (Mandatory Dual-Theme Parity) */
+body.light-minimalist .chat-mermaid-wrapper {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #e2e8f0, 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+body.light-minimalist .chat-mermaid-header {
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+body.light-minimalist .chat-mermaid-title {
+  color: #4f46e5;
+}
+
+body.light-minimalist .chat-mermaid-action-btn {
+  color: #475569;
+}
+
+body.light-minimalist .chat-mermaid-action-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+body.light-minimalist .chat-mermaid-action-btn.copied {
+  color: #059669;
+}
+
+body.light-minimalist .chat-mermaid-stage {
+  background: #ffffff;
+}
+
+body.light-minimalist .chat-mermaid-loading {
+  color: #64748b;
+}
+
+body.light-minimalist .chat-mermaid-spinner {
+  border-color: rgba(79, 70, 229, 0.18);
+  border-top-color: #4f46e5;
+}
+
+body.light-minimalist .chat-mermaid-error {
+  background: #fffbeb;
+  box-shadow: inset 0 0 0 1px #fde68a;
+  color: #b45309;
+}
+
+body.light-minimalist .chat-mermaid-source {
+  background: #f8fafc;
+}
+
+body.light-minimalist .chat-mermaid-lightbox {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+body.light-minimalist .chat-mermaid-lightbox-dialog {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px #cbd5e1, 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+body.light-minimalist .chat-mermaid-lightbox-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+body.light-minimalist .chat-mermaid-lightbox-title {
+  color: #0f172a;
+}
+
+body.light-minimalist .chat-mermaid-lightbox-title svg {
+  color: #4f46e5;
+}
+
+body.light-minimalist .chat-mermaid-lb-scale {
+  color: #475569;
+}
+
+body.light-minimalist .chat-mermaid-lb-btn {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #cbd5e1;
+  color: #334155;
+}
+
+body.light-minimalist .chat-mermaid-lb-btn:hover {
+  background: #eef2ff;
+  box-shadow: inset 0 0 0 1px #4f46e5;
+  color: #4f46e5;
+}
+
+body.light-minimalist .chat-mermaid-lb-btn.close:hover {
+  background: #fef2f2;
+  box-shadow: inset 0 0 0 1px #fca5a5;
+  color: #dc2626;
+}
+
+body.light-minimalist .chat-mermaid-lightbox-canvas {
+  background: #fafbfc;
+}
+
+@media (max-width: 640px) {
+  .chat-mermaid-header {
+    padding: 6px 10px;
+  }
+
+  .chat-mermaid-action-btn span {
+    display: none;
+  }
+
+  .chat-mermaid-stage {
+    padding: 12px 8px;
+  }
+
+  .chat-mermaid-lightbox {
+    padding: 8px;
+  }
+
+  .chat-mermaid-lightbox-dialog {
+    width: 100vw;
+    height: 92vh;
+    border-radius: 10px;
+  }
+
+  .chat-mermaid-lightbox-title span {
+    display: none;
+  }
+}
+
+/* ===================================================
+   Clickable File Path Links in Chat Mode (Dual-Theme)
+   =================================================== */
+
+.chat-bubble code.chat-file-link,
+.chat-bubble a.chat-file-link,
+.cds-tool-item-args .chat-file-link {
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(0, 240, 255, 0.55);
+  border-radius: 4px;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.chat-bubble a.chat-file-link {
+  color: var(--neon-cyan, #00f0ff);
+  background: rgba(0, 240, 255, 0.08);
+  padding: 1px 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+
+.cds-tool-item-args .chat-file-link {
+  color: var(--neon-cyan, #00f0ff);
+  padding: 0 2px;
+}
+
+.chat-bubble code.chat-file-link:hover,
+.chat-bubble a.chat-file-link:hover,
+.cds-tool-item-args .chat-file-link:hover {
+  background: rgba(0, 240, 255, 0.18);
+  color: #ffffff;
+  border-bottom-color: var(--neon-cyan, #00f0ff);
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.32);
+}
+
+.chat-bubble code.chat-file-link:active,
+.chat-bubble a.chat-file-link:active,
+.cds-tool-item-args .chat-file-link:active {
+  opacity: 0.85;
+}
+
+.chat-bubble-att-item.clickable {
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.chat-bubble-att-item.clickable:hover {
+  background: rgba(0, 240, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.35);
+}
+
+/* Editor target line jump highlight */
+.editor-jump-line-highlight {
+  background: rgba(0, 240, 255, 0.14) !important;
+  border-left: 2px solid var(--neon-cyan, #00f0ff);
+}
+
+/* Light Minimalist Theme Adaptation (Mandatory Dual-Theme Parity) */
+body.light-minimalist .chat-bubble code.chat-file-link,
+body.light-minimalist .chat-bubble a.chat-file-link,
+body.light-minimalist .cds-tool-item-args .chat-file-link {
+  color: #4f46e5;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-bottom-style: dashed;
+  border-bottom-color: #6366f1;
+}
+
+body.light-minimalist .cds-tool-item-args .chat-file-link {
+  padding: 1px 5px;
+}
+
+body.light-minimalist .chat-bubble code.chat-file-link:hover,
+body.light-minimalist .chat-bubble a.chat-file-link:hover,
+body.light-minimalist .cds-tool-item-args .chat-file-link:hover {
+  background: #e0e7ff;
+  color: #3730a3;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.2);
+}
+
+body.light-minimalist .chat-bubble-att-item.clickable:hover {
+  background: #eef2ff;
+  box-shadow: inset 0 0 0 1px #4f46e5;
+}
+
+body.light-minimalist .editor-jump-line-highlight {
+  background: rgba(79, 70, 229, 0.12) !important;
+  border-left: 2px solid #4f46e5;
+}
+
 

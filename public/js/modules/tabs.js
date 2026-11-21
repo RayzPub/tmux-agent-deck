@@ -216,7 +216,7 @@ export function activateTab(tabId) {
     }
 
     if (currentPathLabel) {
-      currentPathLabel.textContent = '// 项目推进总览 (Project HUD)';
+      currentPathLabel.textContent = '// 任务看板总览 (Task Board)';
     }
     renderProjectOverview();
   }

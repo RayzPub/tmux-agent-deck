@@ -29,6 +29,51 @@ export function isImageFile(path) {
 }
 
 let editorLoadingPath = null;
+let highlightLineDecorations = [];
+let highlightLineTimer = null;
+
+function applyPendingEditorLocation(path) {
+  const pending = state.pendingEditorLocation;
+  if (!pending || pending.path !== path || !pending.line) return;
+  state.pendingEditorLocation = null;
+
+  if (!state.editorInstance || typeof monaco === 'undefined') return;
+  const model = state.editorInstance.getModel();
+  if (!model) return;
+
+  const lineCount = model.getLineCount();
+  const startLine = Math.max(1, Math.min(pending.line, lineCount));
+  const endLine = pending.endLine
+    ? Math.max(startLine, Math.min(pending.endLine, lineCount))
+    : startLine;
+
+  state.editorInstance.revealLineInCenter(startLine);
+  state.editorInstance.setPosition({ lineNumber: startLine, column: 1 });
+
+  if (highlightLineTimer) {
+    clearTimeout(highlightLineTimer);
+    highlightLineTimer = null;
+  }
+  highlightLineDecorations = state.editorInstance.deltaDecorations(
+    highlightLineDecorations,
+    [
+      {
+        range: new monaco.Range(startLine, 1, endLine, 1),
+        options: {
+          isWholeLine: true,
+          className: 'editor-jump-line-highlight'
+        }
+      }
+    ]
+  );
+  highlightLineTimer = setTimeout(() => {
+    if (state.editorInstance) {
+      highlightLineDecorations = state.editorInstance.deltaDecorations(highlightLineDecorations, []);
+    }
+    highlightLineTimer = null;
+  }, 2600);
+}
+
 export async function loadEditorFile(path) {
   if (editorLoadingPath === path) return;
   editorLoadingPath = path;
@@ -131,6 +176,7 @@ export async function loadEditorFile(path) {
       state.editorDisabled = false;
       editorStatusMsg.textContent = '';
       updatePreviewUI(path);
+      applyPendingEditorLocation(path);
     } else {
       editorStatusMsg.textContent = '加载失败';
       const msg = `读取文件失败: ${data.error || '未知错误'}`;

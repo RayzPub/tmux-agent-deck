@@ -1,4 +1,5 @@
 import { state } from './state.js';
+import { refreshMermaidForTheme } from './mermaidRenderer.js';
 
 export function updateThemeButtonUI(isLight) {
   const themeToggleBtn = document.getElementById('themeToggleBtn');
@@ -90,4 +91,7 @@ export function toggleTheme() {
   if (state.editorInstance && typeof monaco !== 'undefined') {
     monaco.editor.setTheme(isLight ? 'vs' : 'cyberTheme');
   }
+
+  // Re-render Mermaid diagrams in Chat Mode for the new theme
+  refreshMermaidForTheme();
 }
