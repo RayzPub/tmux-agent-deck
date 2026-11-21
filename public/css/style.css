@@ -1,4 +1,5 @@
 @import "./project-overview.css";
+@import "./task-board.css";
 
 /* ==========================================================================
    CYBERPUNK NEON DESIGN SYSTEM - TMUX WEB DECK // PROD BUILD TEST 2
@@ -4502,17 +4503,18 @@ body.light-minimalist .sidebar-footer-btn.active .footer-btn-arrow {
   top: auto !important;
   bottom: calc(100% + 8px) !important;
   left: 0 !important;
-  right: 0 !important;
+  right: auto !important;
   width: 100% !important;
-  min-width: 220px;
-  max-height: min(460px, calc(100dvh - 120px), calc(100vh - 120px)) !important;
+  min-width: 228px !important;
+  max-width: min(300px, calc(100vw - 24px)) !important;
+  max-height: min(460px, calc(100dvh - 100px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), calc(100vh - 100px)) !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
   touch-action: pan-y !important;
   overscroll-behavior: contain !important;
-  transform-origin: bottom center;
-  z-index: 1050;
-  box-sizing: border-box;
+  transform-origin: bottom left;
+  z-index: 1200 !important;
+  box-sizing: border-box !important;
   padding: 8px 8px 12px 8px !important;
 }
 
@@ -4570,11 +4572,11 @@ body.light-minimalist .sidebar-footer .deck-dropdown-menu::-webkit-scrollbar-thu
 /* iPhone, Surface Duo & Mobile Touch Optimization for Dropup Menu */
 @media (max-width: 768px), ((max-height: 720px) and (orientation: landscape)) {
   .sidebar-footer {
-    width: calc(100% + 28px) !important;
-    margin-left: -14px !important;
-    margin-right: -14px !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
     margin-bottom: 0 !important;
-    padding: 5px 14px !important;
+    padding: 5px 0 !important;
     padding-bottom: var(--safe-bottom, 6px) !important;
   }
 
@@ -7980,7 +7982,7 @@ body.light-minimalist .cyber-header {
   width: 14px !important;
   height: 14px !important;
   border-radius: 2.5px !important;
-  transform: rotate(-12deg) !important;
+  transform: rotate(15deg) !important;
   background: var(--c-text) !important;
   flex-shrink: 0 !important;
   margin-right: 7px !important;
@@ -8079,7 +8081,7 @@ body.light-minimalist .floating-brand-expand-btn:hover {
   width: 14px !important;
   height: 14px !important;
   border-radius: 2.5px !important;
-  transform: rotate(-12deg) !important;
+  transform: rotate(15deg) !important;
   background: var(--c-text) !important;
   flex-shrink: 0 !important;
 }
@@ -8158,7 +8160,7 @@ body.sidebar-open .floating-brand-expand-btn,
   width: 16px !important;
   height: 16px !important;
   border-radius: 3px !important;
-  transform: rotate(-12deg) !important;
+  transform: rotate(15deg) !important;
   background: var(--c-text) !important;
   display: inline-block !important;
   box-shadow: none !important;
@@ -8376,9 +8378,9 @@ body.light-minimalist .device-switcher-btn:hover {
 }
 
 .sidebar {
-  width: 260px !important;
-  min-width: 240px !important;
-  max-width: 280px !important;
+  width: calc(264px + env(safe-area-inset-left, 0px)) !important;
+  min-width: 256px !important;
+  max-width: 320px !important;
   height: 100% !important;
   max-height: 100% !important;
   background: var(--c-side) !important;
@@ -8393,9 +8395,26 @@ body.light-minimalist .device-switcher-btn:hover {
   flex-direction: column !important;
   gap: 0 !important;
   box-shadow: none !important;
-  z-index: 30 !important;
-  overflow: hidden !important;
+  z-index: 120 !important;
+  overflow: visible !important;
   transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1), min-width 0.25s cubic-bezier(0.22, 1, 0.36, 1), max-width 0.25s cubic-bezier(0.22, 1, 0.36, 1), padding 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease !important;
+}
+
+.sidebar .workspace-selector-actions {
+  position: relative !important;
+  z-index: 60 !important;
+}
+
+.sidebar .device-switcher-dropdown {
+  width: 100% !important;
+  min-width: 232px !important;
+  max-width: min(300px, calc(100vw - 24px)) !important;
+  box-sizing: border-box !important;
+  z-index: 1250 !important;
+}
+
+.sidebar .sidebar-panel-content {
+  min-height: 0 !important;
 }
 
 body.light-minimalist .sidebar {
@@ -8443,11 +8462,11 @@ body.light-minimalist .sidebar {
 .sidebar-footer {
   margin-top: auto !important;
   flex-shrink: 0 !important;
-  width: calc(100% + 28px) !important;
-  margin-left: -14px !important;
-  margin-right: -14px !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
   margin-bottom: 0 !important;
-  padding: 5px 14px !important;
+  padding: 5px 0 !important;
   padding-bottom: var(--safe-bottom, 6px) !important;
   border-top: none !important;
   background: var(--c-side) !important;
@@ -8455,6 +8474,10 @@ body.light-minimalist .sidebar {
   bottom: 0 !important;
   z-index: 45 !important;
   box-sizing: border-box !important;
+}
+
+.sidebar-footer:has(.deck-dropdown-menu:not(.hidden)) {
+  z-index: 95 !important;
 }
 
 body.light-minimalist .sidebar-footer {
@@ -8858,8 +8881,8 @@ body.light-minimalist .cyber-custom-select-option.action-delete-workspace {
   background: var(--c-bg) !important;
   color: var(--c-text) !important;
   gap: 8px !important;
-  margin-bottom: 8px !important;
-  margin-top: 0 !important;
+  margin-bottom: 4px !important;
+  margin-top: 2px !important;
   box-shadow: none !important;
   height: 32px !important;
   box-sizing: border-box !important;
@@ -8914,6 +8937,7 @@ body.light-minimalist .project-overview-entry-btn:hover {
 /* Sidebar Segmented Navigation Tabs */
 .sidebar-tabs-wrapper {
   padding: 0 !important;
+  margin-top: 12px !important;
   margin-bottom: 13px !important;
   background: transparent !important;
 }
@@ -9476,6 +9500,27 @@ body:not(.sidebar-open) .workspace-tabs {
   body:not(.sidebar-open) .workspace-tabs {
     padding-left: max(176px, calc(158px + env(safe-area-inset-left, 0px))) !important;
   }
+
+  /* iPhone Duo 宽屏 PWA：仅将侧栏收起时的展开图标按钮轻微右移，避让左上角圆角 */
+  body.is-standalone .floating-brand-expand-btn,
+  body.is-ios-pwa .floating-brand-expand-btn {
+    left: max(36px, calc(24px + env(safe-area-inset-left, 0px))) !important;
+  }
+
+  body.is-standalone .sidebar.collapsed ~ .terminal-workspace .workspace-tabs:not(.hidden),
+  body.is-standalone .sidebar.collapsed ~ .terminal-workspace .workspace-tabs,
+  body.is-standalone .main-container:has(.sidebar.collapsed) .workspace-tabs:not(.hidden),
+  body.is-standalone .main-container:has(.sidebar.collapsed) .workspace-tabs,
+  body.is-standalone:not(.sidebar-open) .workspace-tabs:not(.hidden),
+  body.is-standalone:not(.sidebar-open) .workspace-tabs,
+  body.is-ios-pwa .sidebar.collapsed ~ .terminal-workspace .workspace-tabs:not(.hidden),
+  body.is-ios-pwa .sidebar.collapsed ~ .terminal-workspace .workspace-tabs,
+  body.is-ios-pwa .main-container:has(.sidebar.collapsed) .workspace-tabs:not(.hidden),
+  body.is-ios-pwa .main-container:has(.sidebar.collapsed) .workspace-tabs,
+  body.is-ios-pwa:not(.sidebar-open) .workspace-tabs:not(.hidden),
+  body.is-ios-pwa:not(.sidebar-open) .workspace-tabs {
+    padding-left: max(186px, calc(168px + env(safe-area-inset-left, 0px))) !important;
+  }
 }
 
 .workspace-tabs::-webkit-scrollbar {
@@ -9556,11 +9601,21 @@ body.light-minimalist .terminal-workspace,
 body.light-minimalist .terminal-panel,
 body.light-minimalist .editor-panel,
 body.light-minimalist .welcome-panel,
-body.light-minimalist .project-panel,
-body.light-minimalist .terminal-container-wrapper {
+body.light-minimalist .project-panel {
   flex: 1 1 0% !important;
   min-height: 0 !important;
   height: 100% !important;
+  background: var(--c-bg) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  position: relative !important;
+}
+
+body.light-minimalist .terminal-container-wrapper {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  height: auto !important;
   background: var(--c-bg) !important;
   border: none !important;
   border-radius: 0 !important;
@@ -9656,26 +9711,158 @@ body.light-minimalist .terminal-container-wrapper {
 #terminal-container {
   height: 100% !important;
   width: 100% !important;
-  padding: 10px 14px !important;
+  padding: 2px 10px 0 10px !important;
   box-sizing: border-box !important;
+}
+
+#terminal-container .xterm {
+  padding: 0 !important;
 }
 
 /* Mobile Terminal Bottom Bar */
 .mobile-bottom-controls:not(.hidden) {
+  position: relative !important;
   background: var(--c-bg) !important;
   border-top: none !important;
-  padding: 6px 12px !important;
-  padding-bottom: var(--safe-bottom, 6px) !important;
-  padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
-  padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
+  padding: 2px 10px !important;
+  padding-bottom: var(--safe-bottom, 4px) !important;
+  padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
+  padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
   box-shadow: none !important;
   border-radius: 0 !important;
   flex-shrink: 0 !important;
 }
 
+.mobile-keyboard-bar {
+  padding: 1px 0 2px 0 !important;
+  gap: 5px !important;
+}
+
 body.light-minimalist .mobile-bottom-controls:not(.hidden) {
   background: var(--c-bg) !important;
   border-top: none !important;
+}
+
+.helper-key.slash-trigger-key.active {
+  background: rgba(0, 240, 255, 0.16) !important;
+  border-color: var(--neon-cyan, #00f0ff) !important;
+  color: var(--neon-cyan, #00f0ff) !important;
+}
+
+body.light-minimalist .helper-key.slash-trigger-key.active {
+  background: #eef2ff !important;
+  border-color: #4f46e5 !important;
+  color: #4f46e5 !important;
+  box-shadow: 0 0 0 1px #4f46e5 !important;
+}
+
+/* Terminal Bottom Agent-Aware Slash Command Popover */
+.terminal-slash-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: max(10px, env(safe-area-inset-left, 0px));
+  width: min(340px, calc(100% - 20px));
+  max-height: min(320px, 42vh);
+  background: #121728;
+  box-shadow: var(--shadow-popover, inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 8px 28px rgba(0, 0, 0, 0.65));
+  border-radius: var(--radius-xl, 12px);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 80;
+  overflow: hidden;
+}
+
+.terminal-slash-popover.hidden {
+  display: none !important;
+}
+
+.terminal-slash-popover-title {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: #64748b;
+  padding: 4px 8px 2px 8px;
+  letter-spacing: 0.4px;
+}
+
+.terminal-slash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  padding-right: 2px;
+}
+
+.terminal-slash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: #e2e8f0;
+  transition: background 120ms ease;
+  touch-action: manipulation;
+}
+
+.terminal-slash-item:hover,
+.terminal-slash-item.active {
+  background: rgba(0, 240, 255, 0.12);
+}
+
+.terminal-slash-cmd {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--neon-cyan, #00f0ff);
+  flex-shrink: 0;
+}
+
+.terminal-slash-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.light-minimalist .terminal-slash-popover {
+  background: #ffffff;
+  box-shadow: var(--shadow-popover, 0 0 0 1px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.12));
+}
+
+body.light-minimalist .terminal-slash-list {
+  scrollbar-color: rgba(15, 23, 42, 0.2) transparent;
+}
+
+body.light-minimalist .terminal-slash-popover-title {
+  color: #64748b;
+}
+
+body.light-minimalist .terminal-slash-item {
+  color: #0f172a;
+}
+
+body.light-minimalist .terminal-slash-item:hover,
+body.light-minimalist .terminal-slash-item.active {
+  background: #eef2ff;
+}
+
+body.light-minimalist .terminal-slash-cmd {
+  color: #4f46e5;
+}
+
+body.light-minimalist .terminal-slash-desc {
+  color: #64748b;
 }
 
 .helper-key {
@@ -9696,7 +9883,7 @@ body.light-minimalist .mobile-bottom-controls:not(.hidden) {
   display: flex !important;
   gap: 8px !important;
   align-items: center !important;
-  padding-top: 6px !important;
+  padding: 3px 0 0 0 !important;
 }
 
 .mobile-cmd-input {
@@ -9862,8 +10049,9 @@ body.light-minimalist .mobile-bottom-controls:not(.hidden) {
 /* 8. Duo & Mobile Breakpoints */
 @media (max-width: 900px) and (min-width: 769px) {
   .sidebar:not(.collapsed) {
-    width: 208px !important;
-    min-width: 208px !important;
+    width: clamp(258px, calc(244px + env(safe-area-inset-left, 0px)), 310px) !important;
+    min-width: 252px !important;
+    max-width: 320px !important;
   }
 
   .sidebar.collapsed {
@@ -9876,6 +10064,16 @@ body.light-minimalist .mobile-bottom-controls:not(.hidden) {
     margin: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
+  }
+}
+
+/* iPhone Duo / Foldable Landscape Unfolded (including wider inner displays up to 1180px) */
+@media (min-width: 769px) and (max-width: 1180px) and (orientation: landscape) and (hover: none) and (pointer: coarse),
+       (min-width: 769px) and (max-width: 1180px) and (orientation: landscape) and (max-height: 768px) {
+  .sidebar:not(.collapsed) {
+    width: clamp(264px, calc(250px + env(safe-area-inset-left, 0px)), 320px) !important;
+    min-width: 256px !important;
+    max-width: 326px !important;
   }
 }
 
@@ -9909,6 +10107,7 @@ body.light-minimalist .mobile-bottom-controls:not(.hidden) {
 
   .sidebar.open {
     display: flex !important;
+    overflow: visible !important;
   }
 
   .sidebar-overlay:not(.hidden) {
@@ -9926,11 +10125,11 @@ body.light-minimalist .mobile-bottom-controls:not(.hidden) {
   }
 
   .sidebar-footer {
-    width: calc(100% + 28px) !important;
-    margin-left: -14px !important;
-    margin-right: -14px !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
     margin-bottom: 0 !important;
-    padding: 5px 14px !important;
+    padding: 5px 0 !important;
     padding-bottom: var(--safe-bottom, 6px) !important;
   }
 
