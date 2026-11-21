@@ -1,0 +1,37 @@
+# Lightweight multi-agent sandbox image for tmux-agent-deck (CCNOW)
+# Runs ccnow-agent.js as non-root UID 1000 (matching host ubuntu UID) for clean bind mounts.
+FROM node:22-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TERM=xterm-256color \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    openssh-client \
+    procps \
+    ripgrep \
+    tmux \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure workspace and ccnow agent mount directories exist and belong to UID 1000 (node)
+RUN mkdir -p /workspace /opt/ccnow /home/node/.ccnow \
+    && chown -R node:node /workspace /opt/ccnow /home/node
+
+# Fallback copy of ccnow-agent.js (at runtime we also bind-mount host's client/ccnow-agent.js read-only)
+COPY client/ccnow-agent.js /opt/ccnow/ccnow-agent.js
+
+USER node
+WORKDIR /workspace
+
+ENV HOME=/home/node \
+    CCNOW_CONFIG_DIR=/home/node/.ccnow \
+    CCNOW_DEFAULT_WORKSPACE=/workspace \
+    CCNOW_DEFAULT_WORKSPACE_NAME=workspace
+
+CMD ["node", "/opt/ccnow/ccnow-agent.js", "start"]

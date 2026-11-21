@@ -39,7 +39,11 @@
 
 ## 🌟 核心特性
 
-- 👥 **多用户隔离系统 (Multi-User System)**：支持开启多用户隔离模式。非 Admin 用户拥有独立的沙盒工作区、独立代理运行配置（`$HOME` 隔离）与专属会话，有效防止敏感凭证越权访问与环境变量污染。支持管理员邀请注册制。
+- 👥 **多用户隔离系统与统一算力模型 (Control Plane + Multi-Device)**：
+  - 完整架构规范详见 [docs/architecture.md](docs/architecture.md) 与 [docs/multi_device_agent_spec.md](docs/multi_device_agent_spec.md)。
+  - **两类算力统一通过 `/device-tunnel` 接入**：
+    - **托管算力 (`docker-sandbox`)**：基于 `docker/Dockerfile.sandbox` 与 `services/containerService.js`，为多用户提供独立 Docker 容器强隔离（非 root、`--cap-drop=ALL`、内存/CPU/PIDs 硬限制、按需唤醒与空闲自动休眠、挂载卷持久保留工作区），并通过作用域虚拟 Key（`sk-ccnow-<deviceId>.<deviceSecret>`）安全访问控制面 LLM Gateway，真实上游 API Key 零暴露。
+    - **接入算力 (`external` / `host-admin`)**：支持绑定个人 Mac/Win/Linux 外部设备；管理员宿主机可通过 `scripts/setup-host-admin-agent.js` 注册为独立 `systemd` 服务（`ccnow-host-agent.service`），重启 `server.js` 不断连。
 - 🔒 **安全访问控制**：采用基于 JWT 的访问认证（单用户模式基于全局主密码；多用户模式基于用户独立密码，支持 HTTP-Only Cookie 保持会话）。
 - 🎨 **赛博霓虹设计**：基于暗黑极客风格精心打造，拥有发光特效、科幻扫描线、动态霓虹边框与平滑的微交互动画。
 - 🤖 **AI 编程智能体集成**：

@@ -339,7 +339,10 @@ function maskKey(key) {
 }
 
 /**
- * Security: Check if client is allowed to access the gateway
+ * Security: Check if client is allowed to access the gateway.
+ * Supports:
+ *  1. Scoped device virtual key: `sk-ccnow-<deviceId>.<deviceSecret>` (for Docker sandboxes & authorized external devices)
+ *  2. Localhost loopback (127.0.0.1 / ::1) zero-config or global virtualKey
  */
 function authenticateClient(req, config) {
   if (!config.enabled) {
@@ -347,24 +350,12 @@ function authenticateClient(req, config) {
   }
 
   const rawIp = req.socket?.remoteAddress || req.connection?.remoteAddress || req.ip || '';
+  const cleanIp = rawIp.replace(/^::ffff:/, '');
   const isLocalhost =
     rawIp === '127.0.0.1' ||
     rawIp === '::1' ||
     rawIp === '::ffff:127.0.0.1';
-
-  // Strategy A: Localhost loopback only
-  if (!config.allowExternalAccess && !isLocalhost) {
-    return {
-      ok: false,
-      status: 403,
-      error: `Access Denied: LLM Gateway is restricted to local loopback (127.0.0.1). External IP '${rawIp}' is rejected.`
-    };
-  }
-
-  // Localhost zero-config bypass
-  if (isLocalhost && config.allowLocalhostWithoutKey) {
-    return { ok: true, client: 'localhost' };
-  }
+  const isDockerBridge = /^172\.(1[6-9]|2\d|3[0-1])\./.test(cleanIp);
 
   // Header token extraction
   const authHeader = req.headers['authorization'] || '';
@@ -375,6 +366,51 @@ function authenticateClient(req, config) {
     clientKey = authHeader.slice(7).trim();
   } else if (xApiKey) {
     clientKey = xApiKey.trim();
+  }
+
+  // Strategy 1: Scoped per-device virtual key (`sk-ccnow-<deviceId>.<deviceSecret>`)
+  if (clientKey.startsWith('sk-ccnow-')) {
+    const payload = clientKey.slice('sk-ccnow-'.length);
+    const dotIdx = payload.indexOf('.');
+    if (dotIdx > 0) {
+      const deviceId = payload.slice(0, dotIdx);
+      const deviceSecret = payload.slice(dotIdx + 1);
+      const deviceService = require('./deviceService');
+      const record = deviceService.authenticateDevice(deviceId, deviceSecret);
+      if (record) {
+        const isSandboxAllowed = record.deviceKind === 'docker-sandbox' && (isDockerBridge || isLocalhost);
+        const isHostAllowed = record.deviceKind === 'host-admin' && isLocalhost;
+        const isExternalAllowed = config.allowExternalAccess || isLocalhost;
+
+        if (isSandboxAllowed || isHostAllowed || isExternalAllowed) {
+          return {
+            ok: true,
+            client: `device:${record.userId}:${record.deviceId}`,
+            device: record
+          };
+        }
+        return {
+          ok: false,
+          status: 403,
+          error: `Access Denied: External LLM Gateway proxy is disabled for device '${deviceId}' from '${rawIp}'.`
+        };
+      }
+    }
+    return { ok: false, status: 401, error: 'Invalid scoped device proxy key' };
+  }
+
+  // Strategy 2: Localhost loopback only (unless allowExternalAccess is explicitly enabled)
+  if (!config.allowExternalAccess && !isLocalhost) {
+    return {
+      ok: false,
+      status: 403,
+      error: `Access Denied: LLM Gateway is restricted to local loopback (127.0.0.1) or authenticated Docker sandboxes. External IP '${rawIp}' is rejected.`
+    };
+  }
+
+  // Localhost zero-config bypass
+  if (isLocalhost && config.allowLocalhostWithoutKey) {
+    return { ok: true, client: 'localhost' };
   }
 
   const vKey = config.virtualKey || 'sk-deck-local';

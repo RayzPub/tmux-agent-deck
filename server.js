@@ -13,6 +13,7 @@ const { execTmux, getRunUser } = require('./services/tmuxService');
 const { startMonitoring } = require('./services/monitorService');
 const { initSocket } = require('./sockets/terminal');
 const { initDeviceGateway } = require('./sockets/deviceGateway');
+const containerService = require('./services/containerService');
 const { runMigration } = require('./services/dbService');
 const { initClaudeConfig } = require('./services/fileService');
 const { initActiveIcon } = require('./services/iconService');
@@ -49,17 +50,19 @@ if (!useHttps) {
 // Enable Gzip compression
 app.use(compression());
 
-// Redirect HTTP to HTTPS if enabled (strictly localhost TCP loopback allowed on plain HTTP)
+// Redirect HTTP to HTTPS if enabled (allow localhost loopback and Docker bridge subnet on plain HTTP)
 app.use((req, res, next) => {
   if (useHttps && !req.secure) {
     const socketIp = req.socket?.remoteAddress || '';
+    const cleanIp = socketIp.replace(/^::ffff:/, '');
     const isLoopback =
       socketIp === '127.0.0.1' ||
       socketIp === '::1' ||
       socketIp === '::ffff:127.0.0.1';
+    const isDockerBridge = /^172\.(1[6-9]|2\d|3[0-1])\./.test(cleanIp);
 
-    // Only allow genuine local loopback connections without SSL redirects
-    if (isLoopback) {
+    // Allow local loopback and internal Docker sandbox containers (for LLM Gateway / internal APIs)
+    if (isLoopback || isDockerBridge) {
       return next();
     }
 
@@ -316,6 +319,9 @@ initSocket(io);
 
 // Initialize Device Gateway WebSocket tunnel for remote edge agents
 initDeviceGateway([httpServer, httpsServer], io);
+
+// Start Docker sandbox idle reaper (auto-sleeps inactive user containers to save RAM)
+containerService.startIdleReaper();
 
 // Enable mouse mode globally in tmux on startup to support mouse wheel scrolling
 execTmux(['set-option', '-g', 'mouse', 'on'], (err) => {

@@ -17,6 +17,14 @@ const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
 // Default MULTI_USER_ENABLED to false if not explicitly set to 'true' in env
 const MULTI_USER_ENABLED = process.env.MULTI_USER_ENABLED === 'true';
 
+// Docker Sandbox configuration (for isolated per-user container execution)
+const DOCKER_SANDBOX_ENABLED = process.env.DOCKER_SANDBOX_ENABLED !== 'false';
+const DOCKER_SANDBOX_IMAGE = process.env.DOCKER_SANDBOX_IMAGE || 'ccnow-sandbox:latest';
+const DOCKER_SANDBOX_MEMORY = process.env.DOCKER_SANDBOX_MEMORY || '1g';
+const DOCKER_SANDBOX_CPUS = process.env.DOCKER_SANDBOX_CPUS || '1';
+const DOCKER_SANDBOX_PIDS_LIMIT = parseInt(process.env.DOCKER_SANDBOX_PIDS_LIMIT || '256', 10) || 256;
+const DOCKER_SANDBOX_IDLE_MINUTES = parseInt(process.env.DOCKER_SANDBOX_IDLE_MINUTES || '30', 10) || 30;
+
 let useHttps = false;
 let sslOptions = null;
 
@@ -60,5 +68,11 @@ module.exports = {
   SSL_KEY_PATH,
   useHttps,
   sslOptions,
-  MULTI_USER_ENABLED
+  MULTI_USER_ENABLED,
+  DOCKER_SANDBOX_ENABLED,
+  DOCKER_SANDBOX_IMAGE,
+  DOCKER_SANDBOX_MEMORY,
+  DOCKER_SANDBOX_CPUS,
+  DOCKER_SANDBOX_PIDS_LIMIT,
+  DOCKER_SANDBOX_IDLE_MINUTES
 };

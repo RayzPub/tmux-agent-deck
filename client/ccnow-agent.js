@@ -9,13 +9,14 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
+const crypto = require('crypto');
+const { spawn, execSync, execFileSync } = require('child_process');
 
 // Client Version
-const CLIENT_VERSION = '1.4.0';
+const CLIENT_VERSION = '1.5.2';
 
-// Configuration directory & file
-const CONFIG_DIR = path.join(os.homedir(), '.ccnow');
+// Configuration directory & file (supports env override for managed host/container agents)
+const CONFIG_DIR = process.env.CCNOW_CONFIG_DIR || path.join(os.homedir(), '.ccnow');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'device.json');
 const WORKSPACES_FILE = path.join(CONFIG_DIR, 'workspaces.json');
 
@@ -519,41 +520,42 @@ class AgentClient {
 
     if (hasTmux) {
       try {
-        const out = execSync('tmux list-sessions -F "#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const fmt = '#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}';
+        const out = execFileSync('tmux', ['list-sessions', '-F', fmt], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         const lines = out.trim().split('\n').filter(Boolean);
         for (const line of lines) {
           const parts = line.split('|');
           if (parts.length >= 1 && parts[0]) {
+            const agentType = parts[6] || '';
+            const rawMode = parts[8] || '';
+            const sessionMode = rawMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
             sessions.push({
               name: parts[0],
               windows: parseInt(parts[1], 10) || 1,
               created: parseInt(parts[2], 10) * 1000 || Date.now(),
               attached: parts[3] === '1',
+              path: parts[4] || '',
+              workspaceName: parts[5] || '',
+              agentType,
+              agentModel: parts[7] || '',
+              sessionMode,
+              agentSessionId: parts[9] || '',
               isRemote: true
             });
           }
         }
       } catch (e) {
-        // Tmux server might not be running yet, auto-ensure default session
-        try {
-          execSync('tmux new-session -d -s main', { stdio: 'ignore' });
-          sessions.push({
-            name: 'main',
-            windows: 1,
-            created: Date.now(),
-            attached: false,
-            isRemote: true
-          });
-        } catch (err) {}
+        // No tmux server or zero active sessions — return empty list (aligned with Cloud Host; do not auto-respawn ghost 'main')
       }
-    }
-
-    if (sessions.length === 0) {
+    } else if (sessions.length === 0) {
+      // Non-tmux hosts (e.g. Windows without tmux) expose a single default shell entry
       sessions.push({
         name: 'default',
         windows: 1,
         created: Date.now(),
         attached: true,
+        sessionMode: 'terminal_only',
+        agentType: 'default',
         isRemote: true
       });
     }
@@ -786,31 +788,79 @@ class AgentClient {
   }
 
   handleNewSession(reqId, msg) {
-    const { sessionName, workspace } = msg;
-    const agent = msg.agent || msg.agentType;
+    const { sessionName, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
+    const agent = msg.agent || msg.agentType || 'default';
+    const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
     const hasTmux = hasCommand('tmux');
+
     if (hasTmux && sessionName) {
       try {
         const targetDir = this.resolveBaseDir(workspace);
-        const cleanName = sessionName.replace(/"/g, '');
-        execSync(`tmux new-session -d -s "${cleanName}" -c "${targetDir.replace(/"/g, '')}"`, { stdio: 'ignore' });
+        const baseName = String(sessionName).replace(/[^a-zA-Z0-9_-]/g, '') || (agent !== 'default' ? agent : 'shell');
 
-        // If an agent CLI is chosen (e.g. claude, codex, agy), auto-launch it in the tmux pane
-        if (agent && agent !== 'default' && agent !== 'terminal') {
-          const agentCmd = String(agent).replace(/"/g, '');
-          try {
-            execSync(`tmux send-keys -t "${cleanName}" "${agentCmd}" C-m`, { stdio: 'ignore' });
-          } catch (e) {}
+        // Deduplicate session name if already taken
+        let finalName = baseName;
+        try {
+          const existingOut = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+          const existingSet = new Set(existingOut.trim().split('\n').filter(Boolean));
+          if (existingSet.has(finalName)) {
+            let idx = 2;
+            while (existingSet.has(`${baseName}-${idx}`)) idx++;
+            finalName = `${baseName}-${idx}`;
+          }
+        } catch (_) {}
+
+        execFileSync('tmux', ['new-session', '-d', '-s', finalName, '-c', targetDir], { stdio: 'ignore' });
+
+        // Align tmux UX & metadata 100% with Cloud Host (hide green status bar, enable mouse, tag agent metadata)
+        let agentSessionId = '';
+        if (agent === 'claude') {
+          agentSessionId = crypto.randomUUID();
         }
 
-        this.send({ action: 'tmux:new_session_result', reqId, success: true });
+        const tmuxOptions = [
+          ['status', 'off'],
+          ['mouse', 'on'],
+          ['@session_mode', targetMode],
+          ['@agent_type', agent]
+        ];
+        if (workspaceName) tmuxOptions.push(['@workspace_name', String(workspaceName)]);
+        if (agentSessionId) tmuxOptions.push(['@agent_session_id', agentSessionId]);
+        if (agentModel) tmuxOptions.push(['@agent_model', String(agentModel)]);
+
+        for (const [optKey, optVal] of tmuxOptions) {
+          try {
+            execFileSync('tmux', ['set-option', '-t', finalName, optKey, optVal], { stdio: 'ignore' });
+          } catch (_) {}
+        }
+
+        // Auto-launch selected agent CLI with explicit session binding & aligned permission flags
+        if (agent && agent !== 'default' && agent !== 'terminal') {
+          let agentCmd = String(agent).replace(/"/g, '');
+          if (agent === 'agy') {
+            agentCmd = 'agy --dangerously-skip-permissions';
+          } else if (agent === 'claude') {
+            const parts = ['CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1', 'claude', '--session-id', agentSessionId, '--permission-mode', 'auto'];
+            if (modelName) parts.push('--model', String(modelName));
+            agentCmd = parts.join(' ');
+          } else if (agent === 'codex') {
+            const parts = ['codex', '-c', 'check_for_update=false', '-c', 'update_on_startup=false'];
+            if (modelName) parts.push('--model', String(modelName));
+            agentCmd = parts.join(' ');
+          }
+          try {
+            execFileSync('tmux', ['send-keys', '-t', finalName, agentCmd, 'C-m'], { stdio: 'ignore' });
+          } catch (_) {}
+        }
+
+        this.send({ action: 'tmux:new_session_result', reqId, success: true, sessionName: finalName });
         return;
       } catch (e) {
         this.send({ action: 'tmux:new_session_result', reqId, error: e.message });
         return;
       }
     }
-    this.send({ action: 'tmux:new_session_result', reqId, success: true });
+    this.send({ action: 'tmux:new_session_result', reqId, success: true, sessionName });
   }
 
   handleKillSession(reqId, sessionName) {
@@ -1114,20 +1164,79 @@ class AgentClient {
     return messages;
   }
 
-  handleChatHistory(reqId, sessionName) {
+  async handleChatHistory(reqId, sessionName) {
     try {
       const hasTmux = hasCommand('tmux');
       let sessionCwd = process.cwd();
+      let agentType = '';
+      let agentSessionId = null;
+      let panePid = null;
+      let sessionMode = 'hybrid';
+
       if (hasTmux && sessionName) {
         try {
-          const out = execSync(`tmux display-message -p -t "${sessionName.replace(/"/g, '')}" "#{session_path}" 2>/dev/null`, { encoding: 'utf8' }).trim();
-          if (out && fs.existsSync(out)) {
-            sessionCwd = out;
-          }
+          const fmt = '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}';
+          const out = execFileSync('tmux', ['display-message', '-p', '-t', sessionName, fmt], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+          }).trim();
+          const parts = out.split('|');
+          if (parts[0] && fs.existsSync(parts[0])) sessionCwd = parts[0];
+          agentType = (parts[2] || '').trim();
+          agentSessionId = (parts[3] && parts[3].trim()) ? parts[3].trim() : null;
+          panePid = (parts[4] && parts[4].trim()) ? parts[4].trim() : null;
+          const rawMode = (parts[5] && parts[5].trim()) ? parts[5].trim() : '';
+          sessionMode = rawMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
         } catch (e) {}
       }
 
-      // Convert sessionCwd to project slug
+      // Preferred path: reuse full server-side agentChatService when running inside repo (e.g. host-admin)
+      const sharedServicePath = path.resolve(__dirname, '..', 'services', 'agentChatService.js');
+      if (fs.existsSync(sharedServicePath)) {
+        try {
+          const agentChatService = require(sharedServicePath);
+          const homeDir = os.homedir();
+          const match = agentChatService.findAgentSessionFile(
+            agentType || 'claude',
+            sessionCwd,
+            agentSessionId,
+            panePid,
+            homeDir,
+            homeDir
+          );
+          if (match && match.filePath && fs.existsSync(match.filePath)) {
+            const parsed = await agentChatService.parseAgentChat(agentType || 'claude', match.filePath, 50);
+            return this.send({
+              action: 'agent:chat_history_result',
+              reqId,
+              sessionName,
+              agentType: agentType || 'claude',
+              agentSessionId: match.sessionId || agentSessionId,
+              sessionMode,
+              supported: true,
+              pendingAction: parsed.pendingAction || null,
+              lastUpdated: parsed.lastUpdated || Date.now(),
+              messages: parsed.messages || []
+            });
+          }
+          return this.send({
+            action: 'agent:chat_history_result',
+            reqId,
+            sessionName,
+            agentType,
+            agentSessionId: (match && match.sessionId) || agentSessionId,
+            sessionMode,
+            supported: true,
+            pendingAction: null,
+            lastUpdated: Date.now(),
+            messages: []
+          });
+        } catch (err) {
+          console.warn('⚠️ [ccnow-agent] Shared agentChatService parse failed, falling back:', err.message);
+        }
+      }
+
+      // Standalone fallback (external devices / Docker sandboxes without repo services/)
       const slug = path.resolve(sessionCwd).replace(/\/+$/, '').replace(/\//g, '-');
       const baseClaudeDir = path.join(os.homedir(), '.claude', 'projects');
       const targetProjDir = path.join(baseClaudeDir, slug);
@@ -1135,7 +1244,17 @@ class AgentClient {
       let targetJsonlFile = null;
       let targetMtime = 0;
 
-      if (fs.existsSync(targetProjDir)) {
+      // 1. Strict match by explicit @agent_session_id first
+      if (agentSessionId && fs.existsSync(targetProjDir)) {
+        const exactFile = path.join(targetProjDir, `${agentSessionId}.jsonl`);
+        if (fs.existsSync(exactFile)) {
+          targetJsonlFile = exactFile;
+          try { targetMtime = fs.statSync(exactFile).mtimeMs; } catch (_) {}
+        }
+      }
+
+      // 2. Fallback to latest jsonl in this workspace slug (only if no explicit sessionId)
+      if (!targetJsonlFile && !agentSessionId && fs.existsSync(targetProjDir)) {
         const files = fs.readdirSync(targetProjDir).filter(f => f.endsWith('.jsonl'));
         for (const file of files) {
           const fullPath = path.join(targetProjDir, file);
@@ -1149,27 +1268,6 @@ class AgentClient {
         }
       }
 
-      // Fallback: search all project directories under ~/.claude/projects/
-      if (!targetJsonlFile && fs.existsSync(baseClaudeDir)) {
-        try {
-          const subdirs = fs.readdirSync(baseClaudeDir, { withFileTypes: true }).filter(d => d.isDirectory());
-          for (const sub of subdirs) {
-            const subPath = path.join(baseClaudeDir, sub.name);
-            const files = fs.readdirSync(subPath).filter(f => f.endsWith('.jsonl'));
-            for (const file of files) {
-              const fullPath = path.join(subPath, file);
-              try {
-                const st = fs.statSync(fullPath);
-                if (st.mtimeMs > targetMtime) {
-                  targetMtime = st.mtimeMs;
-                  targetJsonlFile = fullPath;
-                }
-              } catch (e) {}
-            }
-          }
-        } catch (e) {}
-      }
-
       if (targetJsonlFile && fs.existsSync(targetJsonlFile)) {
         const content = fs.readFileSync(targetJsonlFile, 'utf8');
         const messages = this.parseClaudeJsonlContent(content);
@@ -1177,20 +1275,25 @@ class AgentClient {
           action: 'agent:chat_history_result',
           reqId,
           sessionName,
-          sessionMode: 'hybrid',
+          agentType: agentType || 'claude',
+          agentSessionId,
+          sessionMode,
           supported: true,
+          pendingAction: null,
           lastUpdated: targetMtime || Date.now(),
           messages
         });
       }
 
-      // Return default ready state with supported flag true
       return this.send({
         action: 'agent:chat_history_result',
         reqId,
         sessionName,
-        sessionMode: 'hybrid',
+        agentType,
+        agentSessionId,
+        sessionMode,
         supported: true,
+        pendingAction: null,
         lastUpdated: Date.now(),
         messages: []
       });
@@ -1903,26 +2006,47 @@ switch (parsed.command) {
   }
 
   case 'start': {
-    const config = readConfig();
-    const server = parsed.options.server || config?.server;
-    if (!config || !config.deviceId || !config.deviceSecret || !server) {
-      console.error('❌ Error: No valid device credentials found in ~/.ccnow/device.json');
+    const config = readConfig() || {};
+    const server = parsed.options.server || process.env.CCNOW_SERVER_URL || config.server;
+    const deviceId = process.env.CCNOW_DEVICE_ID || config.deviceId;
+    const deviceSecret = process.env.CCNOW_DEVICE_SECRET || config.deviceSecret;
+    const deviceName = process.env.CCNOW_DEVICE_NAME || config.name || deviceId;
+
+    if (!deviceId || !deviceSecret || !server) {
+      console.error('❌ Error: No valid device credentials found in ~/.ccnow/device.json or CCNOW_* env vars');
       console.error('Please run `npx ccnow-agent connect --server <url> --token <token>` first.');
       process.exit(1);
     }
 
-    console.log(`🚀 Starting ccnow-agent (Device: ${config.name || config.deviceId})...`);
+    // Seed default workspace if requested via env and workspaces.json does not exist yet
+    if (process.env.CCNOW_DEFAULT_WORKSPACE && !fs.existsSync(WORKSPACES_FILE)) {
+      try {
+        if (!fs.existsSync(CONFIG_DIR)) {
+          fs.mkdirSync(CONFIG_DIR, { recursive: true });
+        }
+        const defaultWsName = process.env.CCNOW_DEFAULT_WORKSPACE_NAME || path.basename(process.env.CCNOW_DEFAULT_WORKSPACE) || 'workspace';
+        const seed = { [defaultWsName]: process.env.CCNOW_DEFAULT_WORKSPACE };
+        fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(seed, null, 2), 'utf8');
+      } catch (err) {
+        console.warn('⚠️ Failed to seed default workspace:', err.message);
+      }
+    }
+
+    console.log(`🚀 Starting ccnow-agent (Device: ${deviceName})...`);
     const client = new AgentClient(server, {
-      deviceId: config.deviceId,
-      deviceSecret: config.deviceSecret
+      deviceId,
+      deviceSecret,
+      customName: deviceName
     });
     client.start();
 
-    process.on('SIGINT', () => {
-      console.log('\n👋 Disconnecting ccnow-agent...');
+    const shutdown = (sig) => {
+      console.log(`\n👋 Disconnecting ccnow-agent (${sig})...`);
       client.stop();
       process.exit(0);
-    });
+    };
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
     break;
   }
 

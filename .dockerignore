@@ -1,0 +1,12 @@
+.git
+node_modules
+user_data
+workspaces
+backups
+data
+public
+docs
+server.log
+*.pem
+*.key
+.env

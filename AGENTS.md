@@ -19,8 +19,11 @@ This project is fully refactored into a modular architecture. All logic must fol
   - `config/` - Configuration loader and dotenv loading.
   - `middlewares/` - Authentication and general express middlewares.
   - `routes/` - REST API endpoints.
-  - `services/` - Sub-services (Tmux execution, Git operations, File processing, Push Notifications).
-  - `sockets/` - Socket.io event mappings and PTY process bindings.
+  - `services/` - Sub-services (Tmux execution, Git operations, File processing, Push Notifications, Device management, Docker Sandbox scheduling `containerService.js`, LLM Gateway `llmGatewayService.js`).
+  - `sockets/` - Socket.io event mappings, PTY process bindings, and `/device-tunnel` WebSocket gateway (`deviceGateway.js`).
+  - `client/` - Standalone edge/sandbox daemon (`ccnow-agent.js`).
+  - `docker/` & `scripts/` - Hardened sandbox image (`docker/Dockerfile.sandbox`) and host admin systemd registration (`scripts/setup-host-admin-agent.js`).
+  - **Architecture Reference**: See [docs/architecture.md](docs/architecture.md) for the unified 4-layer model (`Control Plane -> User -> Device [docker-sandbox | external | host-admin] -> Workspace -> Session`) and LLM Gateway scoped virtual key rules (`sk-ccnow-<deviceId>.<deviceSecret>`).
 - **Frontend**:
   - `public/index.html` - HTML Shell.
   - `public/js/app.js` - Main entrypoint (loaded as `type="module"`).

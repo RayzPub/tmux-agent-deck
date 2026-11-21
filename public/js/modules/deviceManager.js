@@ -125,8 +125,18 @@ export function updateSwitcherDropdownItems() {
 
   for (const d of state.remoteDevices) {
     let osIcon = 'laptop';
-    if (d.platform === 'darwin') osIcon = 'apple';
-    else if (d.platform === 'linux') osIcon = 'terminal';
+    let kindBadge = '';
+    if (d.deviceKind === 'host-admin') {
+      osIcon = 'server';
+      kindBadge = '<span class="device-kind-pill host-admin">Host</span>';
+    } else if (d.deviceKind === 'docker-sandbox') {
+      osIcon = 'box';
+      kindBadge = '<span class="device-kind-pill docker-sandbox">Sandbox</span>';
+    } else if (d.platform === 'darwin') {
+      osIcon = 'apple';
+    } else if (d.platform === 'linux') {
+      osIcon = 'terminal';
+    }
 
     const isOnline = !!d.isOnline;
     const isSelected = currentId === d.deviceId;
@@ -136,6 +146,7 @@ export function updateSwitcherDropdownItems() {
         <div class="device-dropdown-item-left">
           <i data-lucide="${osIcon}"></i>
           <span class="device-dropdown-item-name">${escapeHtml(d.name || d.hostname)}</span>
+          ${kindBadge}
         </div>
         <span class="device-switcher-dot ${isOnline ? 'online' : 'offline'}" title="${isOnline ? '在线' : '离线'}"></span>
       </div>
@@ -176,10 +187,22 @@ export async function loadDeviceList() {
     }
 
     container.innerHTML = devices.map(d => {
+      const kind = d.deviceKind || 'external';
       let osIcon = 'monitor';
-      if (d.platform === 'darwin') osIcon = 'apple';
-      else if (d.platform === 'linux') osIcon = 'terminal';
-      else if (d.platform === 'win32') osIcon = 'laptop';
+      let kindLabel = 'External';
+      if (kind === 'host-admin') {
+        osIcon = 'server';
+        kindLabel = 'Host Admin';
+      } else if (kind === 'docker-sandbox') {
+        osIcon = 'box';
+        kindLabel = 'Docker Sandbox';
+      } else if (d.platform === 'darwin') {
+        osIcon = 'apple';
+      } else if (d.platform === 'linux') {
+        osIcon = 'terminal';
+      } else if (d.platform === 'win32') {
+        osIcon = 'laptop';
+      }
 
       const agentsText = Array.isArray(d.agentTypes) && d.agentTypes.length > 0 
         ? d.agentTypes.join(', ') 
@@ -189,6 +212,12 @@ export async function loadDeviceList() {
       const statusLabel = d.isOnline ? '在线' : '离线';
       const isCurrent = (state.currentDeviceId || 'cloud') === d.deviceId;
       const clientVersion = d.clientVersion || '1.0.0';
+      const isProtected = kind === 'host-admin' || kind === 'docker-sandbox';
+      const providerHint = kind === 'docker-sandbox'
+        ? '云端 LLM Proxy (虚拟 Key)'
+        : kind === 'host-admin'
+          ? '宿主机 LLM Proxy (127.0.0.1)'
+          : '设备本地模型配置 (Local Provider)';
 
       return `
         <div class="device-card" data-device-id="${d.deviceId}">
@@ -199,11 +228,12 @@ export async function loadDeviceList() {
             <div class="device-text-details">
               <div class="device-name-row">
                 <span class="device-name">${escapeHtml(d.name || d.hostname)}</span>
+                <span class="device-kind-pill ${kind}">${kindLabel}</span>
                 <span class="device-status-pill ${statusClass}">${statusLabel}</span>
                 <span class="device-version-pill" title="ccnow-agent 客户端版本">v${escapeHtml(clientVersion)}</span>
               </div>
               <div class="device-meta-sub">
-                ${escapeHtml(d.hostname)} (${d.platform} ${d.arch || ''}) · ${agentsText}
+                ${escapeHtml(d.hostname)} (${d.platform} ${d.arch || ''}) · ${agentsText} · ${providerHint}
               </div>
             </div>
           </div>
@@ -212,14 +242,14 @@ export async function loadDeviceList() {
               ? `<button class="device-btn-active" disabled title="当前控制台绑定的设备"><i data-lucide="check"></i><span>操作中</span></button>` 
               : `<button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换控制台到此设备"><i data-lucide="external-link"></i><span>切换设备</span></button>`
             }
-            ${d.isOnline 
+            ${d.isOnline && kind === 'external'
               ? `<button class="device-btn-secondary update-device-btn" data-device-id="${d.deviceId}" title="远程通知此设备 Agent 执行升级并热重启"><i data-lucide="refresh-cw"></i><span>升级</span></button>` 
               : ''
             }
-            <button class="device-btn-danger remove-device-btn" data-device-id="${d.deviceId}" title="解除绑定">
-              <i data-lucide="trash-2"></i>
-              <span>解绑</span>
-            </button>
+            ${!isProtected
+              ? `<button class="device-btn-danger remove-device-btn" data-device-id="${d.deviceId}" title="解除绑定"><i data-lucide="trash-2"></i><span>解绑</span></button>`
+              : ''
+            }
           </div>
         </div>
       `;
@@ -353,6 +383,124 @@ function copyPairCommand() {
 }
 
 /**
+ * Load and render Managed Docker Sandbox control card
+ */
+export async function loadSandboxPanel() {
+  const panel = document.getElementById('sandboxControlPanel');
+  if (!panel) return;
+
+  try {
+    const res = await fetch('/api/sandbox/status');
+    if (!res.ok) throw new Error('无法获取沙箱状态');
+    const data = await res.json();
+
+    if (!data.dockerAvailable) {
+      panel.innerHTML = `
+        <div class="sandbox-row">
+          <div class="sandbox-info">
+            <div class="sandbox-title-row">
+              <i data-lucide="box"></i>
+              <span class="sandbox-title">云端 Docker 沙箱未启用</span>
+              <span class="device-status-pill offline">不可用</span>
+            </div>
+            <div class="device-meta-sub">当前宿主机未启用 Docker 沙箱引擎，仅支持宿主机或外部接入设备。</div>
+          </div>
+        </div>
+      `;
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+
+    const isRunning = !!data.running;
+    const isOnline = !!data.isOnline;
+    const statusClass = isRunning && isOnline ? 'online' : 'offline';
+    const statusText = isRunning ? (isOnline ? '运行中 · 在线' : '启动中...') : (data.exists ? '已休眠 (数据保留)' : '未创建');
+    const limits = data.limits || {};
+    const limitText = `${limits.memory || '1g'} RAM · ${limits.cpus || '1'} CPU · ${limits.pidsLimit || 256} PIDs · 空闲 ${data.idleTimeoutMinutes || 30}m 自动休眠`;
+
+    panel.innerHTML = `
+      <div class="sandbox-row">
+        <div class="sandbox-info">
+          <div class="sandbox-title-row">
+            <i data-lucide="box"></i>
+            <span class="sandbox-title">${escapeHtml(data.containerName || 'ccnow-sandbox')}</span>
+            <span class="device-kind-pill docker-sandbox">Docker Sandbox</span>
+            <span class="device-status-pill ${statusClass}">${statusText}</span>
+          </div>
+          <div class="device-meta-sub">${escapeHtml(limitText)}</div>
+        </div>
+        <div class="sandbox-actions">
+          ${isRunning
+            ? `
+              ${data.deviceId ? `<button class="device-btn-primary" id="sandboxEnterBtn"><i data-lucide="external-link"></i><span>进入沙箱</span></button>` : ''}
+              <button class="device-btn-secondary" id="sandboxStopBtn"><i data-lucide="moon"></i><span>休眠</span></button>
+            `
+            : `<button class="device-btn-primary" id="sandboxStartBtn"><i data-lucide="play"></i><span>${data.exists ? '唤醒沙箱' : '启动沙箱'}</span></button>`
+          }
+        </div>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+
+    const startBtn = document.getElementById('sandboxStartBtn');
+    if (startBtn) {
+      startBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        startBtn.innerHTML = `<i data-lucide="loader" class="spin"></i><span>启动中...</span>`;
+        if (window.lucide) window.lucide.createIcons();
+        try {
+          const r = await fetch('/api/sandbox/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const j = await r.json();
+          if (!r.ok || !j.success) throw new Error(j.error || '启动失败');
+          await fetchDevices();
+          updateSwitcherDropdownItems();
+          await loadDeviceList();
+          await loadSandboxPanel();
+        } catch (err) {
+          alert(`启动云端沙箱失败: ${err.message}`);
+          await loadSandboxPanel();
+        }
+      });
+    }
+
+    const stopBtn = document.getElementById('sandboxStopBtn');
+    if (stopBtn) {
+      stopBtn.addEventListener('click', async () => {
+        stopBtn.disabled = true;
+        stopBtn.innerHTML = `<i data-lucide="loader" class="spin"></i><span>休眠中...</span>`;
+        if (window.lucide) window.lucide.createIcons();
+        try {
+          const r = await fetch('/api/sandbox/stop', { method: 'POST' });
+          const j = await r.json();
+          if (!r.ok || !j.success) throw new Error(j.error || '休眠失败');
+          await fetchDevices();
+          updateSwitcherDropdownItems();
+          await loadDeviceList();
+          await loadSandboxPanel();
+          if (data.deviceId && state.currentDeviceId === data.deviceId) {
+            switchToDevice('cloud');
+          }
+        } catch (err) {
+          alert(`休眠沙箱失败: ${err.message}`);
+          await loadSandboxPanel();
+        }
+      });
+    }
+
+    const enterBtn = document.getElementById('sandboxEnterBtn');
+    if (enterBtn && data.deviceId) {
+      enterBtn.addEventListener('click', () => {
+        closeDeviceModal();
+        switchToDevice(data.deviceId);
+      });
+    }
+  } catch (err) {
+    console.error('[DeviceManager] Error loading sandbox panel:', err);
+    panel.innerHTML = `<div class="sandbox-loading-text" style="color: #ef4444;">加载沙箱状态失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+/**
  * Open Device Manager Modal
  */
 export function openDeviceModal() {
@@ -360,6 +508,7 @@ export function openDeviceModal() {
   if (!modal) return;
 
   modal.classList.remove('hidden');
+  loadSandboxPanel();
   loadDeviceList();
   refreshPairToken();
 
@@ -405,7 +554,8 @@ export async function initDeviceManager(socket) {
   const switcherDropdown = document.getElementById('deviceSwitcherDropdown');
   const pairBtn = document.getElementById('deviceDropdownPairBtn');
 
-  // Reposition dropdown dynamically to prevent right-edge viewport overflow on mobile/narrow screens
+  // Reposition dropdown dynamically to prevent right-edge and bottom-edge viewport overflow
+  // especially on iPhone Duo / Foldable landscape screens
   function repositionSwitcherDropdown() {
     if (!switcherDropdown || switcherDropdown.classList.contains('hidden')) return;
 
@@ -415,15 +565,28 @@ export async function initDeviceManager(socket) {
 
     const rect = switcherDropdown.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-    const padding = 8; // Margin from right edge of viewport
+    const viewportHeight = window.visualViewport ? window.visualViewport.height : (window.innerHeight || document.documentElement.clientHeight);
+    const padding = 10;
 
     if (rect.right > viewportWidth - padding) {
       const overflow = rect.right - (viewportWidth - padding);
       const container = switcherBtn ? switcherBtn.parentElement : null;
       const containerLeft = container ? container.getBoundingClientRect().left : 0;
-      // Prevent left edge from moving past left screen padding
       const clampedLeft = Math.max(-overflow, -(containerLeft - padding));
       switcherDropdown.style.left = `${clampedLeft}px`;
+    }
+
+    // Dynamically constrain dropdown height so header + device list + pair button stay 100% visible
+    const triggerBottom = switcherBtn ? switcherBtn.getBoundingClientRect().bottom : rect.top;
+    const availableBelow = Math.max(150, Math.floor(viewportHeight - triggerBottom - 16));
+    switcherDropdown.style.setProperty('max-height', `${Math.min(360, availableBelow)}px`, 'important');
+    switcherDropdown.style.setProperty('overflow-y', 'auto', 'important');
+
+    const listEl = document.getElementById('deviceDropdownList');
+    if (listEl) {
+      // Reserve ~92px for dropdown header, divider, and pair action button
+      const listMax = Math.max(88, Math.min(240, availableBelow - 96));
+      listEl.style.setProperty('max-height', `${listMax}px`, 'important');
     }
   }
 
@@ -431,6 +594,13 @@ export async function initDeviceManager(socket) {
     switcherBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const isOpening = switcherDropdown.classList.contains('hidden');
+      if (isOpening) {
+        // Close bottom system dropup menu so the two popovers never collide
+        const deckMenu = document.getElementById('deckControlDropdownMenu');
+        const deckBtn = document.getElementById('deckControlToggleBtn');
+        if (deckMenu) deckMenu.classList.add('hidden');
+        if (deckBtn) deckBtn.classList.remove('active');
+      }
       switcherDropdown.classList.toggle('hidden');
       if (isOpening) {
         repositionSwitcherDropdown();
@@ -439,6 +609,9 @@ export async function initDeviceManager(socket) {
 
     window.addEventListener('resize', () => {
       repositionSwitcherDropdown();
+    });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(repositionSwitcherDropdown, 120);
     });
 
     document.addEventListener('click', (e) => {

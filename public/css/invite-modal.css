@@ -808,8 +808,131 @@ body.light-minimalist .device-btn-secondary:hover:not(:disabled) {
 
 body.light-minimalist .device-btn-active {
   background: #f0fdf4;
-  border-color: #16a34a;
-  color: #16a34a;
+  border-color: #86efac;
+  color: #15803d;
+}
+
+/* Device Kind Badges & Managed Docker Sandbox Panel (Dark Mode) */
+.device-kind-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+}
+
+.device-kind-pill.host-admin {
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--neon-cyan, #00f0ff);
+  border-color: rgba(0, 240, 255, 0.35);
+}
+
+.device-kind-pill.docker-sandbox {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+.device-kind-pill.external {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.sandbox-control-panel {
+  background: var(--surface-2, #151c2f);
+  border: 0.5px solid var(--border-hairline, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.sandbox-loading-text {
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.sandbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sandbox-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sandbox-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sandbox-title-row i,
+.sandbox-title-row svg {
+  width: 15px;
+  height: 15px;
+  color: #c084fc;
+}
+
+.sandbox-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.sandbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Light Theme Adaptations for Device Kind Badges & Sandbox Panel */
+body.light-minimalist .device-kind-pill.host-admin {
+  background: #eef2ff;
+  color: #4f46e5;
+  border-color: #c7d2fe;
+}
+
+body.light-minimalist .device-kind-pill.docker-sandbox {
+  background: #f3e8ff;
+  color: #7e22ce;
+  border-color: #d8b4fe;
+}
+
+body.light-minimalist .device-kind-pill.external {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+body.light-minimalist .sandbox-control-panel {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+body.light-minimalist .sandbox-loading-text {
+  color: #64748b;
+}
+
+body.light-minimalist .sandbox-title {
+  color: #0f172a;
+}
+
+body.light-minimalist .sandbox-title-row i,
+body.light-minimalist .sandbox-title-row svg {
+  color: #7e22ce;
 }
 
 body.light-minimalist .admin-scope-banner {

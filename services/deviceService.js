@@ -189,10 +189,98 @@ function getUserDevices(username) {
     arch: d.arch,
     clientVersion: d.clientVersion || '1.0.0',
     agentTypes: d.agentTypes,
+    deviceKind: d.deviceKind || 'external',
+    containerName: d.containerName || null,
     createdAt: d.createdAt,
     lastSeen: d.lastSeen,
     isOnline: activeConnections.has(d.deviceId)
   }));
+}
+
+/**
+ * Idempotently ensure a managed device exists for a user (e.g. host-admin or docker-sandbox).
+ * If created, returns the newly generated plaintext deviceSecret; otherwise deviceSecret is null.
+ */
+function ensureManagedDevice(username, opts = {}) {
+  const devices = readDevices();
+  const deviceKind = opts.deviceKind || 'docker-sandbox';
+  const existing = devices.find(
+    d => d.userId === username && d.deviceKind === deviceKind && (!opts.containerName || d.containerName === opts.containerName)
+  );
+
+  if (existing) {
+    let changed = false;
+    if (opts.name && existing.name !== opts.name) {
+      existing.name = opts.name;
+      changed = true;
+    }
+    if (opts.containerName && existing.containerName !== opts.containerName) {
+      existing.containerName = opts.containerName;
+      changed = true;
+    }
+    if (changed) writeDevices(devices);
+    return {
+      deviceId: existing.deviceId,
+      deviceSecret: null,
+      device: existing,
+      created: false
+    };
+  }
+
+  const deviceId = 'dev_' + generateRandomHex(8);
+  const deviceSecret = generateRandomHex(24);
+  const secretHash = hashSecret(deviceSecret);
+
+  const newDevice = {
+    deviceId,
+    userId: username,
+    name: opts.name || (deviceKind === 'host-admin' ? 'Cloud-Host (Admin)' : `Sandbox (${username})`),
+    hostname: opts.hostname || (opts.containerName || 'ccnow-managed'),
+    platform: opts.platform || 'linux',
+    arch: opts.arch || process.arch,
+    clientVersion: opts.version || '1.4.0',
+    agentTypes: opts.agentTypes || ['claude-code', 'codex-cli', 'tmux', 'local-terminal'],
+    deviceKind,
+    containerName: opts.containerName || null,
+    secretHash,
+    createdAt: Date.now(),
+    lastSeen: Date.now()
+  };
+
+  devices.push(newDevice);
+  writeDevices(devices);
+
+  return {
+    deviceId,
+    deviceSecret,
+    device: newDevice,
+    created: true
+  };
+}
+
+/**
+ * Rotate a managed device's secret and return the new plaintext secret.
+ */
+function rotateManagedDeviceSecret(deviceId) {
+  const devices = readDevices();
+  const target = devices.find(d => d.deviceId === deviceId);
+  if (!target) return null;
+
+  const deviceSecret = generateRandomHex(24);
+  target.secretHash = hashSecret(deviceSecret);
+  target.lastSeen = Date.now();
+  writeDevices(devices);
+  return deviceSecret;
+}
+
+/**
+ * Check if a device currently has active remote terminal streams attached.
+ */
+function hasActiveDeviceStreams(deviceId) {
+  for (const term of activeTerminals.values()) {
+    if (term.deviceId === deviceId) return true;
+  }
+  return false;
 }
 
 /**
@@ -645,6 +733,9 @@ module.exports = {
   createPairToken,
   verifyAndConsumePairToken,
   registerDevice,
+  ensureManagedDevice,
+  rotateManagedDeviceSecret,
+  hasActiveDeviceStreams,
   authenticateDevice,
   updateDeviceInfo,
   isDeviceOnline,

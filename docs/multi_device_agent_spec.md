@@ -178,13 +178,15 @@ npx ccnow-agent connect --server https://<your-ccnow-domain> --token pt_<one_tim
 
 ## 6. 工程落地演进路线 (Roadmap)
 
-- [ ] **Phase 1: 控制面服务基建**
-  - 新增 `services/deviceService.js`：设备数据模型（`user_devices.json`）、配对 Token 算法、设备状态机。
-  - 新增 `sockets/deviceGateway.js`：专用的 WSS 隧道处理模块。
+- [x] **Phase 1: 控制面服务基建**
+  - 新增 `services/deviceService.js`：设备数据模型（`data/devices.json`）、配对 Token 算法、设备状态机与托管设备 `ensureManagedDevice`。
+  - 新增 `sockets/deviceGateway.js`：专用的 WSS 隧道处理模块（`/device-tunnel`）。
   - 新增 REST 接口：`POST /api/devices/pair-token`、`GET /api/devices`、`DELETE /api/devices/:id`。
-- [ ] **Phase 2: 轻量客户端实现 (ccnow-agent)**
-  - 编写极简 Node 客户端包（可独立执行，包含自动重连与心跳）。
-  - 集成本地 Agent 启动器，打通 stdio 流式管道。
-- [ ] **Phase 3: Web 控制面 UI 接入**
-  - 在 ccnow 前端顶部栏/侧边栏增加“设备选择器”（云端会话 vs 本地设备）。
-  - 在 Agent 交互界面支持切换将指令路由至选中的本地设备并实时展示反馈。
+- [x] **Phase 2: 轻量客户端实现 (`client/ccnow-agent.js`)**
+  - 独立可执行 Node 客户端，支持自动重连、心跳、环境变量无感引导（`CCNOW_*`）与 systemd 守护。
+  - 集成远程 Tmux、PTY 终端、文件读写、Git 与 Agent 流式管道。
+- [x] **Phase 3: Web 控制面 UI 与统一算力模型**
+  - 前端顶部栏/弹窗支持多设备切换与状态实时同步（`public/js/modules/deviceManager.js`）。
+  - 收敛为两类算力模型（详见 `docs/architecture.md`）：
+    - **托管算力 (`docker-sandbox`)**：由 `services/containerService.js` 调度 Docker 容器，支持资源限额、按需唤醒、空闲自动休眠，以及通过 `sk-ccnow-<deviceId>.<deviceSecret>` 虚拟 Key 访问控制面 LLM Gateway。
+    - **接入算力 (`external` / `host-admin`)**：涵盖用户外部设备及通过 `scripts/setup-host-admin-agent.js` 注册为 `systemd` 独立服务的宿主机 Admin 设备。
