@@ -1664,7 +1664,6 @@ loadWorkspaces().then(async () => {
   initPushNotifications();
   initVoiceInput();
   initQrCode();
-  initImBot();
   initShareModal();
   const controlSocket = typeof io !== 'undefined' ? io() : null;
   initDeviceManager(controlSocket);
@@ -2186,8 +2185,14 @@ loadWorkspaces().then(async () => {
       }
       // Store multi-user mode in state for use across the UI
       state.multiUserEnabled = !!data.multiUserEnabled;
+      state.imBotEnabled = !!data.imBotEnabled;
       state.username = data.username;
       state.role = data.role;
+
+      // Mount IM Bot UI only when enabled on server
+      if (state.imBotEnabled) {
+        initImBot();
+      }
       
       // Load global settings for showing/hiding disabled agents
       loadSettings();

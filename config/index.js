@@ -17,6 +17,9 @@ const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
 // Default MULTI_USER_ENABLED to false if not explicitly set to 'true' in env
 const MULTI_USER_ENABLED = process.env.MULTI_USER_ENABLED === 'true';
 
+// IM Bot (Telegram / WeChat) feature flag (Default: false - temporarily frozen pending multi-device/multi-user redesign)
+const IM_BOT_ENABLED = process.env.IM_BOT_ENABLED === 'true';
+
 // Docker Sandbox configuration (for isolated per-user container execution)
 const DOCKER_SANDBOX_ENABLED = process.env.DOCKER_SANDBOX_ENABLED !== 'false';
 const DOCKER_SANDBOX_IMAGE = process.env.DOCKER_SANDBOX_IMAGE || 'ccnow-sandbox:latest';
@@ -69,6 +72,7 @@ module.exports = {
   useHttps,
   sslOptions,
   MULTI_USER_ENABLED,
+  IM_BOT_ENABLED,
   DOCKER_SANDBOX_ENABLED,
   DOCKER_SANDBOX_IMAGE,
   DOCKER_SANDBOX_MEMORY,

@@ -9479,7 +9479,7 @@ body:not(.sidebar-open) .workspace-tabs {
        (screen-spanning: single-fold-horizontal) {
   :root,
   body {
-    --header-safe-left: max(26px, calc(16px + env(safe-area-inset-left, 0px)));
+    --header-safe-left: max(36px, calc(24px + env(safe-area-inset-left, 0px)));
   }
 
   .floating-brand-expand-btn {
@@ -9492,19 +9492,29 @@ body:not(.sidebar-open) .workspace-tabs {
     padding-right: 14px !important;
   }
 
+  /* 侧边栏展开时，仅将左上角正方形品牌图标行适当右移，避让宽屏/折叠内屏大圆角 */
+  .sidebar-brand-toggle {
+    padding-left: 12px !important;
+  }
+
   .sidebar.collapsed ~ .terminal-workspace .workspace-tabs:not(.hidden),
   .sidebar.collapsed ~ .terminal-workspace .workspace-tabs,
   .main-container:has(.sidebar.collapsed) .workspace-tabs:not(.hidden),
   .main-container:has(.sidebar.collapsed) .workspace-tabs,
   body:not(.sidebar-open) .workspace-tabs:not(.hidden),
   body:not(.sidebar-open) .workspace-tabs {
-    padding-left: max(176px, calc(158px + env(safe-area-inset-left, 0px))) !important;
+    padding-left: max(186px, calc(168px + env(safe-area-inset-left, 0px))) !important;
   }
 
-  /* iPhone Duo 宽屏 PWA：仅将侧栏收起时的展开图标按钮轻微右移，避让左上角圆角 */
+  /* iPhone Duo 宽屏 PWA：进一步右移左上角品牌图标与侧栏收起展开按钮，避让左上角大圆角 */
+  body.is-standalone .sidebar-brand-toggle,
+  body.is-ios-pwa .sidebar-brand-toggle {
+    padding-left: 18px !important;
+  }
+
   body.is-standalone .floating-brand-expand-btn,
   body.is-ios-pwa .floating-brand-expand-btn {
-    left: max(36px, calc(24px + env(safe-area-inset-left, 0px))) !important;
+    left: max(46px, calc(34px + env(safe-area-inset-left, 0px))) !important;
   }
 
   body.is-standalone .sidebar.collapsed ~ .terminal-workspace .workspace-tabs:not(.hidden),
@@ -9519,7 +9529,7 @@ body:not(.sidebar-open) .workspace-tabs {
   body.is-ios-pwa .main-container:has(.sidebar.collapsed) .workspace-tabs,
   body.is-ios-pwa:not(.sidebar-open) .workspace-tabs:not(.hidden),
   body.is-ios-pwa:not(.sidebar-open) .workspace-tabs {
-    padding-left: max(186px, calc(168px + env(safe-area-inset-left, 0px))) !important;
+    padding-left: max(196px, calc(178px + env(safe-area-inset-left, 0px))) !important;
   }
 }
 

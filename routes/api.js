@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const multer = require('multer');
 
-const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED } = require('../config');
+const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED, IM_BOT_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
 const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
 const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, syncAllUserKeysFiles, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc, chownToSudoUser } = require('../services/fileService');
@@ -115,6 +115,7 @@ router.get('/auth-status', (req, res) => {
   res.json({
     authenticated: true,
     multiUserEnabled: MULTI_USER_ENABLED,
+    imBotEnabled: IM_BOT_ENABLED,
     username: decoded.username || 'admin',
     role: decoded.role || 'admin'
   });

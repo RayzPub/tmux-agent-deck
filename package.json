@@ -17,7 +17,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@botiverse/oar": "^0.79.0",
+    "@botiverse/oar": "^0.128.1",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const webpush = require('web-push');
-const { PROJECT_ROOT, JWT_SECRET, MULTI_USER_ENABLED } = require('../config');
+const { PROJECT_ROOT, JWT_SECRET, MULTI_USER_ENABLED, IM_BOT_ENABLED } = require('../config');
 const imBot = require('../im-bot');
 
 const VAPID_FILE = path.join(PROJECT_ROOT, 'vapid.json');
@@ -83,8 +83,10 @@ const sendPushToAll = (io, payload, targetUsername = null) => {
     lastPushTimeMap.set(payload.session, now);
   }
 
-  // Notify IM Bot (Telegram, etc.)
-  imBot.notify(payload).catch(err => console.error('[IM Bot] Notification error:', err));
+  // Notify IM Bot (Telegram, WeChat, etc.) only when enabled
+  if (IM_BOT_ENABLED) {
+    imBot.notify(payload).catch(err => console.error('[IM Bot] Notification error:', err));
+  }
 
   // Determine target user in multi-user mode
   let userToMatch = targetUsername;

@@ -7,7 +7,7 @@ const socketIo = require('socket.io');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
 
-const { PROJECT_ROOT, PORT, HTTPS_PORT, PASSWORD, JWT_SECRET, useHttps, sslOptions, MULTI_USER_ENABLED } = require('./config');
+const { PROJECT_ROOT, PORT, HTTPS_PORT, PASSWORD, JWT_SECRET, useHttps, sslOptions, MULTI_USER_ENABLED, IM_BOT_ENABLED } = require('./config');
 const { requireAuth, verifyToken } = require('./middlewares/auth');
 const { execTmux, getRunUser } = require('./services/tmuxService');
 const { startMonitoring } = require('./services/monitorService');
@@ -117,8 +117,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize IM Bot
-imBot.init(app, execTmux, getRunUser, requireAuth);
+// Initialize IM Bot (only when explicitly enabled via IM_BOT_ENABLED=true)
+if (IM_BOT_ENABLED) {
+  imBot.init(app, execTmux, getRunUser, requireAuth);
+} else {
+  console.log('🤖 [IM Bot] Disabled (IM_BOT_ENABLED is not true).');
+}
 
 // Serve login page without authentication
 app.get(['/login', '/login.html'], (req, res) => {
