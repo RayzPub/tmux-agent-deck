@@ -115,7 +115,8 @@ const initSocket = (io) => {
       console.log(`Spawning pty for tmux session: ${physicalSession} (${cols}x${rows})`);
 
       const runUser = getRunUser();
-      const tmuxArgs = ['new-session', '-A', '-s', physicalSession];
+      // Attach only to existing sessions; never use `new-session -A` which silently resurrects killed sessions
+      const tmuxArgs = ['attach-session', '-t', physicalSession];
 
       const { cmd: shell, args } = getTmuxCommandForUser(socket.user ? socket.user.username : null, tmuxArgs);
       const workspacePath = getDefaultWorkspacePath(socket.user ? socket.user.username : null);

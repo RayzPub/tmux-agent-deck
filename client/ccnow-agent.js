@@ -1437,7 +1437,8 @@ class AgentClient {
 
     if (hasTmux && sessionName) {
       targetCmd = 'tmux';
-      targetArgs = ['new-session', '-A', '-s', sessionName];
+      // Attach only to existing sessions; never use `new-session -A` which silently resurrects killed sessions
+      targetArgs = ['attach-session', '-t', sessionName];
     }
 
     let ptyHandler = null;

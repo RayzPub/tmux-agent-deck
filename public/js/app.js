@@ -11,7 +11,7 @@ import { initQrCode } from './modules/qrcode.js';
 import { initImBot } from './modules/imBot.js';
 import { initChatMode, applySessionViewMode, setSessionViewMode, clearSessionChatCache } from './modules/chatMode.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
-import { initProjectOverviewEvents, openProjectTab } from './modules/projectOverview.js';
+import { initProjectOverviewEvents, openProjectTab, renderProjectOverview } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
 import { initMobileInput, initPreventZoom, syncTerminalAgentQuickButtons } from './modules/mobileInput.js';
@@ -454,15 +454,22 @@ if (sessionList) {
 
 async function killSession(name) {
   try {
+    // Disconnect cached terminal socket first so a reconnect cannot race with kill-session
+    removeSessionFromCache(name);
+    clearSessionChatCache(name);
+
     const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
     const response = await fetch(`/api/sessions/${encodeURIComponent(name)}${devParam}`, { method: 'DELETE' });
     if (response.ok) {
-      removeSessionFromCache(name);
-      clearSessionChatCache(name);
+      // Close the tab unconditionally (whether it is the active tab or a background tab)
+      closeTab(name);
       if (state.currentSession === name) {
-        detachSession();
+        state.currentSession = null;
       }
       await loadSessions();
+      if (state.activeTabId === 'tab-project-overview') {
+        renderProjectOverview({ silent: true });
+      }
     } else {
       const data = await response.json();
       alert('关闭会话失败: ' + (data.error || '未知错误'));
