@@ -2,41 +2,53 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   
       <defs>
-        <linearGradient id="bg-hexagon" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0b162c"/>
-          <stop offset="100%" stop-color="#040915"/>
-        </linearGradient>
-        <linearGradient id="grad-hexagon" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#00f0ff"/>
-          <stop offset="100%" stop-color="#0090ff"/>
-        </linearGradient>
-        <filter id="glow-hexagon" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="22" result="blur"/>
-          <feMerge>
-            <feMergeNode in="blur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
+        
+    <linearGradient id="bg-hexagon" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#222532"/>
+      <stop offset="52%" stop-color="#17191e"/>
+      <stop offset="100%" stop-color="#101218"/>
+    </linearGradient>
+    <radialGradient id="ambient-hexagon" gradientUnits="userSpaceOnUse" cx="512" cy="472" r="540">
+      <stop offset="0%" stop-color="#7e66f5" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#6952d9" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#101218" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="grad-hexagon" gradientUnits="userSpaceOnUse" x1="200" y1="200" x2="824" y2="824">
+      <stop offset="0%" stop-color="#d8ceff"/>
+      <stop offset="48%" stop-color="#ac9bff"/>
+      <stop offset="100%" stop-color="#6952d9"/>
+    </linearGradient>
+    <filter id="soft-glow-hexagon" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feFlood flood-color="#ac9bff" flood-opacity="0.26" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  
+        <radialGradient id="core-hex" cx="38%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#d8ceff"/>
+          <stop offset="55%" stop-color="#ac9bff"/>
+          <stop offset="100%" stop-color="#6952d9"/>
+        </radialGradient>
       </defs>
-      
-      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-hexagon)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
-      
-      <!-- Outer Hexagon -->
-      <g filter="url(#glow-hexagon)">
-        <polygon points="512,180 800,346 800,678 512,844 224,678 224,346" fill="none" stroke="url(#grad-hexagon)" stroke-width="26" stroke-linejoin="round"/>
-        <!-- Inner segmented Hexagon -->
-        <polygon points="512,280 710,394 710,630 512,744 314,630 314,394" fill="none" stroke="#00f0ff" stroke-width="10" stroke-dasharray="36 18" stroke-opacity="0.7"/>
-        <!-- Core Node -->
-        <circle cx="512" cy="512" r="76" fill="url(#grad-hexagon)"/>
-        <circle cx="512" cy="512" r="32" fill="#ffffff"/>
-      </g>
 
-      <!-- Corner nodes -->
-      <circle cx="512" cy="180" r="14" fill="#00f0ff"/>
-      <circle cx="800" cy="346" r="14" fill="#00f0ff"/>
-      <circle cx="800" cy="678" r="14" fill="#00f0ff"/>
-      <circle cx="512" cy="844" r="14" fill="#00f0ff"/>
-      <circle cx="224" cy="678" r="14" fill="#00f0ff"/>
-      <circle cx="224" cy="346" r="14" fill="#00f0ff"/>
+      
+    <!-- Full-bleed borderless background (iOS/Android/PWA safe-zone friendly) -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg-hexagon)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#ambient-hexagon)"/>
+  
+
+      <!-- Outer & Inner Architectural Hexagon -->
+      <g filter="url(#soft-glow-hexagon)">
+        <polygon points="512,188 792,350 792,674 512,836 232,674 232,350" fill="none" stroke="url(#grad-hexagon)" stroke-width="36" stroke-linejoin="round"/>
+        <polygon points="512,286 708,399 708,625 512,738 316,625 316,399" fill="none" stroke="#ac9bff" stroke-width="10" stroke-dasharray="42 22" stroke-opacity="0.45" stroke-linejoin="round"/>
+
+        <!-- Core Node -->
+        <circle cx="512" cy="512" r="92" fill="url(#core-hex)"/>
+        <circle cx="512" cy="512" r="34" fill="#f6f4ff"/>
+      </g>
     
 </svg>

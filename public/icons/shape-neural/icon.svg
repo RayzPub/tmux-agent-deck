@@ -2,49 +2,70 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   
       <defs>
-        <linearGradient id="bg-neural" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0b162c"/>
-          <stop offset="100%" stop-color="#040915"/>
-        </linearGradient>
-        <linearGradient id="grad-neural" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#00f0ff"/>
-          <stop offset="100%" stop-color="#0090ff"/>
-        </linearGradient>
-        <filter id="glow-neural" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="22" result="blur"/>
-          <feMerge>
-            <feMergeNode in="blur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
+        
+    <linearGradient id="bg-neural" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#222532"/>
+      <stop offset="52%" stop-color="#17191e"/>
+      <stop offset="100%" stop-color="#101218"/>
+    </linearGradient>
+    <radialGradient id="ambient-neural" gradientUnits="userSpaceOnUse" cx="512" cy="472" r="540">
+      <stop offset="0%" stop-color="#7e66f5" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#6952d9" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#101218" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="grad-neural" gradientUnits="userSpaceOnUse" x1="200" y1="200" x2="824" y2="824">
+      <stop offset="0%" stop-color="#d8ceff"/>
+      <stop offset="48%" stop-color="#ac9bff"/>
+      <stop offset="100%" stop-color="#6952d9"/>
+    </linearGradient>
+    <filter id="soft-glow-neural" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feFlood flood-color="#ac9bff" flood-opacity="0.26" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  
+        <radialGradient id="node-grad" cx="35%" cy="35%" r="68%">
+          <stop offset="0%" stop-color="#d8ceff"/>
+          <stop offset="55%" stop-color="#ac9bff"/>
+          <stop offset="100%" stop-color="#6952d9"/>
+        </radialGradient>
       </defs>
+
       
-      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-neural)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
-      
-      <!-- Network Links -->
-      <g filter="url(#glow-neural)">
-        <line x1="512" y1="270" x2="280" y2="690" stroke="url(#grad-neural)" stroke-width="20" stroke-linecap="round"/>
-        <line x1="512" y1="270" x2="744" y2="690" stroke="url(#grad-neural)" stroke-width="20" stroke-linecap="round"/>
-        <line x1="280" y1="690" x2="744" y2="690" stroke="url(#grad-neural)" stroke-width="20" stroke-linecap="round"/>
+    <!-- Full-bleed borderless background (iOS/Android/PWA safe-zone friendly) -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg-neural)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#ambient-neural)"/>
+  
 
-        <!-- Cross Links to Center -->
-        <line x1="512" y1="270" x2="512" y2="550" stroke="#00f0ff" stroke-width="12" stroke-dasharray="16 12"/>
-        <line x1="280" y1="690" x2="512" y2="550" stroke="#00f0ff" stroke-width="12" stroke-dasharray="16 12"/>
-        <line x1="744" y1="690" x2="512" y2="550" stroke="#00f0ff" stroke-width="12" stroke-dasharray="16 12"/>
+      <!-- Multi-Agent Constellation -->
+      <g filter="url(#soft-glow-neural)">
+        <!-- Outer Triangle Edges -->
+        <line x1="512" y1="252" x2="268" y2="696" stroke="url(#grad-neural)" stroke-width="24" stroke-linecap="round"/>
+        <line x1="512" y1="252" x2="756" y2="696" stroke="url(#grad-neural)" stroke-width="24" stroke-linecap="round"/>
+        <line x1="268" y1="696" x2="756" y2="696" stroke="url(#grad-neural)" stroke-width="24" stroke-linecap="round"/>
 
-        <!-- 3 Outer Nodes -->
-        <circle cx="512" cy="270" r="54" fill="url(#grad-neural)"/>
-        <circle cx="512" cy="270" r="22" fill="#ffffff"/>
+        <!-- Inner Hub Links -->
+        <line x1="512" y1="252" x2="512" y2="548" stroke="#d8ceff" stroke-width="12" stroke-opacity="0.55" stroke-dasharray="18 14" stroke-linecap="round"/>
+        <line x1="268" y1="696" x2="512" y2="548" stroke="#d8ceff" stroke-width="12" stroke-opacity="0.55" stroke-dasharray="18 14" stroke-linecap="round"/>
+        <line x1="756" y1="696" x2="512" y2="548" stroke="#d8ceff" stroke-width="12" stroke-opacity="0.55" stroke-dasharray="18 14" stroke-linecap="round"/>
 
-        <circle cx="280" cy="690" r="54" fill="url(#grad-neural)"/>
-        <circle cx="280" cy="690" r="22" fill="#ffffff"/>
+        <!-- 3 Outer Agent Nodes -->
+        <circle cx="512" cy="252" r="58" fill="url(#node-grad)"/>
+        <circle cx="512" cy="252" r="22" fill="#f6f4ff"/>
 
-        <circle cx="744" cy="690" r="54" fill="url(#grad-neural)"/>
-        <circle cx="744" cy="690" r="22" fill="#ffffff"/>
+        <circle cx="268" cy="696" r="58" fill="url(#node-grad)"/>
+        <circle cx="268" cy="696" r="22" fill="#f6f4ff"/>
 
-        <!-- Center AI Core Node -->
-        <circle cx="512" cy="550" r="68" fill="url(#grad-neural)"/>
-        <circle cx="512" cy="550" r="30" fill="#ffffff"/>
+        <circle cx="756" cy="696" r="58" fill="url(#node-grad)"/>
+        <circle cx="756" cy="696" r="22" fill="#f6f4ff"/>
+
+        <!-- Central AI Orchestrator Core -->
+        <circle cx="512" cy="548" r="76" fill="url(#node-grad)"/>
+        <circle cx="512" cy="548" r="32" fill="#f6f4ff"/>
       </g>
     
 </svg>

@@ -2,44 +2,67 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   
       <defs>
-        <linearGradient id="bg-cube" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0b162c"/>
-          <stop offset="100%" stop-color="#040915"/>
-        </linearGradient>
-        <linearGradient id="top-face" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#00f0ff"/>
-          <stop offset="100%" stop-color="#0090ff"/>
-        </linearGradient>
-        <linearGradient id="left-face" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0090ff"/>
-          <stop offset="100%" stop-color="#0055c8"/>
-        </linearGradient>
-        <linearGradient id="right-face" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0055c8"/>
-          <stop offset="100%" stop-color="#021c44"/>
-        </linearGradient>
-        <filter id="glow-cube" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="22" result="blur"/>
-          <feMerge>
-            <feMergeNode in="blur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-      </defs>
-      
-      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-cube)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
-      
-      <!-- Outer Cube Frame -->
-      <g filter="url(#glow-cube)">
-        <!-- Top Face -->
-        <polygon points="512,230 750,367 512,504 274,367" fill="url(#top-face)" stroke="#ffffff" stroke-width="6" opacity="0.95"/>
-        <!-- Left Face -->
-        <polygon points="274,367 512,504 512,778 274,641" fill="url(#left-face)" stroke="#00f0ff" stroke-width="6" opacity="0.85"/>
-        <!-- Right Face -->
-        <polygon points="750,367 512,504 512,778 750,641" fill="url(#right-face)" stroke="#00f0ff" stroke-width="6" opacity="0.85"/>
         
-        <!-- Center glowing vertex -->
-        <circle cx="512" cy="504" r="16" fill="#ffffff"/>
+    <linearGradient id="bg-cube" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#222532"/>
+      <stop offset="52%" stop-color="#17191e"/>
+      <stop offset="100%" stop-color="#101218"/>
+    </linearGradient>
+    <radialGradient id="ambient-cube" gradientUnits="userSpaceOnUse" cx="512" cy="472" r="540">
+      <stop offset="0%" stop-color="#7e66f5" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#6952d9" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#101218" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="grad-cube" gradientUnits="userSpaceOnUse" x1="200" y1="200" x2="824" y2="824">
+      <stop offset="0%" stop-color="#d8ceff"/>
+      <stop offset="48%" stop-color="#ac9bff"/>
+      <stop offset="100%" stop-color="#6952d9"/>
+    </linearGradient>
+    <filter id="soft-glow-cube" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feFlood flood-color="#ac9bff" flood-opacity="0.26" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  
+        <linearGradient id="top-face" gradientUnits="userSpaceOnUse" x1="256" y1="216" x2="768" y2="512">
+          <stop offset="0%" stop-color="#d8ceff"/>
+          <stop offset="100%" stop-color="#ac9bff"/>
+        </linearGradient>
+        <linearGradient id="left-face" gradientUnits="userSpaceOnUse" x1="256" y1="364" x2="512" y2="808">
+          <stop offset="0%" stop-color="#8a74f0"/>
+          <stop offset="100%" stop-color="#6952d9"/>
+        </linearGradient>
+        <linearGradient id="right-face" gradientUnits="userSpaceOnUse" x1="512" y1="364" x2="768" y2="808">
+          <stop offset="0%" stop-color="#4835a8"/>
+          <stop offset="100%" stop-color="#2a1f63"/>
+        </linearGradient>
+      </defs>
+
+      
+    <!-- Full-bleed borderless background (iOS/Android/PWA safe-zone friendly) -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg-cube)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#ambient-cube)"/>
+  
+
+      <!-- Sculpted Isometric Cube -->
+      <g filter="url(#soft-glow-cube)">
+        <!-- Top Face -->
+        <polygon points="512,216 768,364 512,512 256,364" fill="url(#top-face)" stroke="#d8ceff" stroke-width="3" stroke-linejoin="round"/>
+        <!-- Left Face -->
+        <polygon points="256,364 512,512 512,808 256,660" fill="url(#left-face)" stroke="#ac9bff" stroke-width="3" stroke-opacity="0.45" stroke-linejoin="round"/>
+        <!-- Right Face -->
+        <polygon points="768,364 512,512 512,808 768,660" fill="url(#right-face)" stroke="#ac9bff" stroke-width="3" stroke-opacity="0.35" stroke-linejoin="round"/>
+
+        <!-- Crisp Inner Ridge Highlights -->
+        <polyline points="256,364 512,512 768,364" fill="none" stroke="#f6f4ff" stroke-width="6" stroke-opacity="0.65" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="512" y1="512" x2="512" y2="808" stroke="#d8ceff" stroke-width="5" stroke-opacity="0.45" stroke-linecap="round"/>
+
+        <!-- Center Specular Vertex -->
+        <circle cx="512" cy="512" r="18" fill="#f6f4ff"/>
       </g>
     
 </svg>

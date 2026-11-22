@@ -2,49 +2,63 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   
       <defs>
-        <linearGradient id="bg-diamond" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0b162c"/>
-          <stop offset="100%" stop-color="#040915"/>
+        
+    <linearGradient id="bg-diamond" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#222532"/>
+      <stop offset="52%" stop-color="#17191e"/>
+      <stop offset="100%" stop-color="#101218"/>
+    </linearGradient>
+    <radialGradient id="ambient-diamond" gradientUnits="userSpaceOnUse" cx="512" cy="472" r="540">
+      <stop offset="0%" stop-color="#7e66f5" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#6952d9" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#101218" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="grad-diamond" gradientUnits="userSpaceOnUse" x1="200" y1="200" x2="824" y2="824">
+      <stop offset="0%" stop-color="#d8ceff"/>
+      <stop offset="48%" stop-color="#ac9bff"/>
+      <stop offset="100%" stop-color="#6952d9"/>
+    </linearGradient>
+    <filter id="soft-glow-diamond" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feFlood flood-color="#ac9bff" flood-opacity="0.26" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  
+        <linearGradient id="core-diamond-top" gradientUnits="userSpaceOnUse" x1="356" y1="356" x2="668" y2="512">
+          <stop offset="0%" stop-color="#d8ceff"/>
+          <stop offset="100%" stop-color="#ac9bff"/>
         </linearGradient>
-        <linearGradient id="grad-diamond" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#00f0ff"/>
-          <stop offset="100%" stop-color="#0090ff"/>
+        <linearGradient id="core-diamond-bottom" gradientUnits="userSpaceOnUse" x1="356" y1="512" x2="668" y2="668">
+          <stop offset="0%" stop-color="#8a74f0"/>
+          <stop offset="100%" stop-color="#6952d9"/>
         </linearGradient>
-        <filter id="glow-diamond" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="22" result="blur"/>
-          <feMerge>
-            <feMergeNode in="blur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
       </defs>
+
       
-      <!-- Base container -->
-      <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg-diamond)" stroke="#00f0ff" stroke-width="12" stroke-opacity="0.8"/>
-      
-      <!-- Subtle Grid -->
-      <g stroke="#00f0ff" stroke-width="2" stroke-opacity="0.12">
-        <line x1="160" y1="256" x2="864" y2="256"/>
+    <!-- Full-bleed borderless background (iOS/Android/PWA safe-zone friendly) -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg-diamond)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#ambient-diamond)"/>
+  
+
+      <!-- Subtle Architectural Crosshairs -->
+      <g stroke="#ac9bff" stroke-width="2" stroke-opacity="0.08">
         <line x1="160" y1="512" x2="864" y2="512"/>
-        <line x1="160" y1="768" x2="864" y2="768"/>
-        <line x1="256" y1="160" x2="256" y2="864"/>
         <line x1="512" y1="160" x2="512" y2="864"/>
-        <line x1="768" y1="160" x2="768" y2="864"/>
       </g>
 
-      <!-- Outer Diamond Shield -->
-      <g filter="url(#glow-diamond)">
-        <polygon points="512,180 820,512 512,844 204,512" fill="none" stroke="url(#grad-diamond)" stroke-width="26" stroke-linejoin="round"/>
-        <polygon points="512,270 730,512 512,754 294,512" fill="none" stroke="#00f0ff" stroke-width="10" stroke-dasharray="28 16" stroke-opacity="0.7"/>
-        
-        <!-- Solid Core Diamond -->
-        <polygon points="512,390 620,512 512,634 404,512" fill="url(#grad-diamond)"/>
-        <circle cx="512" cy="512" r="28" fill="#ffffff"/>
+      <!-- Outer Precision Diamond -->
+      <g filter="url(#soft-glow-diamond)">
+        <polygon points="512,188 836,512 512,836 188,512" fill="none" stroke="url(#grad-diamond)" stroke-width="36" stroke-linejoin="round"/>
+        <polygon points="512,282 742,512 512,742 282,512" fill="none" stroke="#ac9bff" stroke-width="8" stroke-opacity="0.34" stroke-linejoin="round"/>
+
+        <!-- Faceted Solid Core Diamond -->
+        <polygon points="512,356 668,512 512,512 356,512" fill="url(#core-diamond-top)"/>
+        <polygon points="356,512 512,512 668,512 512,668" fill="url(#core-diamond-bottom)"/>
+        <circle cx="512" cy="512" r="30" fill="#f6f4ff"/>
       </g>
-      
-      <circle cx="512" cy="180" r="16" fill="#00f0ff"/>
-      <circle cx="820" cy="512" r="16" fill="#00f0ff"/>
-      <circle cx="512" cy="844" r="16" fill="#00f0ff"/>
-      <circle cx="204" cy="512" r="16" fill="#00f0ff"/>
     
 </svg>

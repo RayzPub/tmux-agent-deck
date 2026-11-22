@@ -757,7 +757,7 @@ function updateCardMeta(username, sessionName, patch) {
  */
 function detectSessionLiveStatus(paneOutput) {
   const nonBlankLines = (paneOutput || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const lastFewLines = nonBlankLines.slice(-6);
+  const lastFewLines = nonBlankLines.slice(-8);
   const recentText = lastFewLines.join('\n');
 
   const waitingPatterns = [
@@ -770,6 +770,7 @@ function detectSessionLiveStatus(paneOutput) {
     /please\s+authorize/i,
     /authorize\s+.*?\?/i,
     /waiting\s+for\s+(approval|input|feedback)/i,
+    /do\s+you\s+want\s+to\s+(proceed|allow|run|continue)/i,
     /escalate_admin/i,
     /enter\s+to\s+continue/i,
     /password\s+for\s+.*?:/i
@@ -777,12 +778,14 @@ function detectSessionLiveStatus(paneOutput) {
   const isWaiting = waitingPatterns.some(p => p.test(recentText));
 
   const busyPatterns = [
-    /thinking\.\.\./i,
-    /working\.\.\./i,
-    /running\.\.\./i,
+    /esc\s+to\s+interrupt/i,
     /ctrl\+c\s+to\s+interrupt/i,
+    /\b(thinking|working|running|generating|analyzing|searching|reading|writing|editing|compacting|retrying|streaming)\b(\.{2,3}|…)/i,
+    /\bworking\s*\(\d+s/i,
     /[⣾⣽⣻⢿⡿⣟⣯⣷⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
-    /●\s+(bash|read|write|view|tool)/i
+    /[✻✽✶✢]\s+\S+.*(…|\.\.\.)/,
+    /●\s+(bash|read|write|view|edit|search|grep|glob|tool|run_command)/i,
+    /正在(深入思考|思考|生成|执行|压缩|重试|分析|读取|写入|搜索)/
   ];
   const isBusy = busyPatterns.some(p => p.test(recentText));
 
@@ -793,6 +796,101 @@ function detectSessionLiveStatus(paneOutput) {
     return { status: 'busy', statusLabel: '执行中', nonBlankLines };
   }
   return { status: 'idle', statusLabel: '待命', nonBlankLines };
+}
+
+/**
+ * Resolve true live execution state for a compute-device session by combining
+ * agent-reported live status (OAR / tmux capture-pane) and parsed chat history signals.
+ */
+function resolveRemoteSessionLiveState(session, chatData) {
+  const messages = (chatData && Array.isArray(chatData.messages)) ? chatData.messages : [];
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  const lastUserMsg = [...messages].reverse().find(m => m && m.role === 'user') || null;
+
+  const parseTs = (val) => {
+    if (!val) return 0;
+    const n = typeof val === 'number' ? val : new Date(val).getTime();
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const createdTs = parseTs(session.created) || Date.now();
+  const chatUpdatedTs = parseTs(chatData && chatData.lastUpdated);
+  const lastMsgTs = parseTs(lastMsg && lastMsg.timestamp);
+  const sessionActivityTs = parseTs(session.lastActiveAt);
+  const lastActiveAt = Math.max(createdTs, chatUpdatedTs, lastMsgTs, sessionActivityTs);
+
+  const now = Date.now();
+  const lastRunningTool = lastMsg && lastMsg.role !== 'user' && Array.isArray(lastMsg.tools)
+    ? lastMsg.tools.find(t => t && t.status === 'running')
+    : null;
+  const lastActivelyThinking = Boolean(
+    lastMsg &&
+    lastMsg.role !== 'user' &&
+    lastMsg.thinking &&
+    !lastMsg.content &&
+    (!lastMsg.tools || lastMsg.tools.length === 0) &&
+    (now - (lastMsgTs || chatUpdatedTs || 0)) < 120000
+  );
+  const recentPendingUserTurn = Boolean(
+    lastMsg &&
+    lastMsg.role === 'user' &&
+    (chatUpdatedTs || lastMsgTs) &&
+    (now - Math.max(chatUpdatedTs, lastMsgTs)) < 90000
+  );
+
+  let status = 'idle';
+  let statusLabel = '待命';
+
+  if (
+    (chatData && chatData.pendingAction) ||
+    session.hasPendingAction ||
+    session.liveStatus === 'waiting'
+  ) {
+    status = 'waiting';
+    statusLabel = '需确认';
+  } else if (
+    (chatData && chatData.isGenerating) ||
+    session.isGenerating ||
+    session.liveStatus === 'busy' ||
+    Boolean(lastRunningTool) ||
+    lastActivelyThinking ||
+    recentPendingUserTurn
+  ) {
+    status = 'busy';
+    statusLabel = '执行中';
+  }
+
+  const rawStatusText = String((chatData && chatData.statusText) || session.statusText || '').trim();
+  const cleanMsgText = lastMsg
+    ? String(lastMsg.content || lastMsg.text || '').replace(/\s+/g, ' ').trim().substring(0, 180)
+    : '';
+  const cleanUserPrompt = lastUserMsg
+    ? String(lastUserMsg.content || lastUserMsg.text || '').replace(/\s+/g, ' ').trim().substring(0, 140)
+    : '';
+
+  let activityText = cleanMsgText;
+  if (status === 'waiting' && chatData && chatData.pendingAction && chatData.pendingAction.hint) {
+    activityText = String(chatData.pendingAction.hint).trim();
+  } else if (status === 'busy' && rawStatusText && rawStatusText !== '就绪') {
+    activityText = rawStatusText;
+  } else if (!activityText && session.paneSnippet) {
+    activityText = String(session.paneSnippet).replace(/\s+/g, ' ').trim().substring(0, 140);
+  }
+
+  return {
+    status,
+    statusLabel,
+    lastActiveAt,
+    lastUserPrompt: cleanUserPrompt,
+    lastActivity: activityText
+      ? {
+          role: lastMsg ? lastMsg.role : 'terminal',
+          text: activityText,
+          userPrompt: cleanUserPrompt,
+          timestamp: lastMsg ? (lastMsg.timestamp || null) : null
+        }
+      : null
+  };
 }
 
 /**
@@ -855,7 +953,8 @@ async function getGlobalTaskBoard(username = null, options = {}) {
   if (deviceId && deviceId !== 'cloud' && Array.isArray(options.remoteSessions)) {
     const sessionMetaService = require('./sessionMetaService');
     const sessionMetaMap = sessionMetaService.getDeviceSessionMetaMap(deviceId);
-    // Remote edge device sessions
+    const remoteChatMap = options.remoteChatMap instanceof Map ? options.remoteChatMap : new Map();
+    // Compute-device sessions (host-admin / docker-sandbox / external)
     sessions = options.remoteSessions.map(s => {
       const name = s.name;
       const wsName = s.workspaceName || s.workspace || (s.path ? path.basename(s.path) : '远程工作区');
@@ -867,23 +966,26 @@ async function getGlobalTaskBoard(username = null, options = {}) {
           sessionMode: s.sessionMode || 'hybrid'
         })
         : '';
+      const chatData = remoteChatMap.get(name) || null;
+      const liveState = resolveRemoteSessionLiveState(s, chatData);
+      const promptTitle = liveState.lastUserPrompt ? summarizePromptAsTitle(liveState.lastUserPrompt) : '';
       return {
         name,
         fullName: name,
         attached: Boolean(s.attached),
         created: s.created ? new Date(s.created).toLocaleString() : '',
         createdTimestamp: s.created ? new Date(s.created).getTime() : Date.now(),
-        lastActiveAt: s.created ? new Date(s.created).getTime() : Date.now(),
+        lastActiveAt: liveState.lastActiveAt,
         workspaceName: wsName,
-        workspacePath: s.path || '',
+        workspacePath: s.path || s.workspacePath || '',
         agentType: s.agentType || 'terminal',
-        agentModel: s.agentModel || '',
+        agentModel: s.agentModel || s.modelName || '',
         sessionMode: s.sessionMode || 'hybrid',
-        status: s.attached ? 'busy' : 'idle',
-        statusLabel: s.attached ? '活跃中' : '待命',
-        taskTitle: customMeta.customTitle || metaDisplayTitle || name,
+        status: liveState.status,
+        statusLabel: liveState.statusLabel,
+        taskTitle: customMeta.customTitle || metaDisplayTitle || promptTitle || name,
         customTitle: customMeta.customTitle || '',
-        lastActivity: { role: 'terminal', text: '远程节点会话已连接', userPrompt: '', timestamp: null },
+        lastActivity: liveState.lastActivity,
         isRemote: true,
         deviceId
       };

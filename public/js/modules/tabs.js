@@ -229,7 +229,7 @@ export function activateTab(tabId) {
     }
 
     if (currentPathLabel) {
-      currentPathLabel.textContent = '// 任务看板总览 (Task Board)';
+      currentPathLabel.textContent = '// 任务看板';
     }
     renderProjectOverview();
   }

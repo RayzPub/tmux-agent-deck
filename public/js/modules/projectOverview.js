@@ -4,6 +4,8 @@ import { attachSession } from './terminal.js';
 import { toast } from './toast.js';
 
 let autoStatusInterval = null;
+let isFetchingBoard = false;
+let lastBgBadgePollAt = 0;
 let boardViewMode = localStorage.getItem('deck_taskboard_view_mode') || 'kanban'; // 'kanban' | 'grid'
 let selectedWorkspaceFilter = localStorage.getItem('deck_taskboard_ws_filter') || ''; // '' = all workspaces
 let searchQuery = '';
@@ -30,24 +32,19 @@ function closeSidebarOnMobile() {
 function getAgentInfo(agentType, agentModel) {
   const type = (agentType || '').toLowerCase();
   let brand = 'Terminal';
-  let icon = 'terminal';
   let badgeClass = 'terminal';
 
   if (type === 'agy' || type === 'antigravity') {
     brand = 'Antigravity';
-    icon = 'sparkles';
     badgeClass = 'agy';
   } else if (type === 'claude') {
-    brand = 'Claude Code';
-    icon = 'bot';
+    brand = 'Claude';
     badgeClass = 'claude';
   } else if (type === 'codex') {
-    brand = 'Codex CLI';
-    icon = 'cpu';
+    brand = 'Codex';
     badgeClass = 'codex';
   } else if (type === 'kimi') {
-    brand = 'Kimi Code';
-    icon = 'zap';
+    brand = 'Kimi';
     badgeClass = 'kimi';
   } else if (agentType && type !== 'default') {
     brand = agentType.toUpperCase();
@@ -63,10 +60,8 @@ function getAgentInfo(agentType, agentModel) {
   return {
     type,
     brand,
-    label: brand,
     model: agentModel || '',
     shortModel: shortModel || agentModel || '',
-    icon,
     badgeClass
   };
 }
@@ -78,11 +73,29 @@ function formatRelativeTime(ts) {
   const diffSec = Math.max(0, Math.floor((Date.now() - time) / 1000));
   if (diffSec < 60) return '刚刚';
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffMin < 60) return `${diffMin}m`;
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}小时前`;
+  if (diffHour < 24) return `${diffHour}h`;
   const diffDay = Math.floor(diffHour / 24);
-  return `${diffDay}天前`;
+  return `${diffDay}d`;
+}
+
+function getCleanSnippet(sess) {
+  const raw = (sess.lastActivity && sess.lastActivity.text)
+    ? String(sess.lastActivity.text).trim()
+    : '';
+  if (!raw) return '';
+  if (raw === '远程节点会话已连接' || raw === '会话已就绪，等待下达指令...') return '';
+  const title = (sess.taskTitle || '').trim();
+  if (title && raw === title) return '';
+  return raw;
+}
+
+function getStatusText(status) {
+  if (status === 'waiting') return '需确认';
+  if (status === 'busy') return '进行中';
+  if (status === 'todo') return '待办';
+  return '待命';
 }
 
 /**
@@ -112,19 +125,21 @@ export function openProjectTab() {
 }
 
 /**
- * Fetch and render the Session-as-Task Kanban Board
+ * Fetch and render the streamlined Task Board
  */
 export async function renderProjectOverview(options = {}) {
   const container = document.getElementById('projectPanelContainer');
   if (!container) return;
 
   const { silent = false } = options;
+  if (silent && isFetchingBoard) return;
+  isFetchingBoard = true;
 
   if (!silent && !container.querySelector('.tb-root')) {
     container.innerHTML = `
       <div class="loading-placeholder">
         <div class="cyber-spinner"></div>
-        <span>正在汇总全部会话任务与状态...</span>
+        <span>加载中...</span>
       </div>
     `;
   }
@@ -142,7 +157,6 @@ export async function renderProjectOverview(options = {}) {
     const data = await res.json();
     lastBoardData = data;
 
-    // Reset workspace filter if the selected workspace no longer exists in list
     if (selectedWorkspaceFilter) {
       const wsExists = (data.workspaces || []).some(w => w.name === selectedWorkspaceFilter);
       if (!wsExists) {
@@ -159,18 +173,21 @@ export async function renderProjectOverview(options = {}) {
   } catch (err) {
     if (silent) return;
     container.innerHTML = `
-      <div class="project-empty-lanes">
-        <i data-lucide="alert-triangle" style="width: 34px; height: 34px; color: var(--neon-pink, #ff007f);"></i>
-        <span style="font-weight: 600;">无法加载任务看板</span>
-        <span style="font-size: 12px; color: var(--text-muted);">${escapeHtml(err.message)}</span>
-        <button id="tbRetryBtn" class="tb-btn" style="margin-top: 8px;">
-          <i data-lucide="refresh-cw" style="width: 13px; height: 13px;"></i> 重试
+      <div class="tb-empty-state">
+        <i data-lucide="alert-triangle" style="width: 28px; height: 28px; color: var(--neon-pink, #ff007f);"></i>
+        <span class="tb-empty-title">加载失败</span>
+        <span class="tb-empty-sub">${escapeHtml(err.message)}</span>
+        <button id="tbRetryBtn" class="tb-btn" style="margin-top: 6px;">
+          <i data-lucide="refresh-cw" style="width: 13px; height: 13px;"></i>
+          <span>重试</span>
         </button>
       </div>
     `;
     const retryBtn = container.querySelector('#tbRetryBtn');
     if (retryBtn) retryBtn.addEventListener('click', () => renderProjectOverview());
     if (window.lucide) window.lucide.createIcons();
+  } finally {
+    isFetchingBoard = false;
   }
 }
 
@@ -205,124 +222,124 @@ function filterItems(data) {
   return { sessions, todos };
 }
 
-function renderSessionCard(sess) {
+/**
+ * Render a clean, noise-free Session Task Card
+ * Context-aware: never repeats status in Kanban columns, never repeats workspace in By-Project groups.
+ */
+function renderSessionCard(sess, ctx = {}) {
+  const { showStatus = false, showWorkspace = false } = ctx;
   const agent = getAgentInfo(sess.agentType, sess.agentModel);
   const status = sess.status || 'idle';
-  const statusLabel = sess.statusLabel || (status === 'waiting' ? '需确认' : status === 'busy' ? '执行中' : '待命');
-  const snippet = (sess.lastActivity && sess.lastActivity.text)
-    ? sess.lastActivity.text
-    : '会话已就绪，等待下达指令...';
+  const isWaiting = status === 'waiting';
+  const snippet = getCleanSnippet(sess);
   const relTime = formatRelativeTime(sess.lastActiveAt || sess.createdTimestamp);
-  const showSessionId = sess.taskTitle && sess.taskTitle !== sess.name;
   const isRenaming = activeRenameSession === sess.name;
   const isReplying = activeQuickReplySession === sess.name;
 
-  return `
-    <div class="tb-card status-${status}" data-session-card="${escapeHtml(sess.name)}">
-      <div class="tb-card-top">
-        <div class="tb-card-meta-left">
-          <span class="tb-status-tag ${status}">${escapeHtml(statusLabel)}</span>
-          <span class="tb-ws-badge" title="工作区: ${escapeHtml(sess.workspaceName)}">
-            <i data-lucide="folder" style="width: 11px; height: 11px; flex-shrink: 0;"></i>
-            <span>${escapeHtml(sess.workspaceName)}</span>
-          </span>
-          ${sess.isRemote ? `<span class="tb-ws-badge" title="远程节点">远程</span>` : ''}
-        </div>
-        <button class="tb-card-edit-btn" data-action="rename-card" data-session="${escapeHtml(sess.name)}" title="重命名任务卡片标题">
-          <i data-lucide="pencil" style="width: 12px; height: 12px;"></i>
-        </button>
-      </div>
+  const agentTooltip = agent.shortModel ? `${agent.brand} · ${agent.shortModel}` : agent.brand;
+  const cardTooltip = sess.taskTitle !== sess.name ? `${sess.taskTitle} (#${sess.name})` : sess.taskTitle;
 
-      <div class="tb-card-body">
-        ${isRenaming ? `
-          <div class="tb-rename-row" data-no-open="1">
-            <input type="text" class="tb-rename-input" data-rename-input="${escapeHtml(sess.name)}" value="${escapeHtml(sess.customTitle || sess.taskTitle || '')}" placeholder="输入任务标题，留空恢复默认">
-            <button class="tb-mini-btn primary" data-action="save-rename" data-session="${escapeHtml(sess.name)}">保存</button>
-            <button class="tb-mini-btn" data-action="cancel-rename">取消</button>
+  return `
+    <div class="tb-card ${isWaiting ? 'is-waiting' : ''} ${isReplying || isRenaming ? 'is-editing' : ''}" data-session-card="${escapeHtml(sess.name)}">
+      ${isRenaming ? `
+        <div class="tb-rename-row" data-no-open="1">
+          <input type="text" class="tb-rename-input" data-rename-input="${escapeHtml(sess.name)}" value="${escapeHtml(sess.customTitle || sess.taskTitle || '')}" placeholder="任务标题">
+          <button class="tb-mini-btn primary" data-action="save-rename" data-session="${escapeHtml(sess.name)}">保存</button>
+          <button class="tb-mini-btn" data-action="cancel-rename">取消</button>
+        </div>
+      ` : `
+        <div class="tb-card-head">
+          <div class="tb-card-title-wrap">
+            ${showStatus ? `<span class="tb-inline-dot ${status}" title="${escapeHtml(getStatusText(status))}"></span>` : ''}
+            <span class="tb-card-title" title="${escapeHtml(cardTooltip)}">${escapeHtml(sess.taskTitle)}</span>
           </div>
-        ` : `
-          <div class="tb-card-title" title="${escapeHtml(sess.taskTitle)}">${escapeHtml(sess.taskTitle)}</div>
-          ${showSessionId ? `<div class="tb-card-session-id">#${escapeHtml(sess.name)}</div>` : ''}
-        `}
+          ${isWaiting && !showStatus ? `<span class="tb-urgent-badge">需确认</span>` : ''}
+          <div class="tb-hover-actions" data-no-open="1">
+            <button class="tb-icon-btn ${isReplying ? 'active' : ''}" data-action="toggle-reply" data-session="${escapeHtml(sess.name)}" title="快捷续发指令">
+              <i data-lucide="message-square" style="width: 13px; height: 13px;"></i>
+            </button>
+            <button class="tb-icon-btn" data-action="rename-card" data-session="${escapeHtml(sess.name)}" title="重命名">
+              <i data-lucide="pencil" style="width: 12px; height: 12px;"></i>
+            </button>
+          </div>
+        </div>
+      `}
+
+      ${snippet && !isRenaming ? `
         <div class="tb-card-snippet" title="${escapeHtml(snippet)}">${escapeHtml(snippet)}</div>
-      </div>
+      ` : ''}
 
       ${isReplying ? `
         <div class="tb-quick-reply" data-no-open="1">
-          <input type="text" class="tb-quick-reply-input" data-reply-input="${escapeHtml(sess.name)}" placeholder="直接发送下一步指令或回复 (Enter 发送)...">
-          <button class="tb-mini-btn primary" data-action="send-reply" data-session="${escapeHtml(sess.name)}">
+          <input type="text" class="tb-quick-reply-input" data-reply-input="${escapeHtml(sess.name)}" placeholder="发送指令 (Enter)...">
+          <button class="tb-mini-btn primary" data-action="send-reply" data-session="${escapeHtml(sess.name)}" title="发送">
             <i data-lucide="send" style="width: 11px; height: 11px;"></i>
           </button>
         </div>
       ` : ''}
 
-      <div class="tb-card-footer">
-        <div class="tb-card-agent">
-          <span class="tb-agent-pill ${agent.badgeClass}">
-            <i data-lucide="${agent.icon}" style="width: 11px; height: 11px;"></i>
+      <div class="tb-card-meta">
+        <div class="tb-meta-left">
+          <span class="tb-agent-label ${agent.badgeClass}" title="${escapeHtml(agentTooltip)}">
+            <span class="tb-agent-dot"></span>
             <span>${escapeHtml(agent.brand)}</span>
           </span>
-          ${agent.shortModel ? `<span class="tb-model-pill" title="${escapeHtml(agent.model)}">${escapeHtml(agent.shortModel)}</span>` : ''}
-          ${relTime ? `<span class="tb-time-label">${escapeHtml(relTime)}</span>` : ''}
-        </div>
-        <div class="tb-card-actions" data-no-open="1">
-          ${!sess.isRemote ? `
-            <button class="tb-mini-btn" data-action="toggle-reply" data-session="${escapeHtml(sess.name)}" title="在卡片内快捷续发指令">
-              <i data-lucide="message-square-plus" style="width: 11px; height: 11px;"></i>
-              <span>续发</span>
-            </button>
+          ${showWorkspace && sess.workspaceName ? `
+            <span class="tb-meta-sep">·</span>
+            <span class="tb-meta-ws" title="${escapeHtml(sess.workspaceName)}">${escapeHtml(sess.workspaceName)}</span>
           ` : ''}
-          <button class="tb-mini-btn primary" data-action="open-session" data-session="${escapeHtml(sess.name)}" title="进入该会话终端 / Chat">
-            <span>进入</span>
-            <i data-lucide="arrow-up-right" style="width: 11px; height: 11px;"></i>
-          </button>
+          ${showStatus ? `
+            <span class="tb-meta-sep">·</span>
+            <span class="tb-meta-status ${status}">${escapeHtml(getStatusText(status))}</span>
+          ` : ''}
         </div>
+        ${relTime ? `<span class="tb-time-label">${escapeHtml(relTime)}</span>` : ''}
       </div>
     </div>
   `;
 }
 
-function renderTodoCard(todo) {
+/**
+ * Render a clean Todo Card
+ */
+function renderTodoCard(todo, ctx = {}) {
+  const { showStatus = false, showWorkspace = false } = ctx;
   const agent = getAgentInfo(todo.agentType || 'agy', '');
   const relTime = formatRelativeTime(todo.updatedAt || todo.createdAt);
 
   return `
-    <div class="tb-card status-todo" data-todo-card="${escapeHtml(todo.id)}">
-      <div class="tb-card-top">
-        <div class="tb-card-meta-left">
-          <span class="tb-status-tag todo">待办</span>
-          ${todo.priority === 'high' ? `<span class="tb-priority-tag high">高优</span>` : ''}
-          ${todo.workspaceName ? `
-            <span class="tb-ws-badge" title="目标工作区: ${escapeHtml(todo.workspaceName)}">
-              <i data-lucide="folder" style="width: 11px; height: 11px; flex-shrink: 0;"></i>
-              <span>${escapeHtml(todo.workspaceName)}</span>
-            </span>
-          ` : ''}
+    <div class="tb-card tb-card-todo" data-todo-card="${escapeHtml(todo.id)}">
+      <div class="tb-card-head">
+        <div class="tb-card-title-wrap">
+          ${showStatus ? `<span class="tb-inline-dot todo" title="待办"></span>` : ''}
+          <span class="tb-card-title">${escapeHtml(todo.title)}</span>
+        </div>
+        ${todo.priority === 'high' ? `<span class="tb-priority-tag high">高优</span>` : ''}
+        <div class="tb-hover-actions" data-no-open="1">
+          <button class="tb-icon-btn danger" data-action="delete-todo" data-todo-id="${escapeHtml(todo.id)}" title="删除">
+            <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i>
+          </button>
         </div>
       </div>
 
-      <div class="tb-card-body">
-        <div class="tb-card-title">${escapeHtml(todo.title)}</div>
-        ${todo.description ? `<div class="tb-card-snippet">${escapeHtml(todo.description)}</div>` : ''}
-      </div>
+      ${todo.description ? `<div class="tb-card-snippet">${escapeHtml(todo.description)}</div>` : ''}
 
-      <div class="tb-card-footer">
-        <div class="tb-card-agent">
-          <span class="tb-agent-pill ${agent.badgeClass}">
-            <i data-lucide="${agent.icon}" style="width: 11px; height: 11px;"></i>
+      <div class="tb-card-meta">
+        <div class="tb-meta-left">
+          <span class="tb-agent-label ${agent.badgeClass}">
+            <span class="tb-agent-dot"></span>
             <span>${escapeHtml(agent.brand)}</span>
           </span>
-          ${relTime ? `<span class="tb-time-label">${escapeHtml(relTime)}</span>` : ''}
+          ${showWorkspace && todo.workspaceName ? `
+            <span class="tb-meta-sep">·</span>
+            <span class="tb-meta-ws" title="${escapeHtml(todo.workspaceName)}">${escapeHtml(todo.workspaceName)}</span>
+          ` : ''}
+          ${relTime ? `<span class="tb-meta-sep">·</span><span class="tb-time-label">${escapeHtml(relTime)}</span>` : ''}
         </div>
-        <div class="tb-card-actions" data-no-open="1">
-          <button class="tb-mini-btn primary" data-action="launch-todo" data-todo-id="${escapeHtml(todo.id)}" title="基于此待办立即拉起智能体会话并执行">
-            <i data-lucide="play" style="width: 11px; height: 11px;"></i>
-            <span>启动</span>
-          </button>
-          <button class="tb-mini-btn danger" data-action="delete-todo" data-todo-id="${escapeHtml(todo.id)}" title="删除待办卡片">
-            <i data-lucide="trash-2" style="width: 11px; height: 11px;"></i>
-          </button>
-        </div>
+        <button class="tb-launch-btn" data-no-open="1" data-action="launch-todo" data-todo-id="${escapeHtml(todo.id)}" title="启动会话">
+          <i data-lucide="play" style="width: 10px; height: 10px;"></i>
+          <span>启动</span>
+        </button>
       </div>
     </div>
   `;
@@ -331,91 +348,96 @@ function renderTodoCard(todo) {
 function buildBoardDOM(container, data) {
   const { sessions, todos } = filterItems(data);
   const workspaces = data.workspaces || [];
+  const hasMultipleWorkspaces = workspaces.length > 1;
+  const showCardWorkspace = hasMultipleWorkspaces && !selectedWorkspaceFilter;
 
   const waitingSessions = sessions.filter(s => s.status === 'waiting');
   const busySessions = sessions.filter(s => s.status === 'busy');
+  const activeSessions = [...waitingSessions, ...busySessions];
   const idleSessions = sessions.filter(s => s.status === 'idle');
-  const totalAllSessions = (data.sessions || []).length;
+  const totalAllItems = (data.sessions || []).length + (data.todos || []).length;
 
   let bodyHtml = '';
 
   if (boardViewMode === 'kanban') {
-    bodyHtml = `
-      <div class="tb-kanban-grid">
-        <!-- Column 1: Needs Attention / Waiting -->
-        <div class="tb-column col-waiting ${waitingSessions.length > 0 ? 'has-items' : ''}">
+    const columns = [];
+
+    if (activeSessions.length > 0) {
+      columns.push(`
+        <div class="tb-column col-active ${waitingSessions.length > 0 ? 'has-waiting' : ''}">
           <div class="tb-col-header">
             <div class="tb-col-title">
-              <span class="tb-col-dot waiting"></span>
-              <span>需确认 / 待介入</span>
-              <span class="tb-col-count">${waitingSessions.length}</span>
+              <span class="tb-col-dot ${waitingSessions.length > 0 ? 'waiting' : 'busy'}"></span>
+              <span>进行中</span>
+              <span class="tb-col-count">${activeSessions.length}</span>
+              ${waitingSessions.length > 0 ? `<span class="tb-col-alert">${waitingSessions.length} 需确认</span>` : ''}
             </div>
           </div>
           <div class="tb-col-cards">
-            ${waitingSessions.length > 0
-              ? waitingSessions.map(renderSessionCard).join('')
-              : `<div class="tb-col-empty"><i data-lucide="check-circle-2" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>暂无等待审批的任务</span></div>`
-            }
+            ${activeSessions.map(s => renderSessionCard(s, { showStatus: false, showWorkspace: showCardWorkspace })).join('')}
           </div>
         </div>
+      `);
+    }
 
-        <!-- Column 2: Running / Busy -->
-        <div class="tb-column col-busy">
-          <div class="tb-col-header">
-            <div class="tb-col-title">
-              <span class="tb-col-dot busy"></span>
-              <span>执行中</span>
-              <span class="tb-col-count">${busySessions.length}</span>
-            </div>
-          </div>
-          <div class="tb-col-cards">
-            ${busySessions.length > 0
-              ? busySessions.map(renderSessionCard).join('')
-              : `<div class="tb-col-empty"><i data-lucide="cpu" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>当前没有运行中的 Agent</span></div>`
-            }
-          </div>
-        </div>
-
-        <!-- Column 3: Idle / Ready -->
+    if (idleSessions.length > 0) {
+      columns.push(`
         <div class="tb-column col-idle">
           <div class="tb-col-header">
             <div class="tb-col-title">
               <span class="tb-col-dot idle"></span>
-              <span>待命 / 待验收</span>
+              <span>待命</span>
               <span class="tb-col-count">${idleSessions.length}</span>
             </div>
           </div>
           <div class="tb-col-cards">
-            ${idleSessions.length > 0
-              ? idleSessions.map(renderSessionCard).join('')
-              : `<div class="tb-col-empty"><i data-lucide="coffee" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>暂无空闲待命会话</span></div>`
-            }
+            ${idleSessions.map(s => renderSessionCard(s, { showStatus: false, showWorkspace: showCardWorkspace })).join('')}
           </div>
         </div>
+      `);
+    }
 
-        <!-- Column 4: Todo Backlog -->
+    if (todos.length > 0) {
+      columns.push(`
         <div class="tb-column col-todo">
           <div class="tb-col-header">
             <div class="tb-col-title">
               <span class="tb-col-dot todo"></span>
-              <span>待办任务</span>
+              <span>待办</span>
               <span class="tb-col-count">${todos.length}</span>
             </div>
-            <button class="tb-col-add-btn" data-action="open-new-task" title="新建待办任务卡片">
+            <button class="tb-col-add-btn" data-action="open-new-task" title="新建待办">
               <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
             </button>
           </div>
           <div class="tb-col-cards">
-            ${todos.length > 0
-              ? todos.map(renderTodoCard).join('')
-              : `<div class="tb-col-empty"><i data-lucide="inbox" style="width: 18px; height: 18px; opacity: 0.55;"></i><span>随手记下待办，随时一键拉起会话</span></div>`
-            }
+            ${todos.map(t => renderTodoCard(t, { showStatus: false, showWorkspace: showCardWorkspace })).join('')}
           </div>
         </div>
-      </div>
-    `;
+      `);
+    }
+
+    if (columns.length === 0) {
+      bodyHtml = `
+        <div class="tb-empty-state">
+          <span class="tb-empty-title">${searchQuery.trim() ? '未找到匹配任务' : '暂无任务'}</span>
+          ${!searchQuery.trim() ? `
+            <button class="tb-btn tb-btn-primary" data-action="open-new-task" style="margin-top: 4px;">
+              <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+              <span>新建任务</span>
+            </button>
+          ` : ''}
+        </div>
+      `;
+    } else {
+      bodyHtml = `
+        <div class="tb-kanban-grid" data-cols="${columns.length}">
+          ${columns.join('')}
+        </div>
+      `;
+    }
   } else {
-    // Grid mode: Grouped by Workspace
+    // By-Project Grid View (cards show compact status, hide duplicate workspace name)
     const groupMap = new Map();
     for (const s of sessions) {
       const key = s.workspaceName || '默认工作区';
@@ -423,43 +445,37 @@ function buildBoardDOM(container, data) {
       groupMap.get(key).sessions.push(s);
     }
     for (const t of todos) {
-      const key = t.workspaceName || '未分配工作区';
+      const key = t.workspaceName || '未分组';
       if (!groupMap.has(key)) groupMap.set(key, { sessions: [], todos: [] });
       groupMap.get(key).todos.push(t);
     }
 
     if (groupMap.size === 0) {
       bodyHtml = `
-        <div class="project-empty-lanes">
-          <i data-lucide="kanban" style="width: 34px; height: 34px; opacity: 0.65;"></i>
-          <span>当前筛选条件下暂无任务卡片</span>
+        <div class="tb-empty-state">
+          <span class="tb-empty-title">暂无任务</span>
           <button class="tb-btn tb-btn-primary" data-action="open-new-task" style="margin-top: 6px;">
             <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
-            <span>新建任务 / 启动会话</span>
+            <span>新建任务</span>
           </button>
         </div>
       `;
     } else {
       bodyHtml = `<div class="tb-ws-groups">`;
       for (const [wsName, group] of groupMap.entries()) {
-        const wsMeta = workspaces.find(w => w.name === wsName);
-        const branchBadge = (wsMeta && wsMeta.git && wsMeta.git.isRepo)
-          ? `<span class="tb-ws-badge"><i data-lucide="git-branch" style="width: 11px; height: 11px;"></i> ${escapeHtml(wsMeta.git.branch)}${wsMeta.git.changedFilesCount > 0 ? ` · ${wsMeta.git.changedFilesCount}改` : ''}</span>`
-          : '';
         const count = group.sessions.length + group.todos.length;
         bodyHtml += `
           <div class="tb-ws-group">
             <div class="tb-ws-group-header">
               <div class="tb-ws-group-title">
-                <i data-lucide="folder-git-2" style="width: 15px; height: 15px;"></i>
+                <i data-lucide="folder" style="width: 14px; height: 14px; opacity: 0.7;"></i>
                 <span>${escapeHtml(wsName)}</span>
-                ${branchBadge}
                 <span class="tb-col-count">${count}</span>
               </div>
             </div>
             <div class="tb-ws-group-grid">
-              ${group.sessions.map(renderSessionCard).join('')}
-              ${group.todos.map(renderTodoCard).join('')}
+              ${group.sessions.map(s => renderSessionCard(s, { showStatus: true, showWorkspace: false })).join('')}
+              ${group.todos.map(t => renderTodoCard(t, { showStatus: true, showWorkspace: false })).join('')}
             </div>
           </div>
         `;
@@ -470,89 +486,63 @@ function buildBoardDOM(container, data) {
 
   container.innerHTML = `
     <div class="tb-root">
-      <!-- 1. Top Command Header -->
-      <div class="tb-header">
-        <div class="tb-header-left">
-          <div class="tb-title-group">
-            <span class="tb-title-icon">
-              <i data-lucide="kanban" style="width: 16px; height: 16px;"></i>
-            </span>
-            <div class="tb-title-text">
-              <span class="tb-title-main">任务看板</span>
-              <span class="tb-title-sub">以会话为任务卡片，一屏掌控全部 Agent 进展</span>
-            </div>
-          </div>
-
-          <div class="tb-kpi-strip">
-            <span class="tb-kpi-pill ${waitingSessions.length > 0 ? 'is-waiting' : ''}">
-              <span class="tb-dot" style="background: #f59e0b;"></span>
-              <span>需确认 ${waitingSessions.length}</span>
-            </span>
-            <span class="tb-kpi-pill ${busySessions.length > 0 ? 'is-busy' : ''}">
-              <span class="tb-dot" style="background: var(--neon-cyan, #00f0ff);"></span>
-              <span>执行中 ${busySessions.length}</span>
-            </span>
-            <span class="tb-kpi-pill ${idleSessions.length > 0 ? 'is-idle' : ''}">
-              <span class="tb-dot" style="background: #10b981;"></span>
-              <span>待命 ${idleSessions.length}</span>
-            </span>
-            <span class="tb-kpi-pill">
-              <span class="tb-dot" style="background: #94a3b8;"></span>
-              <span>待办 ${todos.length}</span>
-            </span>
-          </div>
+      <!-- 1. Minimal Borderless Top Bar -->
+      <div class="tb-topbar">
+        <div class="tb-topbar-left">
+          <h2 class="tb-heading">任务看板</h2>
         </div>
 
-        <div class="tb-header-right">
+        <div class="tb-topbar-right">
+          <div class="tb-search-wrap">
+            <i data-lucide="search" class="tb-search-icon"></i>
+            <input type="text" id="tbSearchInput" class="tb-search-input" placeholder="搜索..." value="${escapeHtml(searchQuery)}">
+            ${searchQuery ? `
+              <button class="tb-search-clear" id="tbSearchClearBtn" title="清除">
+                <i data-lucide="x" style="width: 12px; height: 12px;"></i>
+              </button>
+            ` : ''}
+          </div>
+
           <div class="tb-segmented" role="tablist" aria-label="视图切换">
-            <button class="tb-seg-btn ${boardViewMode === 'kanban' ? 'active' : ''}" data-action="switch-view" data-view="kanban" title="按状态分列看板视图">
+            <button class="tb-seg-btn ${boardViewMode === 'kanban' ? 'active' : ''}" data-action="switch-view" data-view="kanban">
               <i data-lucide="columns-3" style="width: 13px; height: 13px;"></i>
               <span>看板</span>
             </button>
-            <button class="tb-seg-btn ${boardViewMode === 'grid' ? 'active' : ''}" data-action="switch-view" data-view="grid" title="按工作区分组卡片视图">
+            <button class="tb-seg-btn ${boardViewMode === 'grid' ? 'active' : ''}" data-action="switch-view" data-view="grid">
               <i data-lucide="layout-grid" style="width: 13px; height: 13px;"></i>
               <span>按项目</span>
             </button>
           </div>
 
-          <button class="tb-btn tb-btn-primary" data-action="open-new-task" title="新建待办卡片或直接启动新会话任务">
+          <button class="tb-btn tb-btn-primary" data-action="open-new-task" title="新建任务">
             <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
-            <span class="tb-btn-label-hide-sm">新建任务</span>
+            <span class="tb-btn-label-hide-sm">新建</span>
           </button>
 
-          <button class="tb-btn tb-btn-icon" id="tbRefreshBtn" title="立即刷新看板状态">
+          <button class="tb-btn tb-btn-ghost tb-btn-icon" id="tbRefreshBtn" title="刷新">
             <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
           </button>
         </div>
       </div>
 
-      <!-- 2. Workspace Filter Pills & Search -->
-      <div class="tb-filter-bar">
+      <!-- 2. Workspace Filter Pills (only shown when > 1 workspace exists) -->
+      ${hasMultipleWorkspaces ? `
         <div class="tb-ws-pills">
           <button class="tb-ws-pill ${selectedWorkspaceFilter === '' ? 'active' : ''}" data-action="filter-ws" data-ws="">
-            <span>全部工作区</span>
-            <span class="tb-ws-count">${totalAllSessions}</span>
+            <span>全部</span>
+            <span class="tb-ws-count">${totalAllItems}</span>
           </button>
-          ${workspaces.map(ws => `
-            <button class="tb-ws-pill ${selectedWorkspaceFilter === ws.name ? 'active' : ''}" data-action="filter-ws" data-ws="${escapeHtml(ws.name)}" title="${escapeHtml(ws.path || ws.name)}">
-              <span>${escapeHtml(ws.name)}</span>
-              ${ws.git && ws.git.isRepo ? `<span class="tb-ws-branch">${escapeHtml(ws.git.branch)}</span>` : ''}
-              ${ws.git && ws.git.changedFilesCount > 0 ? `<span class="tb-ws-dirty-dot" title="${ws.git.changedFilesCount} 个未提交修改"></span>` : ''}
-              <span class="tb-ws-count">${ws.sessionCount}</span>
-            </button>
-          `).join('')}
+          ${workspaces.map(ws => {
+            const wsTotal = (ws.sessionCount || 0) + (ws.todoCount || 0);
+            return `
+              <button class="tb-ws-pill ${selectedWorkspaceFilter === ws.name ? 'active' : ''}" data-action="filter-ws" data-ws="${escapeHtml(ws.name)}" title="${escapeHtml(ws.path || ws.name)}">
+                <span>${escapeHtml(ws.name)}</span>
+                ${wsTotal > 0 ? `<span class="tb-ws-count">${wsTotal}</span>` : ''}
+              </button>
+            `;
+          }).join('')}
         </div>
-
-        <div class="tb-search-wrap">
-          <i data-lucide="search" class="tb-search-icon"></i>
-          <input type="text" id="tbSearchInput" class="tb-search-input" placeholder="搜索任务 / 会话 / 模型..." value="${escapeHtml(searchQuery)}">
-          ${searchQuery ? `
-            <button class="tb-search-clear" id="tbSearchClearBtn" title="清除搜索">
-              <i data-lucide="x" style="width: 12px; height: 12px;"></i>
-            </button>
-          ` : ''}
-        </div>
-      </div>
+      ` : ''}
 
       <!-- 3. Main Board Area -->
       ${bodyHtml}
@@ -581,7 +571,6 @@ function buildBoardDOM(container, data) {
 }
 
 function bindBoardEvents(container, data) {
-  // Refresh
   const refreshBtn = container.querySelector('#tbRefreshBtn');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => renderProjectOverview());
@@ -651,25 +640,13 @@ function bindBoardEvents(container, data) {
     });
   });
 
-  // Click session card body -> open session
+  // Click session card -> open session directly
   container.querySelectorAll('.tb-card[data-session-card]').forEach(card => {
     card.addEventListener('click', (e) => {
       if (e.target.closest('[data-no-open]') || e.target.closest('button') || e.target.closest('input')) {
         return;
       }
       const sessionName = card.getAttribute('data-session-card');
-      if (sessionName) {
-        attachSession(sessionName);
-        closeSidebarOnMobile();
-      }
-    });
-  });
-
-  // Open session button
-  container.querySelectorAll('[data-action="open-session"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const sessionName = btn.getAttribute('data-session');
       if (sessionName) {
         attachSession(sessionName);
         closeSidebarOnMobile();
@@ -749,10 +726,16 @@ function bindBoardEvents(container, data) {
     if (!trimmed) return;
     if (btnEl) btnEl.disabled = true;
     try {
+      const targetSess = (data.sessions || []).find(s => s.name === sessionName);
       const res = await fetch('/api/task-board/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionName, promptText: trimmed })
+        body: JSON.stringify({
+          sessionName,
+          promptText: trimmed,
+          sessionMode: targetSess ? targetSess.sessionMode : undefined,
+          deviceId: state.currentDeviceId || undefined
+        })
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -824,7 +807,7 @@ function bindBoardEvents(container, data) {
           todoIdToDelete: todo.id
         });
       } catch (err) {
-        toast.error('启动任务会话失败: ' + err.message);
+        toast.error('启动失败: ' + err.message);
         btn.disabled = false;
       }
     });
@@ -868,7 +851,6 @@ async function launchTaskSession({ title, description, workspaceName, workspaceP
   const created = await res.json().catch(() => ({}));
   const createdName = created.name || slug;
 
-  // Persist readable task title on the newly created session card
   if (title) {
     await fetch('/api/task-board/card-meta', {
       method: 'POST',
@@ -877,20 +859,16 @@ async function launchTaskSession({ title, description, workspaceName, workspaceP
     }).catch(() => {});
   }
 
-  // Delete originating todo card if launched from Todo column
   if (todoIdToDelete) {
     await fetch(`/api/task-board/todos/${encodeURIComponent(todoIdToDelete)}`, { method: 'DELETE' }).catch(() => {});
   }
 
-  // Refresh sidebar session list
   if (window.loadSessions) {
     await window.loadSessions();
   }
 
-  // Attach to the new session immediately
   attachSession(createdName);
 
-  // If user provided a task prompt/description, dispatch it after the CLI boots briefly
   const promptText = description ? `${title}\n${description}` : title;
   if (promptText && (!state.currentDeviceId || state.currentDeviceId === 'cloud')) {
     setTimeout(() => {
@@ -904,7 +882,7 @@ async function launchTaskSession({ title, description, workspaceName, workspaceP
 }
 
 /**
- * Open sleek modal to create a Todo card or directly launch a new Task Session
+ * Open minimal modal to create a Todo or directly launch a Task Session
  */
 function openNewTaskModal(data) {
   const existing = document.getElementById('tbNewTaskModalOverlay');
@@ -920,30 +898,25 @@ function openNewTaskModal(data) {
   overlay.id = 'tbNewTaskModalOverlay';
   overlay.className = 'tb-modal-overlay';
   overlay.innerHTML = `
-    <div class="tb-modal-card" role="dialog" aria-modal="true" aria-label="新建任务卡片">
+    <div class="tb-modal-card" role="dialog" aria-modal="true" aria-label="新建任务">
       <div class="tb-modal-header">
-        <div class="tb-modal-title">
-          <i data-lucide="plus-circle" style="width: 17px; height: 17px;"></i>
-          <span>新建任务卡片</span>
-        </div>
+        <span class="tb-modal-title">新建任务</span>
         <button class="tb-modal-close" id="tbModalCloseBtn" title="关闭">
           <i data-lucide="x" style="width: 16px; height: 16px;"></i>
         </button>
       </div>
 
       <div class="tb-form-group">
-        <label class="tb-form-label" for="tbNewTaskTitle">任务标题 *</label>
-        <input type="text" id="tbNewTaskTitle" class="tb-input" placeholder="例如：优化登录页浅色主题对比度">
+        <input type="text" id="tbNewTaskTitle" class="tb-input tb-input-title" placeholder="任务标题">
       </div>
 
       <div class="tb-form-group">
-        <label class="tb-form-label" for="tbNewTaskDesc">任务说明 / 初始指令（可选）</label>
-        <textarea id="tbNewTaskDesc" class="tb-textarea" placeholder="补充具体要求；选择「直接启动会话」时将作为首条指令发送给 Agent"></textarea>
+        <textarea id="tbNewTaskDesc" class="tb-textarea" placeholder="补充说明或首条指令（可选）"></textarea>
       </div>
 
       <div class="tb-form-row">
         <div class="tb-form-group">
-          <label class="tb-form-label" for="tbNewTaskWs">所属工作区</label>
+          <label class="tb-form-label" for="tbNewTaskWs">工作区</label>
           <select id="tbNewTaskWs" class="tb-select">
             ${workspaces.map(ws => `
               <option value="${escapeHtml(ws.name)}" data-path="${escapeHtml(ws.path || '')}" ${ws.name === defaultWsName ? 'selected' : ''}>
@@ -954,35 +927,23 @@ function openNewTaskModal(data) {
         </div>
 
         <div class="tb-form-group">
-          <label class="tb-form-label" for="tbNewTaskAgent">执行智能体</label>
+          <label class="tb-form-label" for="tbNewTaskAgent">智能体</label>
           <select id="tbNewTaskAgent" class="tb-select">
-            <option value="agy">Antigravity (AGY)</option>
+            <option value="agy">Antigravity</option>
             <option value="claude">Claude Code</option>
             <option value="codex">Codex CLI</option>
             <option value="kimi">Kimi Code</option>
-            <option value="default">纯终端 (Terminal)</option>
+            <option value="default">Terminal</option>
           </select>
         </div>
       </div>
 
-      <div class="tb-form-group">
-        <label class="tb-form-label" for="tbNewTaskPriority">优先级</label>
-        <select id="tbNewTaskPriority" class="tb-select">
-          <option value="medium" selected>普通</option>
-          <option value="high">高优先级</option>
-          <option value="low">低优先级</option>
-        </select>
-      </div>
-
       <div class="tb-modal-footer">
-        <button class="tb-btn" id="tbModalCancelBtn">取消</button>
-        <button class="tb-btn" id="tbModalSaveTodoBtn">
-          <i data-lucide="inbox" style="width: 13px; height: 13px;"></i>
-          <span>加入待办列</span>
-        </button>
+        <button class="tb-btn tb-btn-ghost" id="tbModalCancelBtn">取消</button>
+        <button class="tb-btn" id="tbModalSaveTodoBtn">加入待办</button>
         <button class="tb-btn tb-btn-primary" id="tbModalLaunchNowBtn">
-          <i data-lucide="play" style="width: 13px; height: 13px;"></i>
-          <span>直接启动会话</span>
+          <i data-lucide="play" style="width: 12px; height: 12px;"></i>
+          <span>直接启动</span>
         </button>
       </div>
     </div>
@@ -1006,7 +967,6 @@ function openNewTaskModal(data) {
   const descInput = overlay.querySelector('#tbNewTaskDesc');
   const wsSelect = overlay.querySelector('#tbNewTaskWs');
   const agentSelect = overlay.querySelector('#tbNewTaskAgent');
-  const prioritySelect = overlay.querySelector('#tbNewTaskPriority');
   const saveTodoBtn = overlay.querySelector('#tbModalSaveTodoBtn');
   const launchNowBtn = overlay.querySelector('#tbModalLaunchNowBtn');
 
@@ -1029,7 +989,7 @@ function openNewTaskModal(data) {
       workspaceName: wsSelect.value || '',
       workspacePath: selectedOpt ? (selectedOpt.getAttribute('data-path') || '') : '',
       agentType: agentSelect.value || 'agy',
-      priority: prioritySelect.value || 'medium'
+      priority: 'medium'
     };
   };
 
@@ -1043,7 +1003,7 @@ function openNewTaskModal(data) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error('保存待办失败');
+      if (!res.ok) throw new Error('保存失败');
       closeModal();
       renderProjectOverview();
     } catch (err) {
@@ -1060,7 +1020,7 @@ function openNewTaskModal(data) {
       closeModal();
       await launchTaskSession(payload);
     } catch (err) {
-      toast.error('启动会话失败: ' + err.message);
+      toast.error('启动失败: ' + err.message);
     }
   });
 }
@@ -1077,7 +1037,20 @@ export function initProjectOverviewEvents() {
   }
 
   if (!autoStatusInterval) {
+    document.addEventListener('visibilitychange', () => {
+      if (
+        document.visibilityState === 'visible' &&
+        state.activeTabId === 'tab-project-overview' &&
+        !activeQuickReplySession &&
+        !activeRenameSession &&
+        !isModalOpen
+      ) {
+        renderProjectOverview({ silent: true });
+      }
+    });
+
     autoStatusInterval = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
       const hasProjectTab = state.tabs && state.tabs.some(t => t.type === 'project');
       if (!hasProjectTab) return;
 
@@ -1086,12 +1059,18 @@ export function initProjectOverviewEvents() {
       const searchEl = document.getElementById('tbSearchInput');
       const isTypingSearch = searchEl && document.activeElement === searchEl;
 
-      if (isViewingBoard && !isUserInteracting && !isTypingSearch) {
-        renderProjectOverview({ silent: true });
+      if (isViewingBoard) {
+        if (!isUserInteracting && !isTypingSearch) {
+          renderProjectOverview({ silent: true });
+        }
         return;
       }
 
-      // Lightweight status badge update when viewing other tabs
+      // Background tab-dot update throttled to every 10s when viewing other tabs
+      const now = Date.now();
+      if (now - lastBgBadgePollAt < 10000) return;
+      lastBgBadgePollAt = now;
+
       try {
         const params = new URLSearchParams();
         if (state.currentDeviceId && state.currentDeviceId !== 'cloud') {
@@ -1105,7 +1084,7 @@ export function initProjectOverviewEvents() {
           }
         }
       } catch (e) {}
-    }, 7000);
+    }, 2500);
   }
 }
 

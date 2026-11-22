@@ -41,9 +41,9 @@
   <link rel="stylesheet" href="/css/invite-modal.css">
   <link rel="stylesheet" href="/css/chat-mode.css" id="chatModeStylesheet">
   <!-- Favicon / Tab Icon -->
-  <link rel="icon" type="image/png" sizes="32x32" id="appFavicon" href="/images/favicon.png">
-  <link rel="icon" type="image/png" sizes="192x192" id="appIcon192" href="/images/icon-192.png">
-  <link rel="apple-touch-icon" id="appAppleIcon" href="/images/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" id="appFavicon" href="/images/favicon.png?v=2">
+  <link rel="icon" type="image/png" sizes="192x192" id="appIcon192" href="/images/icon-192.png?v=2">
+  <link rel="apple-touch-icon" id="appAppleIcon" href="/images/apple-touch-icon.png?v=2">
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
   <!-- QRCode Generator -->
@@ -298,7 +298,7 @@
         <div class="project-panel-container" id="projectPanelContainer">
           <div class="loading-placeholder">
             <div class="cyber-spinner"></div>
-            <span>正在加载项目推进数据...</span>
+            <span>加载中...</span>
           </div>
         </div>
       </section>
@@ -968,8 +968,21 @@
       <!-- Add Device / Pair Section -->
       <div class="device-section-title">连接我的电脑</div>
       <div class="device-pair-box">
-        <div class="device-pair-desc">
-          在你的电脑（Mac / Windows / Linux）终端运行以下命令即可接入：
+        <div class="device-pair-mode-bar">
+          <div class="device-pair-segmented" role="tablist" aria-label="客户端运行模式">
+            <button type="button" class="device-pair-seg-btn active" data-pair-mode="daemon" role="tab" aria-selected="true">
+              <i data-lucide="shield-check"></i>
+              <span>后台常驻</span>
+            </button>
+            <button type="button" class="device-pair-seg-btn" data-pair-mode="foreground" role="tab" aria-selected="false">
+              <i data-lucide="terminal"></i>
+              <span>前台临时</span>
+            </button>
+          </div>
+          <span class="device-pair-platform-badge" id="devicePairPlatformHint">Mac / Linux 开机自启</span>
+        </div>
+        <div id="devicePairDesc" class="device-pair-desc">
+          在你的 Mac / Linux 终端运行以下命令，配对后自动注册为后台常驻服务（关闭终端不掉线，并自动打印状态、重启、停止等常用命令）：
         </div>
         <div class="device-cmd-container">
           <div id="devicePairCmdText" class="device-cmd-text">正在生成命令...</div>
@@ -978,6 +991,34 @@
             <span>复制</span>
           </button>
         </div>
+        <details id="deviceDaemonCheatsheet" class="device-daemon-cheatsheet">
+          <summary>
+            <i data-lucide="chevron-right" class="device-cheatsheet-arrow"></i>
+            <span>常用后台管理命令（点击即可复制）</span>
+          </summary>
+          <div class="device-daemon-cmd-grid">
+            <div class="device-daemon-cmd-row" data-copy-cmd="node ~/.ccnow/ccnow-agent.js service status" title="点击复制">
+              <span class="device-daemon-cmd-label">查看状态</span>
+              <code>node ~/.ccnow/ccnow-agent.js service status</code>
+            </div>
+            <div class="device-daemon-cmd-row" data-copy-cmd="tail -f ~/.ccnow/agent.log" title="点击复制">
+              <span class="device-daemon-cmd-label">查看日志</span>
+              <code>tail -f ~/.ccnow/agent.log</code>
+            </div>
+            <div class="device-daemon-cmd-row" data-copy-cmd="node ~/.ccnow/ccnow-agent.js service restart" title="点击复制">
+              <span class="device-daemon-cmd-label">重启服务</span>
+              <code>node ~/.ccnow/ccnow-agent.js service restart</code>
+            </div>
+            <div class="device-daemon-cmd-row" data-copy-cmd="node ~/.ccnow/ccnow-agent.js service stop" title="点击复制">
+              <span class="device-daemon-cmd-label">停止服务</span>
+              <code>node ~/.ccnow/ccnow-agent.js service stop</code>
+            </div>
+            <div class="device-daemon-cmd-row" data-copy-cmd="node ~/.ccnow/ccnow-agent.js service uninstall" title="点击复制">
+              <span class="device-daemon-cmd-label">卸载服务</span>
+              <code>node ~/.ccnow/ccnow-agent.js service uninstall</code>
+            </div>
+          </div>
+        </details>
         <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
           <button id="deviceRefreshPairBtn" class="cyber-btn-outline" style="font-size: 11px; padding: 4px 10px;">
             <i data-lucide="refresh-cw"></i> 刷新命令
@@ -1202,7 +1243,7 @@
       <!-- Tab Content: App Icon Themes (Admin Only) -->
       <div id="tabContentAppIcons" class="admin-tab-content hidden">
         <div style="font-family: var(--font-mono); font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">
-          // PWA 桌面图标形状设置：选择添加到主屏幕/桌面快捷方式时的应用图标图形（统一湖蓝色系，完美适配深色与浅色双主题）：
+          // PWA 桌面图标形状设置：选择添加到主屏幕/桌面快捷方式时的应用图标图形（深炭星紫色系，无外框全幅适配深色与浅色双主题）：
         </div>
         <div id="appIconsGrid" class="app-icons-grid">
           <!-- Dynamically populated via JS -->

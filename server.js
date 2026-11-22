@@ -193,32 +193,45 @@ app.use('/docs', express.static(path.join(PROJECT_ROOT, 'docs'), docsStaticOptio
 app.get('/manifest.json', (req, res) => {
   const iconService = require('./services/iconService');
   const activeTheme = iconService.getActiveTheme();
+  const iconVer = '2';
   res.setHeader('Content-Type', 'application/manifest+json');
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.json({
     id: '/',
     name: 'CCNOW',
     short_name: 'CCNOW',
-    description: 'Cyberpunk CCNOW Console',
+    description: 'CCNOW · AI 智能体会话与终端控制中心',
     start_url: '/',
     scope: '/',
     display: 'standalone',
     display_override: ['standalone', 'window-controls-overlay'],
-    background_color: '#0a0c16',
-    theme_color: '#0a0c16',
+    background_color: '#17191e',
+    theme_color: '#17191e',
     orientation: 'any',
     icons: [
       {
-        src: `/icons/${activeTheme.id}/icon-192.png`,
+        src: `/icons/${activeTheme.id}/icon-192.png?v=${iconVer}`,
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any'
       },
       {
-        src: `/icons/${activeTheme.id}/icon-512.png`,
+        src: `/icons/${activeTheme.id}/icon-192.png?v=${iconVer}`,
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'maskable'
+      },
+      {
+        src: `/icons/${activeTheme.id}/icon-512.png?v=${iconVer}`,
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any'
+      },
+      {
+        src: `/icons/${activeTheme.id}/icon-512.png?v=${iconVer}`,
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable'
       }
     ]
   });
@@ -242,21 +255,33 @@ app.get('/manifest-fold.json', (req, res) => {
     scope: '/fold',
     display: 'fullscreen',
     display_override: ['fullscreen', 'standalone', 'window-controls-overlay'],
-    background_color: '#0d111a',
-    theme_color: '#0d111a',
+    background_color: '#17191e',
+    theme_color: '#17191e',
     orientation: 'any',
     icons: [
       {
-        src: '/images/icon-192.png',
+        src: '/images/icon-192.png?v=2',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any'
       },
       {
-        src: '/images/icon-512.png',
+        src: '/images/icon-192.png?v=2',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'maskable'
+      },
+      {
+        src: '/images/icon-512.png?v=2',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any'
+      },
+      {
+        src: '/images/icon-512.png?v=2',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable'
       }
     ]
   });

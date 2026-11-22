@@ -11,6 +11,8 @@ import { morphInlineConfirm } from './inlineConfirm.js';
 
 let currentSocket = null;
 let currentPairCommand = '';
+let currentPairCommands = { daemon: '', foreground: '' };
+let currentPairMode = 'daemon'; // default to background daemon mode
 
 /**
  * Fetch devices list from server
@@ -366,6 +368,44 @@ export async function loadDeviceList() {
 }
 
 /**
+ * Apply current pair mode ('daemon' | 'foreground') to UI & active copy command
+ */
+function applyPairModeUI(mode) {
+  currentPairMode = mode === 'foreground' ? 'foreground' : 'daemon';
+  const isDaemon = currentPairMode === 'daemon';
+
+  document.querySelectorAll('.device-pair-seg-btn').forEach(btn => {
+    const active = btn.getAttribute('data-pair-mode') === currentPairMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+
+  const descEl = document.getElementById('devicePairDesc');
+  if (descEl) {
+    descEl.textContent = isDaemon
+      ? '在你的 Mac / Linux 终端运行以下命令，配对后自动注册为后台常驻服务（关闭终端不掉线，并自动打印状态、重启、停止等常用命令）：'
+      : '仅在当前终端前台运行，关闭窗口或按 Ctrl+C 即断开连接（支持 Mac / Windows / Linux）：';
+  }
+
+  const badgeEl = document.getElementById('devicePairPlatformHint');
+  if (badgeEl) {
+    badgeEl.textContent = isDaemon ? 'Mac / Linux 开机自启' : '全平台临时运行';
+  }
+
+  const cheatsheetEl = document.getElementById('deviceDaemonCheatsheet');
+  if (cheatsheetEl) {
+    cheatsheetEl.classList.toggle('hidden', !isDaemon);
+  }
+
+  const cmdEl = document.getElementById('devicePairCmdText');
+  const nextCmd = isDaemon ? currentPairCommands.daemon : currentPairCommands.foreground;
+  if (nextCmd) {
+    currentPairCommand = nextCmd;
+    if (cmdEl) cmdEl.textContent = nextCmd;
+  }
+}
+
+/**
  * Request a fresh pair token and startup command
  */
 export async function refreshPairToken() {
@@ -380,8 +420,11 @@ export async function refreshPairToken() {
     if (!res.ok) throw new Error('Token generation failed');
     const data = await res.json();
 
-    currentPairCommand = data.command;
-    cmdEl.textContent = data.command;
+    const fgCmd = data.foregroundCommand || String(data.command || '').replace(/\s+--daemon\b/, '');
+    const dmCmd = data.daemonCommand || (fgCmd ? `${fgCmd} --daemon` : data.command);
+    currentPairCommands = { daemon: dmCmd, foreground: fgCmd };
+
+    applyPairModeUI(currentPairMode);
     if (expireEl) {
       expireEl.textContent = `${Math.floor(data.ttlSeconds / 60)} 分钟内有效`;
     }
@@ -703,6 +746,27 @@ export async function initDeviceManager(socket) {
 
   if (copyBtn) copyBtn.addEventListener('click', copyPairCommand);
   if (refreshBtn) refreshBtn.addEventListener('click', refreshPairToken);
+
+  // Pair mode segmented switcher (daemon default vs foreground)
+  document.querySelectorAll('.device-pair-seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.getAttribute('data-pair-mode');
+      applyPairModeUI(mode);
+    });
+  });
+
+  // Click-to-copy on daemon management cheatsheet rows
+  document.querySelectorAll('.device-daemon-cmd-row[data-copy-cmd]').forEach(row => {
+    row.addEventListener('click', () => {
+      const cmd = row.getAttribute('data-copy-cmd');
+      if (!cmd) return;
+      navigator.clipboard.writeText(cmd).then(() => {
+        toast.success('命令已复制', { description: cmd });
+      }).catch(() => {
+        toast.warning('复制失败，请手动选取复制');
+      });
+    });
+  });
 
   // 4. Real-time Status Change via Socket.io
   if (socket) {

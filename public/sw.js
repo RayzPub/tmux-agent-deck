@@ -22,8 +22,8 @@ self.addEventListener('push', function(event) {
   const title = data.title || 'TMUX Agent Alert';
   const options = {
     body: data.body || 'Your attention is required in a session.',
-    icon: '/images/icon-192.png',
-    badge: '/images/icon-192.png', // A simple small version of the icon is used as badge
+    icon: '/images/icon-192.png?v=2',
+    badge: '/images/icon-192.png?v=2', // A simple small version of the icon is used as badge
     vibrate: [200, 100, 200, 100, 200],
     data: {
       url: data.url || '/'

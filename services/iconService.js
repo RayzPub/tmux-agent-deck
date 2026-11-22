@@ -48,12 +48,12 @@ function getActiveTheme() {
   if (matched) return matched;
   return themes[0] || {
     id: 'shape-diamond',
-    name: '赛博菱形',
-    preview: '/images/icon-192.png',
-    favicon: '/images/favicon.png',
-    appleTouchIcon: '/images/apple-touch-icon.png',
-    icon192: '/images/icon-192.png',
-    icon512: '/images/icon-512.png'
+    name: '星曜菱形',
+    preview: '/images/icon-192.png?v=2',
+    favicon: '/images/favicon.png?v=2',
+    appleTouchIcon: '/images/apple-touch-icon.png?v=2',
+    icon192: '/images/icon-192.png?v=2',
+    icon512: '/images/icon-512.png?v=2'
   };
 }
 

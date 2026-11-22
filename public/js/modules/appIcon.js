@@ -63,7 +63,7 @@ export function renderAppIconsGrid() {
 
     card.innerHTML = `
       ${isSelected ? '<div class="app-icon-badge"><i data-lucide="check" style="width: 12px; height: 12px; stroke-width: 3;"></i></div>' : ''}
-      <img src="${theme.preview || `/icons/${theme.id}/icon-192.png`}" class="app-icon-preview" alt="${theme.name}">
+      <img src="${theme.preview || `/icons/${theme.id}/icon-192.png?v=2`}" class="app-icon-preview" alt="${theme.name}">
       <div class="app-icon-name">${theme.name}</div>
       <div class="app-icon-sub">${theme.subtitle || ''}</div>
     `;
