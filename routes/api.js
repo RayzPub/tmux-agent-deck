@@ -615,7 +615,7 @@ router.post('/sessions', requireAuth, async (req, res) => {
     return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   }
 
-  // Always allocate a persistent monotonic auto-incrementing sequence ID (guarantees zero collision across tmux & OAR)
+  // Always allocate a persistent monotonic auto-incrementing sequence ID (strictly decoupled from display title)
   const seqId = sessionMetaService.allocateNextSessionSeq();
   const rawInputTitle = (typeof title === 'string' && title.trim())
     ? title.trim()
@@ -624,16 +624,14 @@ router.post('/sessions', requireAuth, async (req, res) => {
   const supportsAutoSummary = targetMode === 'chat_only' || (reqAgent !== 'default' && targetMode !== 'terminal_only');
   const useAutoTitle = (autoTitle === true || !rawInputTitle) ? supportsAutoSummary : false;
   const isManualTitle = Boolean(rawInputTitle && autoTitle !== true);
-  const isAsciiTmuxSafe = isManualTitle && /^[a-zA-Z0-9_-]{1,48}$/.test(rawInputTitle);
 
-  const requestedTechName = isAsciiTmuxSafe
-    ? rawInputTitle
-    : sessionMetaService.buildAutoSessionId({
-      agentType: reqAgent,
-      sessionMode: targetMode,
-      seqId,
-      customPrefix: settings.sessionIdPrefix || ''
-    });
+  // Strictly isolate technical session ID (tmux/OAR key) from human-readable title
+  const requestedTechName = sessionMetaService.buildAutoSessionId({
+    agentType: reqAgent,
+    sessionMode: targetMode,
+    seqId,
+    customPrefix: settings.sessionIdPrefix || ''
+  });
 
   const initialDisplayTitle = isManualTitle
     ? rawInputTitle.slice(0, 60)
@@ -684,7 +682,7 @@ router.post('/sessions', requireAuth, async (req, res) => {
       autoTitle: Boolean(savedMeta?.autoTitle),
       titleSource: savedMeta?.titleSource || 'auto_pending',
       originalName: requestedTechName,
-      renamed: isAsciiTmuxSafe && createdName !== requestedTechName,
+      renamed: false,
       sessionMode: targetMode
     });
   } catch (e) {
@@ -692,18 +690,23 @@ router.post('/sessions', requireAuth, async (req, res) => {
   }
 });
 
-// Update / rename session display title
+// Update / rename session display title (never mutates underlying tmux/OAR technical ID)
 router.patch('/sessions/:name/title', requireAuth, (req, res) => {
   const { name } = req.params;
   const { title, autoTitle } = req.body || {};
   const targetDeviceId = resolveComputeDeviceId(req);
   if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
 
-  const meta = sessionMetaService.updateSessionTitle(targetDeviceId, name, title, {
-    autoTitle: autoTitle !== undefined ? Boolean(autoTitle) : !(typeof title === 'string' && title.trim()),
-    source: (typeof title === 'string' && title.trim()) ? 'manual' : 'auto_pending',
+  const cleanTitle = typeof title === 'string' ? title.trim() : '';
+  const meta = sessionMetaService.updateSessionTitle(targetDeviceId, name, cleanTitle, {
+    autoTitle: autoTitle !== undefined ? Boolean(autoTitle) : !cleanTitle,
+    source: cleanTitle ? 'manual' : 'auto_pending',
     username: req.user?.username || 'admin'
   });
+  // Keep Task Board card customTitle aligned with session_meta title
+  try {
+    projectService.updateCardMeta(req.user?.username || 'admin', name, { customTitle: cleanTitle });
+  } catch (_) {}
   const displayTitle = sessionMetaService.getDisplayTitleForSession(name, meta);
   return res.json({
     success: true,
@@ -948,9 +951,22 @@ router.post('/task-board/card-meta', requireAuth, (req, res) => {
     if (!sessionName || !String(sessionName).trim()) {
       return res.status(400).json({ error: 'sessionName is required' });
     }
-    const meta = projectService.updateCardMeta(req.user.username, String(sessionName).trim(), {
-      customTitle: customTitle !== undefined ? String(customTitle).trim() : undefined
+    const cleanName = String(sessionName).trim();
+    const cleanTitle = customTitle !== undefined ? String(customTitle).trim() : undefined;
+    const meta = projectService.updateCardMeta(req.user.username, cleanName, {
+      customTitle: cleanTitle
     });
+    // Sync display title into session_meta so sidebar & tabs reflect Task Board renames
+    if (cleanTitle !== undefined) {
+      const targetDeviceId = resolveComputeDeviceId(req);
+      if (targetDeviceId) {
+        sessionMetaService.updateSessionTitle(targetDeviceId, cleanName, cleanTitle, {
+          autoTitle: !cleanTitle,
+          source: cleanTitle ? 'manual' : 'auto_pending',
+          username: req.user.username
+        });
+      }
+    }
     res.json({ success: true, meta });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to update card metadata' });

@@ -1,10 +1,14 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+
 # Configuration
 ENV_FILE=".env"
 PORT=80
 LOG_FILE="server.log"
 PID_FILE="server.pid"
+SYSTEMD_UNIT="ccnow-server.service"
 
 # Colors for cyberpunk output
 GREEN='\033[0;32m'
@@ -201,9 +205,18 @@ fi
 echo -e "${BLUE}[*] Using Node binary: ${NODE_BIN}${NC}"
 
 # 5. Check if process is already running
+if [ "$EUID" -eq 0 ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet "$SYSTEMD_UNIT" 2>/dev/null; then
+        UNIT_PID=$(systemctl show -p MainPID --value "$SYSTEMD_UNIT" 2>/dev/null)
+        echo -e "${RED}[!] Server is already running via $SYSTEMD_UNIT (PID ${UNIT_PID:-unknown}).${NC}"
+        echo -e "${YELLOW}Please stop it first using: ./stop.sh${NC}"
+        exit 1
+    fi
+fi
+
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
-    if ps -p "$PID" > /dev/null 2>&1; then
+    if [ -n "$PID" ] && ps -p "$PID" > /dev/null 2>&1; then
         echo -e "${RED}[!] Server is already running with PID $PID.${NC}"
         echo -e "${YELLOW}Please stop it first using: ./stop.sh${NC}"
         exit 1
@@ -215,18 +228,51 @@ fi
 
 # 6. Check and build static assets
 echo -e "${BLUE}[*] Checking static assets...${NC}"
-"$NODE_BIN" bin/build.js
+if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ] && command -v sudo >/dev/null 2>&1; then
+    sudo -u "$SUDO_USER" "$NODE_BIN" bin/build.js
+else
+    "$NODE_BIN" bin/build.js
+fi
 
-# 7. Start server in the background
+# 7. Start server in the background (isolated systemd cgroup when available so caller restarts never kill server.js)
 echo -e "${GREEN}[*] Starting CCNOW in the background...${NC}"
-nohup "$NODE_BIN" server.js > "$LOG_FILE" 2>&1 &
-NEW_PID=$!
+USE_SYSTEMD_RUN=false
+if [ "$EUID" -eq 0 ] && [ -d /run/systemd/system ] && command -v systemd-run >/dev/null 2>&1; then
+    USE_SYSTEMD_RUN=true
+    systemctl reset-failed "$SYSTEMD_UNIT" 2>/dev/null || true
+    SYSTEMD_RUN_ARGS=(
+        --unit="ccnow-server"
+        --description="CCNOW Control Plane Server"
+        --property="WorkingDirectory=${SCRIPT_DIR}"
+        --property="StandardOutput=truncate:${SCRIPT_DIR}/${LOG_FILE}"
+        --property="StandardError=inherit"
+        --property="KillMode=process"
+        --property="Restart=no"
+        --collect
+    )
+    if [ -n "$SUDO_USER" ]; then
+        SYSTEMD_RUN_ARGS+=(--setenv="SUDO_USER=${SUDO_USER}")
+    fi
+    if [ -n "$PATH" ]; then
+        SYSTEMD_RUN_ARGS+=(--setenv="PATH=${PATH}")
+    fi
+    systemd-run "${SYSTEMD_RUN_ARGS[@]}" "$NODE_BIN" "$SCRIPT_DIR/server.js" >/dev/null
+    sleep 1.5
+    NEW_PID=$(systemctl show -p MainPID --value "$SYSTEMD_UNIT" 2>/dev/null)
+else
+    nohup "$NODE_BIN" server.js > "$LOG_FILE" 2>&1 < /dev/null &
+    NEW_PID=$!
+    sleep 1.5
+fi
 
 # Wait a brief moment to see if it immediately crashes
-sleep 1.5
-if ps -p "$NEW_PID" > /dev/null 2>&1; then
+if [ -n "$NEW_PID" ] && [ "$NEW_PID" != "0" ] && ps -p "$NEW_PID" > /dev/null 2>&1; then
     echo "$NEW_PID" > "$PID_FILE"
-    echo -e "${GREEN}[✓] Started successfully! PID: $NEW_PID${NC}"
+    if [ "$USE_SYSTEMD_RUN" = true ]; then
+        echo -e "${GREEN}[✓] Started successfully in isolated systemd unit ($SYSTEMD_UNIT)! PID: $NEW_PID${NC}"
+    else
+        echo -e "${GREEN}[✓] Started successfully! PID: $NEW_PID${NC}"
+    fi
     echo -e "${GREEN}[✓] Log file: $LOG_FILE${NC}"
     
     # Read ports and SSL configuration from env

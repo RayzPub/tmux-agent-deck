@@ -428,7 +428,7 @@ export function renderSessions(sessions) {
         card.classList.remove('menu-open');
         const name = renameBtn.getAttribute('data-name');
         const currentTitle = getSessionDisplayTitle(name, state.sessionListCache);
-        const nextTitle = prompt(`重命名会话 (ID: ${name})\n留空可恢复默认/自动摘要命名：`, currentTitle);
+        const nextTitle = prompt(`重命名会话（ID: ${name}）`, currentTitle);
         if (nextTitle === null) return;
         await renameSessionTitle(name, nextTitle.trim());
       });
@@ -1093,7 +1093,6 @@ editorTextarea.addEventListener('keydown', (e) => {
 
 // Session creation: auto-summary & monotonic auto-incrementing unique ID UI
 const sessionAutoTitlePill = document.getElementById('sessionAutoTitlePill');
-const sessionNameHint = document.getElementById('sessionNameHint');
 const clearSessionNameBtn = document.getElementById('clearSessionNameBtn');
 
 function syncSessionNameFieldUI() {
@@ -1110,8 +1109,8 @@ function syncSessionNameFieldUI() {
 
   if (newSessionNameInput) {
     newSessionNameInput.placeholder = supportsAutoSummary
-      ? '留空按首条对话自动摘要，或输入自定义名称...'
-      : '留空自动分配唯一编号，或输入自定义名称...';
+      ? '留空自动摘要，或输入名称'
+      : '留空自动编号，或输入名称';
   }
 
   if (sessionAutoTitlePill) {
@@ -1122,16 +1121,6 @@ function syncSessionNameFieldUI() {
     } else {
       sessionAutoTitlePill.classList.remove('is-manual');
       if (labelSpan) labelSpan.textContent = supportsAutoSummary ? '自动摘要' : '自动编号';
-    }
-  }
-
-  if (sessionNameHint) {
-    if (rawVal) {
-      sessionNameHint.textContent = '支持中文与自定义名称，底层自动分配唯一自增 ID 确保 tmux / OAR 不冲突';
-    } else if (supportsAutoSummary) {
-      sessionNameHint.textContent = '系统自动分配唯一自增 ID 确保 tmux / OAR 不冲突，首条对话后自动生成摘要标题';
-    } else {
-      sessionNameHint.textContent = '系统自动分配唯一自增 ID（不冲突），创建后可在侧边栏随时重命名';
     }
   }
 }

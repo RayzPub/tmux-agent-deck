@@ -137,6 +137,7 @@ Environment=CCNOW_SERVER_URL=${SERVER_URL}
 Environment=CCNOW_TMUX_SOCKET=${TMUX_SOCKET}
 Environment=CCNOW_MANAGED_LLM_GATEWAY=1
 ${oauthEnvLine}ExecStart=${NODE_BIN} ${AGENT_SCRIPT} start
+KillMode=process
 Restart=always
 RestartSec=3
 StandardOutput=append:${path.join(CONFIG_DIR, 'agent.log')}

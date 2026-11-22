@@ -10236,13 +10236,6 @@ body.light-minimalist .terminal-slash-desc {
   height: 12px;
 }
 
-.session-name-hint {
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--c-muted);
-  padding-left: 2px;
-}
-
 .active-workspace-badge-container {
   padding: 8px 12px;
   background: color-mix(in srgb, var(--c-accent) 7%, var(--c-soft));
@@ -10302,10 +10295,6 @@ body.light-minimalist .input-clear-btn {
 body.light-minimalist .input-clear-btn:hover {
   background: #cbd5e1;
   color: #0f172a;
-}
-
-body.light-minimalist .session-name-hint {
-  color: #64748b;
 }
 
 body.light-minimalist .active-workspace-badge-container {
