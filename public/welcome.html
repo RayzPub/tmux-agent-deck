@@ -10,23 +10,22 @@
   <meta property="og:url" content="https://ccnow.cloud/welcome">
   <meta property="og:title" content="CCNOW · 多设备 AI 智能体控制中心">
   <meta property="og:description" content="统一调度云端 Docker 沙箱与个人电脑的 AI 编程智能体控制中心。支持 Antigravity、Claude Code、Codex、Kimi，三模会话、任务看板与全端 PWA。">
-  <meta property="og:image" content="https://ccnow.cloud/docs/images/dashboard_preview.webp">
+  <meta property="og:image" content="https://ccnow.cloud/docs/images/console_dark.webp">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="CCNOW · 多设备 AI 智能体控制中心">
   <meta name="twitter:description" content="统一调度云端 Docker 沙箱与个人电脑的 AI 编程智能体控制中心。支持三模会话、任务看板、Mermaid 图表与全端 PWA。">
-  <meta name="twitter:image" content="https://ccnow.cloud/docs/images/dashboard_preview.webp">
+  <meta name="twitter:image" content="https://ccnow.cloud/docs/images/console_dark.webp">
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.geekzu.org">
   <link rel="preconnect" href="https://gmirror.geekzu.org" crossorigin>
   <link href="https://fonts.geekzu.org/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;600;800&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
 
-  <!-- Preload LCP Image -->
-  <link rel="preload" href="/docs/images/dashboard_preview.webp" as="image" type="image/webp" fetchpriority="high">
-  <link rel="preload" href="/docs/images/workspace_preview.webp" as="image" type="image/webp">
-  <link rel="preload" href="/docs/images/agent_preview.webp" as="image" type="image/webp">
-  <link rel="preload" href="/docs/images/editor_diff_preview.webp" as="image" type="image/webp">
-  <link rel="preload" href="/docs/images/mobile_preview.webp" as="image" type="image/webp">
+  <!-- Preload LCP & Dual-Theme Preview Images -->
+  <link rel="preload" href="/docs/images/console_dark.webp" as="image" type="image/webp" fetchpriority="high">
+  <link rel="preload" href="/docs/images/console_light.webp" as="image" type="image/webp">
+  <link rel="preload" href="/docs/images/session_dark.webp" as="image" type="image/webp">
+  <link rel="preload" href="/docs/images/session_light.webp" as="image" type="image/webp">
 
   <meta name="theme-color" id="pwaThemeColor" content="#141a29">
 
@@ -291,11 +290,19 @@
     .device-title { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
     .device-status { font-family: var(--font-mono); font-size: .7rem; color: var(--green); display: flex; align-items: center; gap: 6px; font-weight: 600; }
     .device-content {
-      position: relative; width: 100%; overflow: hidden; background: #000;
+      position: relative; width: 100%; overflow: hidden; background: #14161e;
     }
     .device-content img {
       width: 100%; height: auto; display: block;
     }
+    .theme-shot-light { display: none; }
+    body.light-minimalist .device-content { background: #f4f5f8; }
+    body.light-minimalist .device-content .theme-shot-dark { display: none; }
+    body.light-minimalist .device-content .theme-shot-light { display: block; }
+    .panel-shot[data-preview-theme="light"] .theme-shot-dark { display: none; }
+    .panel-shot[data-preview-theme="light"] .theme-shot-light { display: block; }
+    .panel-shot[data-preview-theme="dark"] .theme-shot-dark { display: block; }
+    .panel-shot[data-preview-theme="dark"] .theme-shot-light { display: none; }
     .device-reflection {
       position: absolute; inset: 0; pointer-events: none; z-index: 2;
       background: linear-gradient(135deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,0) 50%);
@@ -430,7 +437,8 @@
 
     /* ============ Showcase Tabs (CDS 999px Segmented Pill Control) ============ */
     .tabs-head-wrap {
-      display: flex; justify-content: center; margin-bottom: 34px;
+      display: flex; justify-content: center; align-items: center; flex-wrap: wrap;
+      gap: 12px; margin-bottom: 34px;
     }
     .tabs-head {
       display: inline-flex; gap: 4px; flex-wrap: wrap; justify-content: center;
@@ -439,54 +447,45 @@
       border: 0.5px solid rgba(255, 255, 255, .1);
       box-shadow: inset 0 1px 2px rgba(0, 0, 0, .4);
     }
-    .tab-btn {
+    .tab-btn, .shot-theme-btn {
       font-family: var(--font-mono); font-size: .8rem; color: var(--muted);
       background: transparent; border: none;
       padding: 9px 18px; border-radius: 999px; cursor: pointer;
       transition: all .2s cubic-bezier(.22, 1, .36, 1);
     }
-    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, .04); }
-    .tab-btn.active {
+    .shot-theme-btn { padding: 9px 14px; font-size: .76rem; }
+    .tab-btn:hover, .shot-theme-btn:hover { color: var(--text); background: rgba(255, 255, 255, .04); }
+    .tab-btn.active, .shot-theme-btn.active {
       color: var(--cyan);
       background: #171e31;
       box-shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 0 0 0.5px rgba(0, 240, 255, .35);
     }
     @media (max-width: 680px) {
       .tabs-head { border-radius: 16px; width: 100%; }
-      .tab-btn { flex: 1 1 calc(50% - 6px); text-align: center; padding: 8px 10px; font-size: .74rem; }
+      .tab-btn, .shot-theme-btn { flex: 1 1 calc(50% - 6px); text-align: center; padding: 8px 10px; font-size: .74rem; }
     }
     @keyframes tabSoftIn { from { opacity: .88; } to { opacity: 1; } }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; animation: tabSoftIn .18s ease-out both; }
     .tabs-stage { min-height: 320px; }
     .panel-grid {
-      display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(26px, 5vw, 56px); align-items: center;
+      display: grid; grid-template-columns: 1.25fr 1fr; gap: clamp(26px, 5vw, 52px); align-items: center;
       min-height: 320px;
     }
-    #tab-mobile .panel-grid { grid-template-columns: minmax(180px, 320px) 1fr; }
     @media (max-width: 900px) { .panel-grid { grid-template-columns: 1fr; } }
     .panel-shot {
       position: relative; border: 0.5px solid var(--line); border-radius: var(--radius);
       overflow: hidden; background: var(--bg-2);
       box-shadow: 0 20px 50px rgba(0,0,0,.5), 0 0 0 0.5px rgba(0,240,255,.12);
-      min-height: 280px;
-      aspect-ratio: 16 / 10;
-      align-self: stretch;
+      aspect-ratio: 1600 / 1235;
+      align-self: center;
     }
     .panel-shot img {
-      width: 100%; height: 100%; object-fit: cover; display: block;
+      width: 100%; height: 100%; object-fit: contain; display: block;
       transition: transform .5s, opacity .25s ease;
       background: var(--bg-2);
     }
-    .panel-shot:hover img { transform: scale(1.025); }
-    #tab-mobile .panel-shot {
-      aspect-ratio: 9 / 16;
-      max-height: min(640px, 72vh);
-      max-width: 320px;
-      margin-inline: auto;
-      width: 100%;
-    }
-    #tab-mobile .panel-shot img { object-fit: contain; background: #000; }
+    .panel-shot:hover img { transform: scale(1.02); }
     .panel-info {
       position: relative; z-index: 1;
       color: var(--text);
@@ -805,11 +804,13 @@
       border: 1px solid #cbd5e1;
       box-shadow: inset 0 1px 2px rgba(15, 23, 42, .05);
     }
-    body.light-minimalist .tab-btn:hover {
+    body.light-minimalist .tab-btn:hover,
+    body.light-minimalist .shot-theme-btn:hover {
       background: rgba(255, 255, 255, .5);
       color: #0f172a;
     }
-    body.light-minimalist .tab-btn.active {
+    body.light-minimalist .tab-btn.active,
+    body.light-minimalist .shot-theme-btn.active {
       background: #ffffff;
       color: #4f46e5;
       box-shadow: 0 1px 3px rgba(15, 23, 42, .1), 0 0 0 0.5px rgba(79, 70, 229, .2);
@@ -975,9 +976,13 @@
           <div class="device-content">
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <div class="device-reflection"></div>
-            <picture>
-              <source srcset="/docs/images/dashboard_preview.webp" type="image/webp">
-              <img src="/docs/images/dashboard_preview.png" alt="CCNOW 控制面板预览" fetchpriority="high">
+            <picture class="theme-shot-dark">
+              <source srcset="/docs/images/console_dark.webp" type="image/webp">
+              <img src="/docs/images/console_dark.png" alt="CCNOW 深色控制面板预览" fetchpriority="high">
+            </picture>
+            <picture class="theme-shot-light">
+              <source srcset="/docs/images/console_light.webp" type="image/webp">
+              <img src="/docs/images/console_light.png" alt="CCNOW 浅色极简控制面板预览" fetchpriority="high">
             </picture>
           </div>
         </div>
@@ -1118,97 +1123,65 @@
       <div class="section-head reveal">
         <span class="section-tag">// SHOWCASE</span>
         <h2 class="section-title">图形化工作台预览</h2>
-        <p class="section-sub">从多设备切换、多智能体并发监控到代码 Diff 审阅与移动 PWA，一站式闭环体验。</p>
+        <p class="section-sub">深浅双主题原生适配，多设备控制台与三模智能体启动面板一目了然。</p>
       </div>
 
       <div class="tabs-head-wrap reveal">
-        <div class="tabs-head">
-          <button class="tab-btn active" data-tab="tab-workspace">01 · 设备与工作区</button>
-          <button class="tab-btn" data-tab="tab-agent">02 · 智能体与看板</button>
-          <button class="tab-btn" data-tab="tab-editor">03 · 编辑与 Diff 审查</button>
-          <button class="tab-btn" data-tab="tab-mobile">04 · 手机与折叠屏</button>
+        <div class="tabs-head" role="tablist">
+          <button class="tab-btn active" data-tab="tab-console">01 · 多设备控制台</button>
+          <button class="tab-btn" data-tab="tab-session">02 · 启动智能体会话</button>
+        </div>
+        <div class="tabs-head" role="group" aria-label="截图深浅主题切换">
+          <button type="button" class="shot-theme-btn active" data-shot-theme="dark">深色主题</button>
+          <button type="button" class="shot-theme-btn" data-shot-theme="light">浅色极简</button>
         </div>
       </div>
 
-      <div class="tab-panel active" id="tab-workspace">
+      <div class="tab-panel active" id="tab-console">
         <div class="panel-grid">
-          <div class="panel-shot">
+          <div class="panel-shot" data-preview-theme="dark">
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-            <picture>
-              <source srcset="/docs/images/workspace_preview.webp" type="image/webp">
-              <img src="/docs/images/workspace_preview.png" alt="设备与工作区管理预览" loading="lazy">
+            <picture class="theme-shot-dark">
+              <source srcset="/docs/images/console_dark.webp" type="image/webp">
+              <img src="/docs/images/console_dark.png" alt="多设备控制台深色预览" loading="lazy">
+            </picture>
+            <picture class="theme-shot-light">
+              <source srcset="/docs/images/console_light.webp" type="image/webp">
+              <img src="/docs/images/console_light.png" alt="多设备控制台浅色预览" loading="lazy">
             </picture>
           </div>
           <div class="panel-info">
-            <h3><span>01 /</span> 多设备切换与工作区隔离</h3>
-            <p>左上角切换「云电脑 / 主服务器 / 我的电脑」，整个工作台上下文（工作区、会话列表、文件树与看板）即时无缝联动。</p>
+            <h3><span>01 /</span> 多设备控制台与全局视图</h3>
+            <p>左上角切换「主服务器 / 云电脑 / 我的电脑」，整个侧边栏上下文（任务看板、工作区、智能体会话与文件浏览器）即时无缝联动。</p>
             <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>云端沙箱秒级唤醒</strong>：内置云电脑一键启停，闲置自动休眠且数据持久保留。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>可视化目录选择</strong>：轻松绑定现有代码仓库或新建独立工作区目录。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>跨设备透明体验</strong>：远程个人电脑与云主机享受完全一致的文件浏览与会话操控。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>统一设备切换与任务看板</strong>：顶部直达多设备下拉列表与「任务看板总览」，跨工作区全局掌控所有运行态。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>智能摘要与 OAR 标识</strong>：会话列表清晰展示 AI 自动摘要的任务标题与 OAR 运行模式徽章。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>深浅双主题随心切换</strong>：赛博深色与浅色极简四层表面体系完整适配，白天黑夜皆护眼清晰。</span></li>
             </ul>
           </div>
         </div>
       </div>
 
-      <div class="tab-panel" id="tab-agent">
+      <div class="tab-panel" id="tab-session">
         <div class="panel-grid">
-          <div class="panel-shot">
+          <div class="panel-shot" data-preview-theme="dark">
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-            <picture>
-              <source srcset="/docs/images/agent_preview.webp" type="image/webp">
-              <img src="/docs/images/agent_preview.png" alt="AI 智能体会话与看板预览" loading="lazy">
+            <picture class="theme-shot-dark">
+              <source srcset="/docs/images/session_dark.webp" type="image/webp">
+              <img src="/docs/images/session_dark.png" alt="启动智能体会话深色预览" loading="lazy">
+            </picture>
+            <picture class="theme-shot-light">
+              <source srcset="/docs/images/session_light.webp" type="image/webp">
+              <img src="/docs/images/session_light.png" alt="启动智能体会话浅色预览" loading="lazy">
             </picture>
           </div>
           <div class="panel-info pink-theme">
-            <h3><span>02 /</span> 多模智能体与任务看板</h3>
-            <p>并行运行多个 AI 编程智能体，自动根据首条对话摘要任务标题，并可在任务看板总览中一眼掌控全部进度。</p>
+            <h3><span>02 /</span> 三模会话与五大智能体一键启动</h3>
+            <p>无需繁琐起名与命令配置，一张启动卡片即可自由组合会话运行模式、AI 编程智能体与网关推理模型。</p>
             <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>三模自由选择</strong>：双模平滑切换、OAR 免 Tmux 纯会话、低延迟纯终端按需组合。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>智能体感知 <code>/</code> 指令</strong>：自动匹配 Antigravity / Claude / Codex / Kimi 专属斜杠命令。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>看板行内协同</strong>：在看板卡片上直接快捷回复指令，或将待办一键转为新会话。</span></li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      <div class="tab-panel" id="tab-editor">
-        <div class="panel-grid">
-          <div class="panel-shot">
-            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-            <picture>
-              <source srcset="/docs/images/editor_diff_preview.webp" type="image/webp">
-              <img src="/docs/images/editor_diff_preview.png" alt="代码编辑与 Diff 对比预览" loading="lazy">
-            </picture>
-          </div>
-          <div class="panel-info">
-            <h3><span>03 /</span> 代码编辑、Git Diff 与实时预览</h3>
-            <p>无需离开浏览器即可审阅 AI 对代码库做出的每一行改动，对话中提到的文件路径可直接点击跳转打开。</p>
-            <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>直观 Git 差异对比</strong>：一键筛选已修改文件，红绿高亮清晰核验代码变更。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>Monaco 编辑器 & 路径跳转</strong>：对话里的 <code>file.js:42</code> 点击直达对应代码行。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>HTML 预览与限时分享</strong>：单页应用成品直接内嵌渲染，并支持生成限时公开链接。</span></li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      <div class="tab-panel" id="tab-mobile">
-        <div class="panel-grid">
-          <div class="panel-shot">
-            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-            <picture>
-              <source srcset="/docs/images/mobile_preview.webp" type="image/webp">
-              <img src="/docs/images/mobile_preview.jpg" alt="移动端与折叠屏预览" loading="lazy">
-            </picture>
-          </div>
-          <div class="panel-info pink-theme">
-            <h3><span>04 /</span> 手机与折叠屏沉浸式 PWA</h3>
-            <p>针对手机竖屏、横屏与折叠屏内屏专项校准安全区与视口，支持添加至主屏幕，像原生 App 一样全屏运行。</p>
-            <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>触控辅助键盘 & 语音输入</strong>：内置 ESC / TAB / S-Tab / Ctrl-C / <code>/</code> 指令与方向键及语音口述。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>扫码免密直连</strong>：桌面端一键生成限时登录二维码，手机扫一扫立即接力操作。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>Web Push 息屏提醒</strong>：耗时任务结束或等待确认时直达手机系统通知栏。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>免起名自动摘要</strong>：会话名称留空自动分配唯一自增 ID，并在首条对话后 AI 自动生成任务标题。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>三种会话运行模式</strong>：支持「会话与终端」双模互切、「纯会话 (OAR)」免 Tmux 原生流式对话与「纯终端」。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>五大内置环境</strong>：预置 Antigravity、Claude Code、Codex、Kimi CLI 与标准 Bash，一键即启。</span></li>
             </ul>
           </div>
         </div>
@@ -1368,6 +1341,17 @@
     const themeLabel = document.getElementById('welcomeThemeLabel');
     const themeIcon = document.getElementById('welcomeThemeIcon');
     const mobileThemeLink = document.getElementById('mobileThemeToggleLink');
+    const shotThemeBtns = document.querySelectorAll('.shot-theme-btn');
+    const panelShots = document.querySelectorAll('.panel-shot');
+
+    const applyShowcaseTheme = (mode) => {
+      panelShots.forEach(s => s.setAttribute('data-preview-theme', mode));
+      shotThemeBtns.forEach(b => b.classList.toggle('active', b.dataset.shotTheme === mode));
+    };
+
+    shotThemeBtns.forEach(btn => {
+      btn.addEventListener('click', () => applyShowcaseTheme(btn.dataset.shotTheme));
+    });
 
     const syncThemeUI = () => {
       const isLight = document.body.classList.contains('light-minimalist');
@@ -1375,6 +1359,7 @@
       if (mobileThemeLink) mobileThemeLink.textContent = isLight ? '// 切换至赛博深色' : '// 切换至浅色极简';
       const metaTheme = document.getElementById('pwaThemeColor');
       if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f4f5f8' : '#141a29');
+      applyShowcaseTheme(isLight ? 'light' : 'dark');
       if (themeIcon) {
         themeIcon.innerHTML = isLight
           ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'

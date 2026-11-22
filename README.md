@@ -12,30 +12,20 @@ CCNOW 以 **Control Plane + 统一算力接入** 为核心架构，通过一套 
 
 <table>
   <tr>
-    <td align="center" width="50%"><b>1. 设备与工作区 / Device & Workspace</b></td>
-    <td align="center" width="50%"><b>2. 智能体会话 / Agent Session & Modes</b></td>
+    <td align="center" width="50%"><b>1. 深色主题 · 多设备控制台 / Dark Console</b></td>
+    <td align="center" width="50%"><b>2. 深色主题 · 启动智能体会话 / Dark Session Modal</b></td>
   </tr>
   <tr>
-    <td><img src="docs/images/workspace_preview.png" alt="设备与工作区 / Device & Workspace" width="100%"/></td>
-    <td><img src="docs/images/agent_preview.png" alt="智能体会话 / Agent Session & Modes" width="100%"/></td>
+    <td><img src="docs/images/console_dark.png" alt="深色主题 · 多设备控制台 / Dark Console" width="100%"/></td>
+    <td><img src="docs/images/session_dark.png" alt="深色主题 · 启动智能体会话 / Dark Session Modal" width="100%"/></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><b>3. 多智能体控制台 / Multi-Agent Control Deck</b></td>
+    <td align="center" width="50%"><b>3. 浅色极简 · 多设备控制台 / Light Console</b></td>
+    <td align="center" width="50%"><b>4. 浅色极简 · 启动智能体会话 / Light Session Modal</b></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="docs/images/dashboard_preview.png" alt="多智能体控制台 / Multi-Agent Control Deck" width="100%"/></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><b>4. 代码编辑与 Diff 审查 / Monaco Editor & Git Diff</b></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="docs/images/editor_diff_preview.png" alt="代码编辑与 Diff 审查 / Monaco Editor & Git Diff" width="100%"/></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><b>5. 📱 手机与折叠屏 PWA 视图 / Mobile & Foldable View</b></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="docs/images/mobile_preview.jpg" alt="手机与折叠屏 PWA 视图 / Mobile & Foldable View" width="360"/></td>
+    <td><img src="docs/images/console_light.png" alt="浅色极简 · 多设备控制台 / Light Console" width="100%"/></td>
+    <td><img src="docs/images/session_light.png" alt="浅色极简 · 启动智能体会话 / Light Session Modal" width="100%"/></td>
   </tr>
 </table>
 
