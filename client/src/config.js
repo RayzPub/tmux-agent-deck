@@ -4,7 +4,7 @@ const path = require('path');
 const { execSync, execFileSync } = require('child_process');
 
 // Client Version (kept as literal string for self-update version regex detection)
-const CLIENT_VERSION = '1.7.3';
+const CLIENT_VERSION = '1.7.4';
 
 // Configuration directory & files (supports env override for managed host/container agents)
 const CONFIG_DIR = process.env.CCNOW_CONFIG_DIR || path.join(os.homedir(), '.ccnow');
@@ -38,6 +38,8 @@ function saveConfig(cfg) {
   }
 }
 
+const BOOLEAN_FLAGS = new Set(['daemon', 'background', 'foreground']);
+
 function parseArgs(args) {
   const result = { command: args[0] || 'help', options: {} };
   for (let i = 1; i < args.length; i++) {
@@ -45,9 +47,14 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const parts = arg.slice(2).split('=');
       const key = parts[0];
-      const val = parts.length > 1
-        ? parts[1]
-        : (args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true);
+      let val;
+      if (parts.length > 1) {
+        val = parts.slice(1).join('=');
+      } else if (BOOLEAN_FLAGS.has(key)) {
+        val = true;
+      } else {
+        val = (args[i + 1] && !args[i + 1].startsWith('--')) ? args[++i] : true;
+      }
       result.options[key] = val;
     }
   }
@@ -73,16 +80,21 @@ function hasCommand(cmd) {
 function getLocalDeviceInfo(customName) {
   const hasClaude = hasCommand('claude');
   const hasCodex = hasCommand('codex');
+  const hasAgy = hasCommand('agy');
+  const hasKimi = hasCommand('kimi');
   const hasTmux = hasCommand('tmux');
 
   const agentTypes = [];
   if (hasClaude) agentTypes.push('claude-code');
   if (hasCodex) agentTypes.push('codex-cli');
+  if (hasAgy) agentTypes.push('agy');
+  if (hasKimi) agentTypes.push('kimi');
   if (hasTmux) agentTypes.push('tmux');
   agentTypes.push('local-terminal');
 
   return {
     version: CLIENT_VERSION,
+    nodeVersion: process.version,
     name: customName || os.hostname(),
     hostname: os.hostname(),
     platform: os.platform(),
@@ -90,6 +102,8 @@ function getLocalDeviceInfo(customName) {
     agentTypes,
     hasClaude,
     hasCodex,
+    hasAgy,
+    hasKimi,
     hasTmux
   };
 }

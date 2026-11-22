@@ -68,7 +68,20 @@ async function downloadAndApplyUpdate(serverUrl) {
   return { path: targetPath, version: newVersion };
 }
 
+function isRunningUnderServiceManager() {
+  if (process.env.CCNOW_SERVICE_MANAGED === '1') return true;
+  if (process.env.INVOCATION_ID) return true; // systemd
+  if (process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME.includes('ccnow')) return true; // macOS launchd
+  return false;
+}
+
 function restartSelf() {
+  if (isRunningUnderServiceManager()) {
+    console.log('🔄 Managed by system daemon (launchd/systemd); exiting cleanly for automatic restart...');
+    process.exit(0);
+    return;
+  }
+
   let targetPath = process.argv[1];
   if (!targetPath || targetPath === '-' || targetPath.includes('[eval]') || !fs.existsSync(targetPath)) {
     targetPath = path.join(CONFIG_DIR, 'ccnow-agent.js');
@@ -82,30 +95,39 @@ function restartSelf() {
   process.exit(0);
 }
 
-function ensureLocalAgentScript(serverUrl) {
+async function ensureLocalAgentScript(serverUrl, { forceDownload = false } = {}) {
   const scriptPath = path.join(CONFIG_DIR, 'ccnow-agent.js');
   try {
     if (!fs.existsSync(CONFIG_DIR)) {
       fs.mkdirSync(CONFIG_DIR, { recursive: true });
     }
     const currentScript = process.argv[1];
-    if (currentScript && fs.existsSync(currentScript) && path.resolve(currentScript) !== path.resolve(scriptPath)) {
-      fs.copyFileSync(currentScript, scriptPath);
-      fs.chmodSync(scriptPath, 0o755);
-      console.log(`💾 Agent script saved to ${scriptPath}`);
-      return;
+    if (currentScript && currentScript !== '-' && !currentScript.includes('[eval]') && fs.existsSync(currentScript)) {
+      if (path.resolve(currentScript) !== path.resolve(scriptPath)) {
+        fs.copyFileSync(currentScript, scriptPath);
+        fs.chmodSync(scriptPath, 0o755);
+        console.log(`💾 Agent script saved to ${scriptPath}`);
+      }
+      return scriptPath;
     }
-    if (!fs.existsSync(scriptPath) && typeof fetch === 'function') {
-      const cleanServer = serverUrl.replace(/\/+$/, '');
-      fetch(`${cleanServer}/agent.js`).then(r => r.ok ? r.text() : null).then(code => {
-        if (code && code.includes('ccnow-agent')) {
-          fs.writeFileSync(scriptPath, code, 'utf8');
-          fs.chmodSync(scriptPath, 0o755);
-          console.log(`💾 Agent script downloaded to ${scriptPath} (ready for \`service install\`)`);
-        }
-      }).catch(() => {});
+
+    if ((forceDownload || !fs.existsSync(scriptPath)) && serverUrl) {
+      const cleanServer = serverUrl.trim().replace(/\/+$/, '');
+      const code = await fetchUrl(`${cleanServer}/agent.js`);
+      if (code && code.includes('ccnow-agent')) {
+        const tmpPath = `${scriptPath}.tmp.${Date.now()}`;
+        fs.writeFileSync(tmpPath, code, { encoding: 'utf8', mode: 0o755 });
+        fs.renameSync(tmpPath, scriptPath);
+        fs.chmodSync(scriptPath, 0o755);
+        console.log(`💾 Agent script saved to ${scriptPath}`);
+        return scriptPath;
+      }
     }
-  } catch (e) {}
+    return fs.existsSync(scriptPath) ? scriptPath : null;
+  } catch (e) {
+    console.warn('⚠️ Failed to persist local agent script:', e.message);
+    return fs.existsSync(scriptPath) ? scriptPath : null;
+  }
 }
 
 async function handleSystemUpdate(send, defaultServerUrl, reqId, msg) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ccnow-agent CLIENT_VERSION = '1.7.3'
+// ccnow-agent CLIENT_VERSION = '1.7.4'
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
   try {
@@ -16,7 +16,7 @@ var require_config = __commonJS({
     var fs2 = require("fs");
     var path2 = require("path");
     var { execSync, execFileSync } = require("child_process");
-    var CLIENT_VERSION2 = "1.7.3";
+    var CLIENT_VERSION2 = "1.7.4";
     var CONFIG_DIR2 = process.env.CCNOW_CONFIG_DIR || path2.join(os.homedir(), ".ccnow");
     var CONFIG_FILE2 = path2.join(CONFIG_DIR2, "device.json");
     var WORKSPACES_FILE2 = path2.join(CONFIG_DIR2, "workspaces.json");
@@ -44,6 +44,7 @@ var require_config = __commonJS({
         console.error("\u274C Failed to save config file:", err.message);
       }
     }
+    var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["daemon", "background", "foreground"]);
     function parseArgs2(args) {
       const result = { command: args[0] || "help", options: {} };
       for (let i = 1; i < args.length; i++) {
@@ -51,7 +52,14 @@ var require_config = __commonJS({
         if (arg.startsWith("--")) {
           const parts = arg.slice(2).split("=");
           const key = parts[0];
-          const val = parts.length > 1 ? parts[1] : args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : true;
+          let val;
+          if (parts.length > 1) {
+            val = parts.slice(1).join("=");
+          } else if (BOOLEAN_FLAGS.has(key)) {
+            val = true;
+          } else {
+            val = args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : true;
+          }
           result.options[key] = val;
         }
       }
@@ -74,14 +82,19 @@ var require_config = __commonJS({
     function getLocalDeviceInfo(customName) {
       const hasClaude = hasCommand("claude");
       const hasCodex = hasCommand("codex");
+      const hasAgy = hasCommand("agy");
+      const hasKimi = hasCommand("kimi");
       const hasTmux = hasCommand("tmux");
       const agentTypes = [];
       if (hasClaude) agentTypes.push("claude-code");
       if (hasCodex) agentTypes.push("codex-cli");
+      if (hasAgy) agentTypes.push("agy");
+      if (hasKimi) agentTypes.push("kimi");
       if (hasTmux) agentTypes.push("tmux");
       agentTypes.push("local-terminal");
       return {
         version: CLIENT_VERSION2,
+        nodeVersion: process.version,
         name: customName || os.hostname(),
         hostname: os.hostname(),
         platform: os.platform(),
@@ -89,6 +102,8 @@ var require_config = __commonJS({
         agentTypes,
         hasClaude,
         hasCodex,
+        hasAgy,
+        hasKimi,
         hasTmux
       };
     }
@@ -968,13 +983,51 @@ var require_tmuxHandlers = __commonJS({
       }
       return { workspacePath, agentType, sessionMode, model };
     }
-    async function handleListSessions(send, reqId) {
+    function detectPaneLiveStatus(paneOutput) {
+      const nonBlankLines = (paneOutput || "").split("\n").map((l) => l.trim()).filter(Boolean);
+      const lastFewLines = nonBlankLines.slice(-8);
+      const recentText = lastFewLines.join("\n");
+      const waitingPatterns = [
+        /\[y\/N\]/i,
+        /\[Y\/n\]/i,
+        /\[y\/n\]/i,
+        /\(y\/n\)/i,
+        /allow\s+.*?\?/i,
+        /confirm\s+.*?\?/i,
+        /please\s+authorize/i,
+        /authorize\s+.*?\?/i,
+        /waiting\s+for\s+(approval|input|feedback)/i,
+        /do\s+you\s+want\s+to\s+(proceed|allow|run|continue)/i,
+        /escalate_admin/i,
+        /enter\s+to\s+continue/i,
+        /password\s+for\s+.*?:/i
+      ];
+      if (waitingPatterns.some((p) => p.test(recentText))) {
+        return { status: "waiting", snippet: nonBlankLines.slice(-2).join(" ").slice(0, 140) };
+      }
+      const busyPatterns = [
+        /esc\s+to\s+interrupt/i,
+        /ctrl\+c\s+to\s+interrupt/i,
+        /\b(thinking|working|running|generating|analyzing|searching|reading|writing|editing|compacting|retrying|streaming)\b(\.{2,3}|…)/i,
+        /\bworking\s*\(\d+s/i,
+        /[⣾⣽⣻⢿⡿⣟⣯⣷⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+        /[✻✽✶✢]\s+\S+.*(…|\.\.\.)/,
+        /●\s+(bash|read|write|view|edit|search|grep|glob|tool|run_command)/i,
+        /正在(深入思考|思考|生成|执行|压缩|重试|分析|读取|写入|搜索)/
+      ];
+      if (busyPatterns.some((p) => p.test(recentText))) {
+        return { status: "busy", snippet: nonBlankLines.slice(-2).join(" ").slice(0, 140) };
+      }
+      return { status: "idle", snippet: nonBlankLines.slice(-2).join(" ").slice(0, 140) };
+    }
+    async function handleListSessions(send, reqId, getDeviceOarManager, msg = {}) {
       const hasTmux = hasCommand("tmux");
+      const includeLiveStatus = Boolean(msg && msg.includeLiveStatus);
       const sessions = [];
       const seenNames = /* @__PURE__ */ new Set();
       if (hasTmux) {
         try {
-          const fmt = "#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}";
+          const fmt = "#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}|#{session_activity}";
           const { stdout } = await execFileAsync("tmux", tmuxArgs(["list-sessions", "-F", fmt]), {
             encoding: "utf8"
           });
@@ -985,11 +1038,14 @@ var require_tmuxHandlers = __commonJS({
               const agentType = parts[6] || "";
               const rawMode = parts[8] || "";
               const sessionMode = rawMode || (agentType === "default" ? "terminal_only" : "hybrid");
+              const createdMs = parseInt(parts[2], 10) * 1e3 || Date.now();
+              const activityMs = parts[10] ? parseInt(parts[10], 10) * 1e3 : 0;
               seenNames.add(parts[0]);
               sessions.push({
                 name: parts[0],
                 windows: parseInt(parts[1], 10) || 1,
-                created: parseInt(parts[2], 10) * 1e3 || Date.now(),
+                created: createdMs,
+                lastActiveAt: Math.max(createdMs, activityMs || 0),
                 attached: parts[3] === "1",
                 path: parts[4] || "",
                 workspaceName: parts[5] || "",
@@ -1009,6 +1065,46 @@ var require_tmuxHandlers = __commonJS({
           seenNames.add(s.name);
           sessions.push(s);
         }
+      }
+      const oarMgr = typeof getDeviceOarManager === "function" ? getDeviceOarManager() : null;
+      if (oarMgr) {
+        for (const s of sessions) {
+          if (s.sessionMode === "chat_only") {
+            try {
+              const snap = oarMgr.getHistorySnapshot(s.name, {
+                agentType: s.agentType || "claude",
+                workspacePath: s.path || s.workspacePath || process.cwd(),
+                model: s.agentModel || s.modelName || ""
+              });
+              if (snap) {
+                s.isGenerating = Boolean(snap.isGenerating);
+                s.hasPendingAction = Boolean(snap.pendingAction);
+                s.liveStatus = snap.pendingAction ? "waiting" : snap.isGenerating ? "busy" : "idle";
+                s.statusText = snap.statusText || "";
+                if (snap.lastUpdated) {
+                  s.lastActiveAt = Math.max(s.lastActiveAt || 0, Number(snap.lastUpdated) || 0);
+                }
+              }
+            } catch (_) {
+            }
+          }
+        }
+      }
+      if (includeLiveStatus && hasTmux) {
+        const tmuxCandidates = sessions.filter((s) => s.sessionMode !== "chat_only").slice(0, 25);
+        await Promise.all(tmuxCandidates.map(async (s) => {
+          try {
+            const { stdout } = await execFileAsync(
+              "tmux",
+              tmuxArgs(["capture-pane", "-p", "-t", s.name, "-S", "-18"]),
+              { encoding: "utf8", timeout: 600 }
+            );
+            const live = detectPaneLiveStatus(stdout);
+            s.liveStatus = live.status;
+            if (live.snippet) s.paneSnippet = live.snippet;
+          } catch (_) {
+          }
+        }));
       }
       if (!hasTmux && !sessions.some((s) => s.sessionMode !== "chat_only")) {
         sessions.push({
@@ -3405,7 +3501,18 @@ var require_updater = __commonJS({
       fs2.renameSync(tmpPath, targetPath);
       return { path: targetPath, version: newVersion };
     }
+    function isRunningUnderServiceManager() {
+      if (process.env.CCNOW_SERVICE_MANAGED === "1") return true;
+      if (process.env.INVOCATION_ID) return true;
+      if (process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME.includes("ccnow")) return true;
+      return false;
+    }
     function restartSelf() {
+      if (isRunningUnderServiceManager()) {
+        console.log("\u{1F504} Managed by system daemon (launchd/systemd); exiting cleanly for automatic restart...");
+        process.exit(0);
+        return;
+      }
       let targetPath = process.argv[1];
       if (!targetPath || targetPath === "-" || targetPath.includes("[eval]") || !fs2.existsSync(targetPath)) {
         targetPath = path2.join(CONFIG_DIR2, "ccnow-agent.js");
@@ -3417,31 +3524,37 @@ var require_updater = __commonJS({
       child.unref();
       process.exit(0);
     }
-    function ensureLocalAgentScript(serverUrl) {
+    async function ensureLocalAgentScript(serverUrl, { forceDownload = false } = {}) {
       const scriptPath = path2.join(CONFIG_DIR2, "ccnow-agent.js");
       try {
         if (!fs2.existsSync(CONFIG_DIR2)) {
           fs2.mkdirSync(CONFIG_DIR2, { recursive: true });
         }
         const currentScript = process.argv[1];
-        if (currentScript && fs2.existsSync(currentScript) && path2.resolve(currentScript) !== path2.resolve(scriptPath)) {
-          fs2.copyFileSync(currentScript, scriptPath);
-          fs2.chmodSync(scriptPath, 493);
-          console.log(`\u{1F4BE} Agent script saved to ${scriptPath}`);
-          return;
+        if (currentScript && currentScript !== "-" && !currentScript.includes("[eval]") && fs2.existsSync(currentScript)) {
+          if (path2.resolve(currentScript) !== path2.resolve(scriptPath)) {
+            fs2.copyFileSync(currentScript, scriptPath);
+            fs2.chmodSync(scriptPath, 493);
+            console.log(`\u{1F4BE} Agent script saved to ${scriptPath}`);
+          }
+          return scriptPath;
         }
-        if (!fs2.existsSync(scriptPath) && typeof fetch === "function") {
-          const cleanServer = serverUrl.replace(/\/+$/, "");
-          fetch(`${cleanServer}/agent.js`).then((r) => r.ok ? r.text() : null).then((code) => {
-            if (code && code.includes("ccnow-agent")) {
-              fs2.writeFileSync(scriptPath, code, "utf8");
-              fs2.chmodSync(scriptPath, 493);
-              console.log(`\u{1F4BE} Agent script downloaded to ${scriptPath} (ready for \`service install\`)`);
-            }
-          }).catch(() => {
-          });
+        if ((forceDownload || !fs2.existsSync(scriptPath)) && serverUrl) {
+          const cleanServer = serverUrl.trim().replace(/\/+$/, "");
+          const code = await fetchUrl(`${cleanServer}/agent.js`);
+          if (code && code.includes("ccnow-agent")) {
+            const tmpPath = `${scriptPath}.tmp.${Date.now()}`;
+            fs2.writeFileSync(tmpPath, code, { encoding: "utf8", mode: 493 });
+            fs2.renameSync(tmpPath, scriptPath);
+            fs2.chmodSync(scriptPath, 493);
+            console.log(`\u{1F4BE} Agent script saved to ${scriptPath}`);
+            return scriptPath;
+          }
         }
+        return fs2.existsSync(scriptPath) ? scriptPath : null;
       } catch (e) {
+        console.warn("\u26A0\uFE0F Failed to persist local agent script:", e.message);
+        return fs2.existsSync(scriptPath) ? scriptPath : null;
       }
     }
     async function handleSystemUpdate(send, defaultServerUrl, reqId, msg) {
@@ -3474,15 +3587,426 @@ var require_updater = __commonJS({
   }
 });
 
+// client/src/serviceManager.js
+var require_serviceManager = __commonJS({
+  "client/src/serviceManager.js"(exports2, module2) {
+    var os = require("os");
+    var fs2 = require("fs");
+    var path2 = require("path");
+    var { execSync, spawn } = require("child_process");
+    var { CONFIG_DIR: CONFIG_DIR2, readConfig: readConfig2 } = require_config();
+    var MAC_LABEL = "com.ccnow.agent";
+    var LINUX_UNIT = "ccnow-agent.service";
+    function xmlEscape(str) {
+      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+    }
+    function systemdEscape(str) {
+      return String(str).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    }
+    function getScriptDisplayPath() {
+      const defaultDir = path2.join(os.homedir(), ".ccnow");
+      if (path2.resolve(CONFIG_DIR2) === path2.resolve(defaultDir)) {
+        return "~/.ccnow/ccnow-agent.js";
+      }
+      return path2.join(CONFIG_DIR2, "ccnow-agent.js");
+    }
+    function getLogDisplayPath() {
+      const defaultDir = path2.join(os.homedir(), ".ccnow");
+      if (path2.resolve(CONFIG_DIR2) === path2.resolve(defaultDir)) {
+        return "~/.ccnow/agent.log";
+      }
+      return path2.join(CONFIG_DIR2, "agent.log");
+    }
+    function buildServiceEnv() {
+      const home = os.homedir();
+      const platform = os.platform();
+      const nodeBinDir = path2.dirname(process.execPath);
+      const rawParts = [
+        ...process.env.PATH ? process.env.PATH.split(path2.delimiter) : [],
+        nodeBinDir,
+        path2.join(home, ".local", "bin"),
+        path2.join(home, ".npm-global", "bin"),
+        ...platform === "darwin" ? ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"] : ["/usr/local/bin", "/usr/local/sbin"],
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin"
+      ];
+      const seen = /* @__PURE__ */ new Set();
+      const mergedPath = [];
+      for (const dir of rawParts) {
+        if (!dir) continue;
+        if (!seen.has(dir)) {
+          seen.add(dir);
+          mergedPath.push(dir);
+        }
+      }
+      const env = {
+        HOME: home,
+        PATH: mergedPath.join(":"),
+        SHELL: process.env.SHELL || (platform === "darwin" ? "/bin/zsh" : "/bin/bash"),
+        LANG: process.env.LANG || "en_US.UTF-8",
+        CCNOW_SERVICE_MANAGED: "1"
+      };
+      if (process.env.CCNOW_CONFIG_DIR) {
+        env.CCNOW_CONFIG_DIR = process.env.CCNOW_CONFIG_DIR;
+      }
+      return env;
+    }
+    function getMacDomainTarget() {
+      const uid = typeof process.getuid === "function" ? process.getuid() : Number(execSync("id -u", { encoding: "utf8" }).trim());
+      return `gui/${uid}`;
+    }
+    function getMacPlistPath() {
+      return path2.join(os.homedir(), "Library", "LaunchAgents", `${MAC_LABEL}.plist`);
+    }
+    function getLinuxServicePath() {
+      return path2.join(os.homedir(), ".config", "systemd", "user", LINUX_UNIT);
+    }
+    function stopMacService(plistPath) {
+      const domain = getMacDomainTarget();
+      try {
+        execSync(`launchctl bootout "${domain}/${MAC_LABEL}" 2>/dev/null || true`, { stdio: "ignore" });
+      } catch (_) {
+      }
+      try {
+        execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`, { stdio: "ignore" });
+      } catch (_) {
+      }
+    }
+    function startMacService(plistPath) {
+      const domain = getMacDomainTarget();
+      try {
+        execSync(`launchctl bootstrap "${domain}" "${plistPath}"`, { stdio: "pipe" });
+        try {
+          execSync(`launchctl kickstart -k "${domain}/${MAC_LABEL}"`, { stdio: "ignore" });
+        } catch (_) {
+        }
+        return;
+      } catch (_) {
+        execSync(`launchctl load -w "${plistPath}"`, { stdio: "pipe" });
+      }
+    }
+    function printCommonCommands(platform) {
+      const scriptCmd = `node ${getScriptDisplayPath()}`;
+      const logPath = getLogDisplayPath();
+      console.log("");
+      console.log("\u{1F4CB} \u5E38\u7528\u7BA1\u7406\u547D\u4EE4 (\u53EF\u76F4\u63A5\u590D\u5236\u6267\u884C):");
+      console.log(`   \u67E5\u770B\u72B6\u6001:  ${scriptCmd} service status`);
+      console.log(`   \u67E5\u770B\u65E5\u5FD7:  tail -f ${logPath}`);
+      console.log(`   \u91CD\u542F\u670D\u52A1:  ${scriptCmd} service restart`);
+      console.log(`   \u505C\u6B62\u670D\u52A1:  ${scriptCmd} service stop`);
+      console.log(`   \u542F\u52A8\u670D\u52A1:  ${scriptCmd} service start`);
+      console.log(`   \u5378\u8F7D\u670D\u52A1:  ${scriptCmd} service uninstall`);
+      if (platform === "linux") {
+        console.log("");
+        console.log("\u{1F4A1} Linux \u670D\u52A1\u5668\u63D0\u793A: \u5982\u9700\u9000\u51FA SSH \u540E\u4ECD\u4FDD\u6301\u540E\u53F0\u5E38\u9A7B\uFF0C\u53EF\u6267\u884C:");
+        console.log("   loginctl enable-linger $USER");
+      }
+      console.log("");
+    }
+    function handleServiceCommand2(action) {
+      const platform = os.platform();
+      const config = readConfig2();
+      const scriptPath = path2.join(CONFIG_DIR2, "ccnow-agent.js");
+      const logPath = path2.join(CONFIG_DIR2, "agent.log");
+      const errLogPath = path2.join(CONFIG_DIR2, "agent-err.log");
+      if (!fs2.existsSync(CONFIG_DIR2)) {
+        fs2.mkdirSync(CONFIG_DIR2, { recursive: true });
+      }
+      if (action === "install") {
+        if (!config || !config.deviceId || !config.deviceSecret) {
+          console.error("\u274C Error: Device is not paired yet. Please run `connect` first before installing service.");
+          return { ok: false, supported: true, platform, error: "not_paired" };
+        }
+        try {
+          const currentScript = process.argv[1];
+          if (currentScript && currentScript !== "-" && !currentScript.includes("[eval]") && fs2.existsSync(currentScript)) {
+            if (path2.resolve(currentScript) !== path2.resolve(scriptPath)) {
+              fs2.copyFileSync(currentScript, scriptPath);
+              fs2.chmodSync(scriptPath, 493);
+            }
+          }
+        } catch (_) {
+        }
+        if (!fs2.existsSync(scriptPath)) {
+          console.error(`\u274C Error: Agent script not found at ${scriptPath}.`);
+          return { ok: false, supported: true, platform, error: "script_missing" };
+        }
+        const serviceEnv = buildServiceEnv();
+        if (platform === "darwin") {
+          const launchDir = path2.join(os.homedir(), "Library", "LaunchAgents");
+          if (!fs2.existsSync(launchDir)) fs2.mkdirSync(launchDir, { recursive: true });
+          const plistPath = getMacPlistPath();
+          const envEntries = Object.entries(serviceEnv).map(([k, v]) => `    <key>${xmlEscape(k)}</key>
+    <string>${xmlEscape(v)}</string>`).join("\n");
+          const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${MAC_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${xmlEscape(process.execPath)}</string>
+    <string>${xmlEscape(scriptPath)}</string>
+    <string>start</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+${envEntries}
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>3</integer>
+  <key>StandardOutPath</key>
+  <string>${xmlEscape(logPath)}</string>
+  <key>StandardErrorPath</key>
+  <string>${xmlEscape(errLogPath)}</string>
+  <key>WorkingDirectory</key>
+  <string>${xmlEscape(os.homedir())}</string>
+</dict>
+</plist>
+`;
+          fs2.writeFileSync(plistPath, plistContent, "utf8");
+          try {
+            stopMacService(plistPath);
+            startMacService(plistPath);
+            console.log(`\u2705 \u5DF2\u5B89\u88C5\u5E76\u542F\u52A8\u540E\u53F0\u5E38\u9A7B\u670D\u52A1 (macOS launchd\uFF0C\u5DF2\u8BBE\u4E3A\u767B\u5F55\u81EA\u542F)`);
+            console.log(`   \u914D\u7F6E\u6587\u4EF6: ${plistPath}`);
+            console.log(`   \u8BBE\u5907\u540D\u79F0: ${config.name || os.hostname()} (${config.deviceId})`);
+            printCommonCommands(platform);
+            return { ok: true, supported: true, platform, servicePath: plistPath };
+          } catch (err) {
+            console.error("\u26A0\uFE0F Failed to load launchd service:", err.message);
+            return { ok: false, supported: true, platform, error: err.message };
+          }
+        }
+        if (platform === "linux") {
+          const unitDir = path2.join(os.homedir(), ".config", "systemd", "user");
+          if (!fs2.existsSync(unitDir)) fs2.mkdirSync(unitDir, { recursive: true });
+          const servicePath = getLinuxServicePath();
+          const envLines = Object.entries(serviceEnv).map(([k, v]) => `Environment="${k}=${systemdEscape(v)}"`).join("\n");
+          const serviceContent = `[Unit]
+Description=ccnow Edge Agent Daemon
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${os.homedir()}
+${envLines}
+ExecStart=${process.execPath} ${scriptPath} start
+KillMode=process
+Restart=always
+RestartSec=3
+StandardOutput=append:${logPath}
+StandardError=append:${errLogPath}
+
+[Install]
+WantedBy=default.target
+`;
+          fs2.writeFileSync(servicePath, serviceContent, "utf8");
+          try {
+            execSync("systemctl --user daemon-reload", { stdio: "pipe" });
+            execSync(`systemctl --user enable --now ${LINUX_UNIT}`, { stdio: "pipe" });
+            execSync(`systemctl --user restart ${LINUX_UNIT}`, { stdio: "pipe" });
+            console.log(`\u2705 \u5DF2\u5B89\u88C5\u5E76\u542F\u52A8\u540E\u53F0\u5E38\u9A7B\u670D\u52A1 (Linux systemd --user\uFF0C\u5DF2\u8BBE\u4E3A\u5F00\u673A\u81EA\u542F)`);
+            console.log(`   \u670D\u52A1\u6587\u4EF6: ${servicePath}`);
+            console.log(`   \u8BBE\u5907\u540D\u79F0: ${config.name || os.hostname()} (${config.deviceId})`);
+            printCommonCommands(platform);
+            return { ok: true, supported: true, platform, servicePath };
+          } catch (err) {
+            console.error("\u26A0\uFE0F Failed to enable systemd user service:", err.message);
+            return { ok: false, supported: true, platform, error: err.message };
+          }
+        }
+        console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301\u81EA\u52A8\u6CE8\u518C\u540E\u53F0\u5E38\u9A7B\u670D\u52A1\uFF08\u76EE\u524D\u652F\u6301 macOS \u4E0E Linux\uFF09\u3002`);
+        return { ok: false, supported: false, platform, error: "unsupported_platform" };
+      }
+      if (action === "start") {
+        if (platform === "darwin") {
+          const plistPath = getMacPlistPath();
+          if (!fs2.existsSync(plistPath)) {
+            console.error(`\u26A0\uFE0F \u5C1A\u672A\u5B89\u88C5\u540E\u53F0\u670D\u52A1\uFF0C\u8BF7\u5148\u6267\u884C: node ${getScriptDisplayPath()} service install`);
+            return { ok: false, supported: true, platform };
+          }
+          try {
+            stopMacService(plistPath);
+            startMacService(plistPath);
+            console.log("\u{1F680} ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u542F\u52A8 (macOS launchd)");
+            return { ok: true, supported: true, platform };
+          } catch (err) {
+            console.error("\u274C \u542F\u52A8\u5931\u8D25:", err.message);
+            return { ok: false, supported: true, platform, error: err.message };
+          }
+        }
+        if (platform === "linux") {
+          try {
+            execSync(`systemctl --user start ${LINUX_UNIT}`, { stdio: "pipe" });
+            console.log("\u{1F680} ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u542F\u52A8 (systemd --user)");
+            return { ok: true, supported: true, platform };
+          } catch (err) {
+            console.error("\u274C \u542F\u52A8\u5931\u8D25:", err.message);
+            return { ok: false, supported: true, platform, error: err.message };
+          }
+        }
+        console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301 service start\u3002`);
+        return { ok: false, supported: false, platform };
+      }
+      if (action === "stop") {
+        if (platform === "darwin") {
+          const plistPath = getMacPlistPath();
+          stopMacService(plistPath);
+          console.log("\u{1F6D1} ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u505C\u6B62 (\u5982\u9700\u6062\u590D\u53EF\u6267\u884C service start)");
+          return { ok: true, supported: true, platform };
+        }
+        if (platform === "linux") {
+          try {
+            execSync(`systemctl --user stop ${LINUX_UNIT}`, { stdio: "pipe" });
+            console.log("\u{1F6D1} ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u505C\u6B62 (\u5982\u9700\u6062\u590D\u53EF\u6267\u884C service start)");
+            return { ok: true, supported: true, platform };
+          } catch (err) {
+            console.error("\u274C \u505C\u6B62\u5931\u8D25:", err.message);
+            return { ok: false, supported: true, platform, error: err.message };
+          }
+        }
+        console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301 service stop\u3002`);
+        return { ok: false, supported: false, platform };
+      }
+      if (action === "restart") {
+        if (platform === "darwin") {
+          const plistPath = getMacPlistPath();
+          if (!fs2.existsSync(plistPath)) {
+            console.error(`\u26A0\uFE0F \u5C1A\u672A\u5B89\u88C5\u540E\u53F0\u670D\u52A1\uFF0C\u8BF7\u5148\u6267\u884C: node ${getScriptDisplayPath()} service install`);
+            return { ok: false, supported: true, platform };
+          }
+          try {
+            const domain = getMacDomainTarget();
+            try {
+              execSync(`launchctl kickstart -k "${domain}/${MAC_LABEL}"`, { stdio: "pipe" });
+            } catch (_) {
+              stopMacService(plistPath);
+              startMacService(plistPath);
+            }
+            console.log("\u{1F504} ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u91CD\u542F (macOS launchd)");
+            return { ok: true, supported: true, platform };
+          } catch (e) {
+            console.error("\u274C \u91CD\u542F\u5931\u8D25:", e.message);
+            return { ok: false, supported: true, platform, error: e.message };
+          }
+        }
+        if (platform === "linux") {
+          try {
+            execSync(`systemctl --user restart ${LINUX_UNIT}`, { stdio: "pipe" });
+            console.log("\u{1F504} ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u91CD\u542F (systemd --user)");
+            return { ok: true, supported: true, platform };
+          } catch (e) {
+            console.error("\u274C \u91CD\u542F\u5931\u8D25:", e.message);
+            return { ok: false, supported: true, platform, error: e.message };
+          }
+        }
+        console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301 service restart\u3002`);
+        return { ok: false, supported: false, platform };
+      }
+      if (action === "status") {
+        if (platform === "darwin") {
+          const plistPath = getMacPlistPath();
+          const installed = fs2.existsSync(plistPath);
+          try {
+            const out = execSync(`launchctl list | grep ${MAC_LABEL} || true`, { encoding: "utf8" }).trim();
+            if (out) {
+              const parts = out.split(/\s+/);
+              const pid = parts[0] && parts[0] !== "-" ? parts[0] : null;
+              if (pid) {
+                console.log(`\u{1F7E2} ccnow-agent \u540E\u53F0\u670D\u52A1\u8FD0\u884C\u4E2D (PID: ${pid})`);
+              } else {
+                console.log(`\u{1F7E1} ccnow-agent \u5DF2\u6CE8\u518C\u5728 launchd\uFF0C\u4F46\u5F53\u524D\u672A\u8FD0\u884C (${out})`);
+              }
+              if (config) {
+                console.log(`   \u8BBE\u5907\u540D\u79F0: ${config.name || os.hostname()} (${config.deviceId})`);
+                console.log(`   \u63A7\u5236\u9762:   ${config.server}`);
+              }
+              console.log(`   \u65E5\u5FD7\u6587\u4EF6: ${getLogDisplayPath()}`);
+            } else {
+              console.log(installed ? `\u26AA ccnow-agent \u540E\u53F0\u670D\u52A1\u5DF2\u5B89\u88C5\u4F46\u5F53\u524D\u5DF2\u505C\u6B62 (\u8FD0\u884C \`node ${getScriptDisplayPath()} service start\` \u542F\u52A8)` : `\u26AA ccnow-agent \u540E\u53F0\u670D\u52A1\u5C1A\u672A\u5B89\u88C5 (\u8FD0\u884C \`node ${getScriptDisplayPath()} service install\` \u5B89\u88C5)`);
+            }
+            return { ok: true, supported: true, platform };
+          } catch (e) {
+            console.log("\u26A0\uFE0F \u65E0\u6CD5\u67E5\u8BE2 launchctl \u72B6\u6001:", e.message);
+            return { ok: false, supported: true, platform, error: e.message };
+          }
+        }
+        if (platform === "linux") {
+          try {
+            execSync(`systemctl --user status ${LINUX_UNIT} --no-pager`, { stdio: "inherit" });
+          } catch (_) {
+          }
+          return { ok: true, supported: true, platform };
+        }
+        console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301 service status\u3002`);
+        return { ok: false, supported: false, platform };
+      }
+      if (action === "logs") {
+        if (!fs2.existsSync(logPath)) {
+          console.log(`\u2139\uFE0F \u65E5\u5FD7\u6587\u4EF6\u5C1A\u4E0D\u5B58\u5728: ${logPath}`);
+          return { ok: false, supported: true, platform };
+        }
+        console.log(`\u{1F4DC} \u5B9E\u65F6\u8FFD\u8E2A\u65E5\u5FD7 (${getLogDisplayPath()})\uFF0C\u6309 Ctrl+C \u9000\u51FA\u67E5\u770B...`);
+        const child = spawn("tail", ["-n", "50", "-f", logPath], { stdio: "inherit" });
+        child.on("error", () => {
+          console.log(fs2.readFileSync(logPath, "utf8").split("\n").slice(-50).join("\n"));
+        });
+        return { ok: true, supported: true, platform, streaming: true };
+      }
+      if (action === "uninstall") {
+        if (platform === "darwin") {
+          const plistPath = getMacPlistPath();
+          stopMacService(plistPath);
+          if (fs2.existsSync(plistPath)) fs2.unlinkSync(plistPath);
+          console.log("\u2705 \u5DF2\u505C\u6B62\u5E76\u5378\u8F7D macOS LaunchAgent \u540E\u53F0\u670D\u52A1\u3002");
+          console.log(`   (\u672C\u5730\u914D\u5BF9\u51ED\u8BC1\u4FDD\u7559\u5728 ${path2.join(CONFIG_DIR2, "device.json")}\uFF0C\u5982\u9700\u91CD\u65B0\u542F\u7528\u540E\u53F0\u670D\u52A1\u53EF\u6267\u884C: node ${getScriptDisplayPath()} service install)`);
+          return { ok: true, supported: true, platform };
+        }
+        if (platform === "linux") {
+          const servicePath = getLinuxServicePath();
+          try {
+            execSync(`systemctl --user stop ${LINUX_UNIT} 2>/dev/null || true`, { stdio: "ignore" });
+            execSync(`systemctl --user disable ${LINUX_UNIT} 2>/dev/null || true`, { stdio: "ignore" });
+          } catch (_) {
+          }
+          if (fs2.existsSync(servicePath)) fs2.unlinkSync(servicePath);
+          try {
+            execSync("systemctl --user daemon-reload", { stdio: "ignore" });
+          } catch (_) {
+          }
+          console.log("\u2705 \u5DF2\u505C\u6B62\u5E76\u5378\u8F7D Linux systemd \u7528\u6237\u7EA7\u540E\u53F0\u670D\u52A1\u3002");
+          console.log(`   (\u672C\u5730\u914D\u5BF9\u51ED\u8BC1\u4FDD\u7559\u5728 ${path2.join(CONFIG_DIR2, "device.json")}\uFF0C\u5982\u9700\u91CD\u65B0\u542F\u7528\u540E\u53F0\u670D\u52A1\u53EF\u6267\u884C: node ${getScriptDisplayPath()} service install)`);
+          return { ok: true, supported: true, platform };
+        }
+        console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301 service uninstall\u3002`);
+        return { ok: false, supported: false, platform };
+      }
+      console.log(`Unknown service action: ${action}. Available: install, start, stop, restart, status, logs, uninstall`);
+      return { ok: false, supported: true, platform, error: "unknown_action" };
+    }
+    module2.exports = { handleServiceCommand: handleServiceCommand2, printCommonCommands };
+  }
+});
+
 // client/src/client.js
 var require_client = __commonJS({
   "client/src/client.js"(exports2, module2) {
+    var os = require("os");
     var { CLIENT_VERSION: CLIENT_VERSION2, saveConfig, getLocalDeviceInfo, toWsUrl } = require_config();
     var fsHandlers = require_fsHandlers();
     var gitHandlers = require_gitHandlers();
     var tmuxHandlers = require_tmuxHandlers();
     var chatHandlers = require_chatHandlers();
     var { ensureLocalAgentScript, handleSystemUpdate } = require_updater();
+    var { handleServiceCommand: handleServiceCommand2 } = require_serviceManager();
     var { tryRequireOptional, installPackageSync, ensureOptionalDepsInBackground } = require_depsManager();
     var WSClient = typeof WebSocket !== "undefined" ? WebSocket : tryRequireOptional("ws");
     if (!WSClient) {
@@ -3606,6 +4130,37 @@ var require_client = __commonJS({
           this.send({ action: "ping" });
         }, 2e4);
       }
+      async handoffToBackgroundDaemon() {
+        const platform = os.platform();
+        const savedPath = await ensureLocalAgentScript(this.serverUrl, { forceDownload: true });
+        if (platform !== "darwin" && platform !== "linux") {
+          console.log(`\u2139\uFE0F \u5F53\u524D\u7CFB\u7EDF (${platform}) \u6682\u4E0D\u652F\u6301\u81EA\u52A8\u5B89\u88C5\u540E\u53F0\u670D\u52A1\uFF0C\u5DF2\u81EA\u52A8\u5207\u6362\u4E3A\u524D\u53F0\u8FD0\u884C\u6A21\u5F0F\uFF08\u6309 Ctrl+C \u9000\u51FA\uFF09\u3002`);
+          this.startHeartbeat();
+          ensureOptionalDepsInBackground();
+          return;
+        }
+        if (!savedPath) {
+          console.warn("\u26A0\uFE0F \u65E0\u6CD5\u4E0B\u8F7D\u672C\u5730\u811A\u672C\u5230 ~/.ccnow/ccnow-agent.js\uFF0C\u5DF2\u56DE\u9000\u4E3A\u524D\u53F0\u8FD0\u884C\u6A21\u5F0F\u3002");
+          this.startHeartbeat();
+          ensureOptionalDepsInBackground();
+          return;
+        }
+        console.log("\u2699\uFE0F \u6B63\u5728\u6CE8\u518C\u7CFB\u7EDF\u540E\u53F0\u5E38\u9A7B\u670D\u52A1...");
+        this.stop();
+        const result = handleServiceCommand2("install");
+        if (result && result.ok) {
+          console.log("\u2728 \u914D\u7F6E\u5B8C\u6210\uFF01\u540E\u53F0\u670D\u52A1\u5DF2\u5728\u8FD0\u884C\uFF0C\u4F60\u53EF\u4EE5\u653E\u5FC3\u5173\u95ED\u5F53\u524D\u7EC8\u7AEF\u7A97\u53E3\u3002");
+          process.exit(0);
+          return;
+        }
+        console.warn("\u26A0\uFE0F \u540E\u53F0\u670D\u52A1\u6CE8\u518C\u5931\u8D25\uFF0C\u5DF2\u81EA\u52A8\u56DE\u9000\u4E3A\u524D\u53F0\u4FDD\u6301\u8FDE\u63A5\uFF08\u6309 Ctrl+C \u9000\u51FA\uFF09\u3002");
+        this.credentials = {
+          deviceId: this.credentials.deviceId,
+          deviceSecret: this.credentials.deviceSecret,
+          daemon: false
+        };
+        this.start();
+      }
       handleMessage(msg) {
         const { action } = msg;
         switch (action) {
@@ -3621,8 +4176,22 @@ var require_client = __commonJS({
               deviceSecret: msg.deviceSecret,
               name: msg.device?.name || "Local Device"
             });
-            ensureLocalAgentScript(this.serverUrl);
-            this.credentials = { deviceId: msg.deviceId, deviceSecret: msg.deviceSecret };
+            this.credentials = {
+              deviceId: msg.deviceId,
+              deviceSecret: msg.deviceSecret,
+              daemon: this.credentials.daemon
+            };
+            if (this.credentials.daemon) {
+              this.handoffToBackgroundDaemon();
+              return;
+            }
+            ensureLocalAgentScript(this.serverUrl).then(() => {
+              const p = os.platform();
+              if (p === "darwin" || p === "linux") {
+                console.log("\u{1F4A1} \u63D0\u793A: \u5F53\u524D\u4E3A\u524D\u53F0\u8FD0\u884C\u6A21\u5F0F\uFF08\u5173\u95ED\u7EC8\u7AEF\u5C06\u65AD\u5F00\uFF09\uFF1B\u5982\u9700\u8F6C\u4E3A\u540E\u53F0\u5E38\u9A7B\uFF0C\u6309 Ctrl+C \u540E\u6267\u884C:");
+                console.log("   node ~/.ccnow/ccnow-agent.js service install");
+              }
+            });
             this.startHeartbeat();
             ensureOptionalDepsInBackground();
             return;
@@ -3649,7 +4218,7 @@ var require_client = __commonJS({
             return;
           // Tmux & Terminal
           case "tmux:list_sessions":
-            tmuxHandlers.handleListSessions(this.send, msg.reqId);
+            tmuxHandlers.handleListSessions(this.send, msg.reqId, chatHandlers.getDeviceOarManager, msg);
             return;
           case "tmux:new_session":
             tmuxHandlers.handleNewSession(this.send, msg.reqId, msg, chatHandlers.getDeviceOarManager);
@@ -3771,175 +4340,6 @@ var require_client = __commonJS({
   }
 });
 
-// client/src/serviceManager.js
-var require_serviceManager = __commonJS({
-  "client/src/serviceManager.js"(exports2, module2) {
-    var os = require("os");
-    var fs2 = require("fs");
-    var path2 = require("path");
-    var { execSync } = require("child_process");
-    var { CONFIG_DIR: CONFIG_DIR2, readConfig: readConfig2 } = require_config();
-    function handleServiceCommand2(action) {
-      const platform = os.platform();
-      const config = readConfig2();
-      const scriptPath = path2.join(CONFIG_DIR2, "ccnow-agent.js");
-      if (!fs2.existsSync(CONFIG_DIR2)) {
-        fs2.mkdirSync(CONFIG_DIR2, { recursive: true });
-      }
-      if (action === "install") {
-        if (!config || !config.deviceId || !config.deviceSecret) {
-          console.error("\u274C Error: Device is not paired yet. Please run `connect` first before installing service.");
-          process.exit(1);
-        }
-        try {
-          const currentScript = process.argv[1];
-          if (currentScript && fs2.existsSync(currentScript) && currentScript !== scriptPath) {
-            fs2.copyFileSync(currentScript, scriptPath);
-            fs2.chmodSync(scriptPath, 493);
-          }
-        } catch (e) {
-        }
-        if (platform === "darwin") {
-          const launchDir = path2.join(os.homedir(), "Library", "LaunchAgents");
-          if (!fs2.existsSync(launchDir)) fs2.mkdirSync(launchDir, { recursive: true });
-          const plistPath = path2.join(launchDir, "com.ccnow.agent.plist");
-          const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.ccnow.agent</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${process.execPath}</string>
-    <string>${scriptPath}</string>
-    <string>start</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>${path2.join(CONFIG_DIR2, "agent.log")}</string>
-  <key>StandardErrorPath</key>
-  <string>${path2.join(CONFIG_DIR2, "agent-err.log")}</string>
-  <key>WorkingDirectory</key>
-  <string>${os.homedir()}</string>
-</dict>
-</plist>`;
-          fs2.writeFileSync(plistPath, plistContent, "utf8");
-          console.log(`\u2705 macOS LaunchAgent created: ${plistPath}`);
-          try {
-            execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`);
-            execSync(`launchctl load -w "${plistPath}"`);
-            console.log("\u{1F680} Service started and set to run on login via launchd!");
-            console.log(`\u{1F4DC} Logs: tail -f ~/.ccnow/agent.log`);
-          } catch (err) {
-            console.error("\u26A0\uFE0F Failed to load launchd service:", err.message);
-          }
-        } else if (platform === "linux") {
-          const unitDir = path2.join(os.homedir(), ".config", "systemd", "user");
-          if (!fs2.existsSync(unitDir)) fs2.mkdirSync(unitDir, { recursive: true });
-          const servicePath = path2.join(unitDir, "ccnow-agent.service");
-          const serviceContent = `[Unit]
-Description=ccnow Edge Agent Daemon
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=${process.execPath} ${scriptPath} start
-Restart=always
-RestartSec=5
-StandardOutput=append:${path2.join(CONFIG_DIR2, "agent.log")}
-StandardError=append:${path2.join(CONFIG_DIR2, "agent-err.log")}
-WorkingDirectory=${os.homedir()}
-
-[Install]
-WantedBy=default.target
-`;
-          fs2.writeFileSync(servicePath, serviceContent, "utf8");
-          console.log(`\u2705 systemd user service created: ${servicePath}`);
-          try {
-            execSync("systemctl --user daemon-reload");
-            execSync("systemctl --user enable --now ccnow-agent.service");
-            console.log("\u{1F680} Service started and enabled via systemd user unit!");
-            console.log(`\u{1F4DC} Status: systemctl --user status ccnow-agent.service`);
-          } catch (err) {
-            console.error("\u26A0\uFE0F Failed to enable systemd service:", err.message);
-          }
-        } else {
-          console.log("\u2139\uFE0F Service auto-install currently supports macOS (launchd) and Linux (systemd).");
-          console.log(`You can run ccnow-agent in background using: nohup node "${scriptPath}" start > ~/.ccnow/agent.log 2>&1 &`);
-        }
-        return;
-      }
-      if (action === "uninstall") {
-        if (platform === "darwin") {
-          const plistPath = path2.join(os.homedir(), "Library", "LaunchAgents", "com.ccnow.agent.plist");
-          try {
-            execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`);
-          } catch (e) {
-          }
-          if (fs2.existsSync(plistPath)) fs2.unlinkSync(plistPath);
-          console.log("\u2705 macOS LaunchAgent stopped and removed.");
-        } else if (platform === "linux") {
-          const servicePath = path2.join(os.homedir(), ".config", "systemd", "user", "ccnow-agent.service");
-          try {
-            execSync("systemctl --user stop ccnow-agent.service 2>/dev/null || true");
-            execSync("systemctl --user disable ccnow-agent.service 2>/dev/null || true");
-          } catch (e) {
-          }
-          if (fs2.existsSync(servicePath)) fs2.unlinkSync(servicePath);
-          try {
-            execSync("systemctl --user daemon-reload");
-          } catch (e) {
-          }
-          console.log("\u2705 systemd user service stopped and removed.");
-        }
-        return;
-      }
-      if (action === "status") {
-        if (platform === "darwin") {
-          try {
-            const out = execSync("launchctl list | grep com.ccnow.agent || true", { encoding: "utf8" });
-            console.log(out.trim() ? "\u{1F7E2} ccnow-agent service is registered in launchd:\n" + out : "\u26AA ccnow-agent service is not currently running in launchd.");
-          } catch (e) {
-            console.log("\u26A0\uFE0F Could not check launchctl status.");
-          }
-        } else if (platform === "linux") {
-          try {
-            execSync("systemctl --user status ccnow-agent.service", { stdio: "inherit" });
-          } catch (e) {
-          }
-        }
-        return;
-      }
-      if (action === "restart") {
-        if (platform === "darwin") {
-          const plistPath = path2.join(os.homedir(), "Library", "LaunchAgents", "com.ccnow.agent.plist");
-          try {
-            execSync(`launchctl unload "${plistPath}" 2>/dev/null || true`);
-            execSync(`launchctl load -w "${plistPath}"`);
-            console.log("\u{1F504} macOS LaunchAgent service restarted.");
-          } catch (e) {
-            console.error("\u274C Failed to restart service:", e.message);
-          }
-        } else if (platform === "linux") {
-          try {
-            execSync("systemctl --user restart ccnow-agent.service");
-            console.log("\u{1F504} systemd user service restarted.");
-          } catch (e) {
-            console.error("\u274C Failed to restart service:", e.message);
-          }
-        }
-        return;
-      }
-      console.log(`Unknown service action: ${action}. Available: install, uninstall, status, restart`);
-    }
-    module2.exports = { handleServiceCommand: handleServiceCommand2 };
-  }
-});
-
 // client/src/index.js
 var fs = require("fs");
 var path = require("path");
@@ -3961,25 +4361,26 @@ function printHelp() {
 ccnow-agent (v${CLIENT_VERSION}) - Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
 
 Usage:
-  curl -fsSL https://<server>/agent.js | node - connect --server <url> --token <token> [--name <name>]
+  curl -fsSL https://<server>/agent.js | node - connect --server <url> --token <token> [--daemon] [--name <name>]
       Pair and connect this device to the ccnow Web Control Plane
+      Add --daemon to automatically install and start as a background service (macOS / Linux)
 
-  npx ccnow-agent start [--server <url>]
+  node ~/.ccnow/ccnow-agent.js start [--server <url>]
       Start daemon in foreground using saved credentials from ~/.ccnow/device.json
 
-  npx ccnow-agent update [--server <url>]
+  node ~/.ccnow/ccnow-agent.js update [--server <url>]
       Download latest ccnow-agent from server and apply self-update
 
-  npx ccnow-agent service <install|uninstall|status|restart>
+  node ~/.ccnow/ccnow-agent.js service <install|start|stop|restart|status|logs|uninstall>
       Manage background daemon service via macOS LaunchAgent or Linux systemd user unit
 
-  npx ccnow-agent status
+  node ~/.ccnow/ccnow-agent.js status
       Show currently paired device details
 
-  npx ccnow-agent version
+  node ~/.ccnow/ccnow-agent.js version
       Show client daemon version
 
-  npx ccnow-agent unpair
+  node ~/.ccnow/ccnow-agent.js unpair
       Remove local pairing configuration
 `);
 }
@@ -4012,7 +4413,10 @@ switch (parsed.command) {
   }
   case "service": {
     const subcommand = parsed.options._subcommand || process.argv[3] || "status";
-    handleServiceCommand(subcommand, parsed.options);
+    const result = handleServiceCommand(subcommand, parsed.options);
+    if (result && !result.ok && !result.streaming) {
+      process.exit(1);
+    }
     break;
   }
   case "setup": {
@@ -4023,14 +4427,15 @@ switch (parsed.command) {
     break;
   }
   case "connect": {
-    const { server, token, name } = parsed.options;
+    const { server, token, name, daemon, background } = parsed.options;
     if (!server || !token) {
       console.error("\u274C Error: Both --server and --token are required for connect.");
       printHelp();
       process.exit(1);
     }
-    console.log("\u{1F680} Starting ccnow-agent pairing...");
-    const client = new AgentClient(server, { token, customName: name });
+    const daemonMode = Boolean(daemon || background);
+    console.log(daemonMode ? "\u{1F680} Starting ccnow-agent pairing (background daemon mode)..." : "\u{1F680} Starting ccnow-agent pairing...");
+    const client = new AgentClient(server, { token, customName: name, daemon: daemonMode });
     client.start();
     process.on("SIGINT", () => {
       console.log("\n\u{1F44B} Disconnecting ccnow-agent...");

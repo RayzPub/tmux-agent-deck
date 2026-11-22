@@ -891,19 +891,36 @@ router.get('/task-board', requireAuth, async (req, res) => {
     const workspace = req.query.workspace || '';
     const targetDeviceId = resolveComputeDeviceId(req);
     let remoteSessions = [];
+    const remoteChatMap = new Map();
 
     if (targetDeviceId) {
       try {
-        remoteSessions = await deviceService.getRemoteSessions(targetDeviceId);
+        remoteSessions = await deviceService.getRemoteSessions(targetDeviceId, { includeLiveStatus: true });
       } catch (e) {
         remoteSessions = [];
+      }
+
+      // Enrich agent sessions in parallel with real-time chat/OAR/tool/pendingAction state
+      const chatTargets = remoteSessions
+        .filter(s => s && s.name && s.sessionMode !== 'terminal_only')
+        .slice(0, 20);
+      if (chatTargets.length > 0) {
+        await Promise.all(chatTargets.map(async (s) => {
+          try {
+            const chat = await deviceService.remoteChatHistory(targetDeviceId, s.name, null, 1800);
+            if (chat && !chat.error) {
+              remoteChatMap.set(s.name, chat);
+            }
+          } catch (_) {}
+        }));
       }
     }
 
     const board = await projectService.getGlobalTaskBoard(req.user.username, {
       workspace,
       deviceId: targetDeviceId || 'none',
-      remoteSessions
+      remoteSessions,
+      remoteChatMap
     });
     res.json(board);
   } catch (err) {
@@ -976,12 +993,23 @@ router.post('/task-board/card-meta', requireAuth, (req, res) => {
 // API: Quick dispatch instruction directly to a session card
 router.post('/task-board/dispatch', requireAuth, async (req, res) => {
   try {
-    const { sessionName, promptText, clearHistory } = req.body || {};
+    const { sessionName, promptText, clearHistory, sessionMode } = req.body || {};
     if (!sessionName || !promptText || !String(promptText).trim()) {
       return res.status(400).json({ error: 'sessionName and promptText are required' });
     }
     const targetDeviceId = resolveComputeDeviceId(req);
     if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+
+    if (sessionMode === 'chat_only') {
+      const result = await deviceService.remoteOarMessage(targetDeviceId, sessionName, {
+        content: String(promptText).trim()
+      });
+      if (result && (result.error || result.accepted === false)) {
+        return res.status(400).json({ error: result.error || '发送失败' });
+      }
+      return res.json({ success: true });
+    }
+
     const result = await deviceService.remoteTmuxSendKeys(targetDeviceId, {
       sessionName,
       text: promptText,
@@ -1675,7 +1703,8 @@ router.post('/devices/pair-token', requireAuth, (req, res) => {
   const protocol = req.protocol;
   const serverUrl = `${protocol}://${host}`;
 
-  const command = `curl -fsSL ${serverUrl}/agent.js | node - connect --server ${serverUrl} --token ${pairData.token}`;
+  const foregroundCommand = `curl -fsSL ${serverUrl}/agent.js | node - connect --server ${serverUrl} --token ${pairData.token}`;
+  const daemonCommand = `${foregroundCommand} --daemon`;
 
   res.json({
     success: true,
@@ -1683,7 +1712,9 @@ router.post('/devices/pair-token', requireAuth, (req, res) => {
     expireAt: pairData.expireAt,
     ttlSeconds: pairData.ttlSeconds,
     serverUrl,
-    command
+    command: daemonCommand,
+    daemonCommand,
+    foregroundCommand
   });
 });
 
@@ -1848,7 +1879,8 @@ router.get('/sandbox/status', requireAuth, async (req, res) => {
 router.post('/sandbox/start', requireAuth, async (req, res) => {
   try {
     const result = await containerService.ensureUserSandbox(req.user.username, {
-      name: req.body?.name
+      name: req.body?.name,
+      recreate: Boolean(req.body?.recreate)
     });
     res.json(result);
   } catch (err) {

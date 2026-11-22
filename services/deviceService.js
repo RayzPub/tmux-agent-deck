@@ -654,8 +654,10 @@ function resolveDeviceRpc(reqId, result) {
 /**
  * Query active tmux / terminal sessions running on a remote edge device
  */
-async function getRemoteSessions(deviceId) {
-  const res = await sendDeviceRpc(deviceId, 'tmux:list_sessions', {}, 2500);
+async function getRemoteSessions(deviceId, opts = {}) {
+  const payload = opts && opts.includeLiveStatus ? { includeLiveStatus: true } : {};
+  const timeoutMs = opts && opts.includeLiveStatus ? 3500 : 2500;
+  const res = await sendDeviceRpc(deviceId, 'tmux:list_sessions', payload, timeoutMs);
   if (res && Array.isArray(res.sessions)) {
     return res.sessions;
   }
@@ -750,12 +752,12 @@ function remoteGitCheckout(deviceId, workspacePath, branch) {
   return sendDeviceRpc(deviceId, 'git:checkout', { workspacePath, branch });
 }
 
-function remoteChatHistory(deviceId, sessionName, since) {
+function remoteChatHistory(deviceId, sessionName, since, timeoutMs) {
   const payload = { sessionName };
   if (since !== undefined && since !== null && since !== '') {
     payload.since = since;
   }
-  return sendDeviceRpc(deviceId, 'agent:chat_history', payload);
+  return sendDeviceRpc(deviceId, 'agent:chat_history', payload, timeoutMs);
 }
 
 function remoteOarRuntimes(deviceId) {

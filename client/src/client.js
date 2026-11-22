@@ -1,9 +1,11 @@
+const os = require('os');
 const { CLIENT_VERSION, saveConfig, getLocalDeviceInfo, toWsUrl } = require('./config');
 const fsHandlers = require('./fsHandlers');
 const gitHandlers = require('./gitHandlers');
 const tmuxHandlers = require('./tmuxHandlers');
 const chatHandlers = require('./chatHandlers');
 const { ensureLocalAgentScript, handleSystemUpdate } = require('./updater');
+const { handleServiceCommand } = require('./serviceManager');
 const { tryRequireOptional, installPackageSync, ensureOptionalDepsInBackground } = require('./depsManager');
 
 // Ensure native or installed WebSocket (auto-installs 'ws' into ~/.ccnow/node_modules on Node < 21)
@@ -140,6 +142,44 @@ class AgentClient {
     }, 20000);
   }
 
+  async handoffToBackgroundDaemon() {
+    const platform = os.platform();
+    const savedPath = await ensureLocalAgentScript(this.serverUrl, { forceDownload: true });
+
+    if (platform !== 'darwin' && platform !== 'linux') {
+      console.log(`ℹ️ 当前系统 (${platform}) 暂不支持自动安装后台服务，已自动切换为前台运行模式（按 Ctrl+C 退出）。`);
+      this.startHeartbeat();
+      ensureOptionalDepsInBackground();
+      return;
+    }
+
+    if (!savedPath) {
+      console.warn('⚠️ 无法下载本地脚本到 ~/.ccnow/ccnow-agent.js，已回退为前台运行模式。');
+      this.startHeartbeat();
+      ensureOptionalDepsInBackground();
+      return;
+    }
+
+    console.log('⚙️ 正在注册系统后台常驻服务...');
+    // Close temporary pairing socket before daemon starts to avoid duplicate connection churn
+    this.stop();
+
+    const result = handleServiceCommand('install');
+    if (result && result.ok) {
+      console.log('✨ 配置完成！后台服务已在运行，你可以放心关闭当前终端窗口。');
+      process.exit(0);
+      return;
+    }
+
+    console.warn('⚠️ 后台服务注册失败，已自动回退为前台保持连接（按 Ctrl+C 退出）。');
+    this.credentials = {
+      deviceId: this.credentials.deviceId,
+      deviceSecret: this.credentials.deviceSecret,
+      daemon: false
+    };
+    this.start();
+  }
+
   handleMessage(msg) {
     const { action } = msg;
 
@@ -156,8 +196,24 @@ class AgentClient {
           deviceSecret: msg.deviceSecret,
           name: msg.device?.name || 'Local Device'
         });
-        ensureLocalAgentScript(this.serverUrl);
-        this.credentials = { deviceId: msg.deviceId, deviceSecret: msg.deviceSecret };
+        this.credentials = {
+          deviceId: msg.deviceId,
+          deviceSecret: msg.deviceSecret,
+          daemon: this.credentials.daemon
+        };
+
+        if (this.credentials.daemon) {
+          this.handoffToBackgroundDaemon();
+          return;
+        }
+
+        ensureLocalAgentScript(this.serverUrl).then(() => {
+          const p = os.platform();
+          if (p === 'darwin' || p === 'linux') {
+            console.log('💡 提示: 当前为前台运行模式（关闭终端将断开）；如需转为后台常驻，按 Ctrl+C 后执行:');
+            console.log('   node ~/.ccnow/ccnow-agent.js service install');
+          }
+        });
         this.startHeartbeat();
         ensureOptionalDepsInBackground();
         return;
@@ -190,7 +246,7 @@ class AgentClient {
 
       // Tmux & Terminal
       case 'tmux:list_sessions':
-        tmuxHandlers.handleListSessions(this.send, msg.reqId);
+        tmuxHandlers.handleListSessions(this.send, msg.reqId, chatHandlers.getDeviceOarManager, msg);
         return;
       case 'tmux:new_session':
         tmuxHandlers.handleNewSession(this.send, msg.reqId, msg, chatHandlers.getDeviceOarManager);

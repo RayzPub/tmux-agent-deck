@@ -54,14 +54,56 @@ function readTmuxSessionMeta(sessionName) {
   return { workspacePath, agentType, sessionMode, model };
 }
 
-async function handleListSessions(send, reqId) {
+function detectPaneLiveStatus(paneOutput) {
+  const nonBlankLines = (paneOutput || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const lastFewLines = nonBlankLines.slice(-8);
+  const recentText = lastFewLines.join('\n');
+
+  const waitingPatterns = [
+    /\[y\/N\]/i,
+    /\[Y\/n\]/i,
+    /\[y\/n\]/i,
+    /\(y\/n\)/i,
+    /allow\s+.*?\?/i,
+    /confirm\s+.*?\?/i,
+    /please\s+authorize/i,
+    /authorize\s+.*?\?/i,
+    /waiting\s+for\s+(approval|input|feedback)/i,
+    /do\s+you\s+want\s+to\s+(proceed|allow|run|continue)/i,
+    /escalate_admin/i,
+    /enter\s+to\s+continue/i,
+    /password\s+for\s+.*?:/i
+  ];
+  if (waitingPatterns.some(p => p.test(recentText))) {
+    return { status: 'waiting', snippet: nonBlankLines.slice(-2).join(' ').slice(0, 140) };
+  }
+
+  const busyPatterns = [
+    /esc\s+to\s+interrupt/i,
+    /ctrl\+c\s+to\s+interrupt/i,
+    /\b(thinking|working|running|generating|analyzing|searching|reading|writing|editing|compacting|retrying|streaming)\b(\.{2,3}|…)/i,
+    /\bworking\s*\(\d+s/i,
+    /[⣾⣽⣻⢿⡿⣟⣯⣷⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+    /[✻✽✶✢]\s+\S+.*(…|\.\.\.)/,
+    /●\s+(bash|read|write|view|edit|search|grep|glob|tool|run_command)/i,
+    /正在(深入思考|思考|生成|执行|压缩|重试|分析|读取|写入|搜索)/
+  ];
+  if (busyPatterns.some(p => p.test(recentText))) {
+    return { status: 'busy', snippet: nonBlankLines.slice(-2).join(' ').slice(0, 140) };
+  }
+
+  return { status: 'idle', snippet: nonBlankLines.slice(-2).join(' ').slice(0, 140) };
+}
+
+async function handleListSessions(send, reqId, getDeviceOarManager, msg = {}) {
   const hasTmux = hasCommand('tmux');
+  const includeLiveStatus = Boolean(msg && msg.includeLiveStatus);
   const sessions = [];
   const seenNames = new Set();
 
   if (hasTmux) {
     try {
-      const fmt = '#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}';
+      const fmt = '#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}|#{session_activity}';
       const { stdout } = await execFileAsync('tmux', tmuxArgs(['list-sessions', '-F', fmt]), {
         encoding: 'utf8'
       });
@@ -72,11 +114,14 @@ async function handleListSessions(send, reqId) {
           const agentType = parts[6] || '';
           const rawMode = parts[8] || '';
           const sessionMode = rawMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+          const createdMs = parseInt(parts[2], 10) * 1000 || Date.now();
+          const activityMs = parts[10] ? parseInt(parts[10], 10) * 1000 : 0;
           seenNames.add(parts[0]);
           sessions.push({
             name: parts[0],
             windows: parseInt(parts[1], 10) || 1,
-            created: parseInt(parts[2], 10) * 1000 || Date.now(),
+            created: createdMs,
+            lastActiveAt: Math.max(createdMs, activityMs || 0),
             attached: parts[3] === '1',
             path: parts[4] || '',
             workspaceName: parts[5] || '',
@@ -99,6 +144,48 @@ async function handleListSessions(send, reqId) {
       seenNames.add(s.name);
       sessions.push(s);
     }
+  }
+
+  // Attach zero-cost in-memory OAR live execution state to all chat_only sessions
+  const oarMgr = typeof getDeviceOarManager === 'function' ? getDeviceOarManager() : null;
+  if (oarMgr) {
+    for (const s of sessions) {
+      if (s.sessionMode === 'chat_only') {
+        try {
+          const snap = oarMgr.getHistorySnapshot(s.name, {
+            agentType: s.agentType || 'claude',
+            workspacePath: s.path || s.workspacePath || process.cwd(),
+            model: s.agentModel || s.modelName || ''
+          });
+          if (snap) {
+            s.isGenerating = Boolean(snap.isGenerating);
+            s.hasPendingAction = Boolean(snap.pendingAction);
+            s.liveStatus = snap.pendingAction ? 'waiting' : (snap.isGenerating ? 'busy' : 'idle');
+            s.statusText = snap.statusText || '';
+            if (snap.lastUpdated) {
+              s.lastActiveAt = Math.max(s.lastActiveAt || 0, Number(snap.lastUpdated) || 0);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
+  // Optionally probe live tmux pane output in parallel when requested by Task Board
+  if (includeLiveStatus && hasTmux) {
+    const tmuxCandidates = sessions.filter(s => s.sessionMode !== 'chat_only').slice(0, 25);
+    await Promise.all(tmuxCandidates.map(async (s) => {
+      try {
+        const { stdout } = await execFileAsync(
+          'tmux',
+          tmuxArgs(['capture-pane', '-p', '-t', s.name, '-S', '-18']),
+          { encoding: 'utf8', timeout: 600 }
+        );
+        const live = detectPaneLiveStatus(stdout);
+        s.liveStatus = live.status;
+        if (live.snippet) s.paneSnippet = live.snippet;
+      } catch (_) {}
+    }));
   }
 
   // Non-tmux hosts still expose a default terminal shell if no terminal session exists

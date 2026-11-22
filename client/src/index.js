@@ -24,25 +24,26 @@ function printHelp() {
 ccnow-agent (v${CLIENT_VERSION}) - Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
 
 Usage:
-  curl -fsSL https://<server>/agent.js | node - connect --server <url> --token <token> [--name <name>]
+  curl -fsSL https://<server>/agent.js | node - connect --server <url> --token <token> [--daemon] [--name <name>]
       Pair and connect this device to the ccnow Web Control Plane
+      Add --daemon to automatically install and start as a background service (macOS / Linux)
 
-  npx ccnow-agent start [--server <url>]
+  node ~/.ccnow/ccnow-agent.js start [--server <url>]
       Start daemon in foreground using saved credentials from ~/.ccnow/device.json
 
-  npx ccnow-agent update [--server <url>]
+  node ~/.ccnow/ccnow-agent.js update [--server <url>]
       Download latest ccnow-agent from server and apply self-update
 
-  npx ccnow-agent service <install|uninstall|status|restart>
+  node ~/.ccnow/ccnow-agent.js service <install|start|stop|restart|status|logs|uninstall>
       Manage background daemon service via macOS LaunchAgent or Linux systemd user unit
 
-  npx ccnow-agent status
+  node ~/.ccnow/ccnow-agent.js status
       Show currently paired device details
 
-  npx ccnow-agent version
+  node ~/.ccnow/ccnow-agent.js version
       Show client daemon version
 
-  npx ccnow-agent unpair
+  node ~/.ccnow/ccnow-agent.js unpair
       Remove local pairing configuration
 `);
 }
@@ -79,7 +80,10 @@ switch (parsed.command) {
 
   case 'service': {
     const subcommand = parsed.options._subcommand || process.argv[3] || 'status';
-    handleServiceCommand(subcommand, parsed.options);
+    const result = handleServiceCommand(subcommand, parsed.options);
+    if (result && !result.ok && !result.streaming) {
+      process.exit(1);
+    }
     break;
   }
 
@@ -92,15 +96,18 @@ switch (parsed.command) {
   }
 
   case 'connect': {
-    const { server, token, name } = parsed.options;
+    const { server, token, name, daemon, background } = parsed.options;
     if (!server || !token) {
       console.error('❌ Error: Both --server and --token are required for connect.');
       printHelp();
       process.exit(1);
     }
 
-    console.log('🚀 Starting ccnow-agent pairing...');
-    const client = new AgentClient(server, { token, customName: name });
+    const daemonMode = Boolean(daemon || background);
+    console.log(daemonMode
+      ? '🚀 Starting ccnow-agent pairing (background daemon mode)...'
+      : '🚀 Starting ccnow-agent pairing...');
+    const client = new AgentClient(server, { token, customName: name, daemon: daemonMode });
     client.start();
 
     process.on('SIGINT', () => {
