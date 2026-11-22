@@ -1,46 +1,169 @@
-# Lightweight multi-agent sandbox image for tmux-agent-deck (CCNOW)
-# Runs ccnow-agent.js + @botiverse/oar as non-root UID 1000 (matching host ubuntu UID) for clean bind mounts.
-# Node.js >= 24 is required by @botiverse/oar (>=0.128.1).
-FROM node:24-bookworm-slim
+# Multi-stage multi-agent sandbox image for tmux-agent-deck (CCNOW)
+# Aligned with host environment: Node.js 26.4, Debian Trixie (tmux 3.5a, git 2.47+, python3 3.13),
+# pre-compiled node-pty + @botiverse/oar, and supported agent CLIs (claude, codex, agy, kimi).
+# Runs as non-root UID 1000 (node, matching host ubuntu UID) for clean bind mounts.
+
+ARG NODE_VERSION=26.4
+
+# ==============================================================================
+# Stage 1: Native dependency builder (node-pty + @botiverse/oar)
+# Keeps build toolchain (g++, make) out of the final runtime image.
+# ==============================================================================
+FROM node:${NODE_VERSION}-trixie-slim AS deps-builder
+
+ARG APT_MIRROR=""
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG OAR_VERSION=^0.128.1
+ARG NODE_PTY_VERSION=^1.1.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN if [ -n "${APT_MIRROR}" ]; then \
+      [ -f /etc/apt/sources.list.d/debian.sources ] && sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources || true; \
+      [ -f /etc/apt/sources.list ] && sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
+    fi \
+    && apt-get update -qq && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      g++ \
+      make \
+      python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/ccnow
+
+RUN NPM_CONFIG_REGISTRY="${NPM_REGISTRY}" sh -c ' \
+      npm init -y >/dev/null 2>&1 \
+      && npm install --omit=optional --no-audit --no-fund \
+         "@botiverse/oar@${OAR_VERSION}" \
+         "node-pty@${NODE_PTY_VERSION}" \
+    ' \
+    && node -e "require('/opt/ccnow/node_modules/node-pty'); console.log('node-pty build OK')" \
+    && node --input-type=module -e "import('/opt/ccnow/node_modules/@botiverse/oar/dist/index.js').then(() => console.log('oar load OK'))" \
+    && rm -rf \
+      /opt/ccnow/node_modules/node-pty/build/Makefile \
+      /opt/ccnow/node_modules/node-pty/build/Release/obj.target \
+      /root/.npm \
+      /root/.cache
+
+# ==============================================================================
+# Stage 2: Hardened multi-agent runtime image
+# ==============================================================================
+FROM node:${NODE_VERSION}-trixie-slim AS runtime
+
+ARG APT_MIRROR=""
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG CLAUDE_CODE_VERSION=^2.1.316
+ARG CODEX_VERSION=0.80.0
+ARG PNPM_VERSION=11
+ARG INSTALL_KIMI=true
+ARG KIMI_VERSION=""
+ARG INSTALL_AGY=true
+ARG INSTALL_DSH=false
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TERM=xterm-256color \
+    COLORTERM=truecolor \
     LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
+    LC_ALL=C.UTF-8 \
+    SHELL=/bin/bash
 
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
-    curl \
-    git \
-    jq \
-    openssh-client \
-    procps \
-    ripgrep \
-    tmux \
-    && rm -rf /var/lib/apt/lists/*
+# Layer 1: System CLI utilities & PTY/tmux runtime aligned with host
+RUN if [ -n "${APT_MIRROR}" ]; then \
+      [ -f /etc/apt/sources.list.d/debian.sources ] && sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources || true; \
+      [ -f /etc/apt/sources.list ] && sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
+    fi \
+    && apt-get update -qq && apt-get install -y --no-install-recommends \
+      bash \
+      ca-certificates \
+      curl \
+      fd-find \
+      file \
+      git \
+      jq \
+      less \
+      nano \
+      ncurses-term \
+      openssh-client \
+      procps \
+      python3 \
+      python3-venv \
+      ripgrep \
+      tar \
+      tmux \
+      tree \
+      unzip \
+      vim-tiny \
+      wget \
+      xz-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
+    && git config --system safe.directory '*' \
+    && git config --system init.defaultBranch main
 
-# Ensure workspace and ccnow agent mount directories exist and belong to UID 1000 (node)
+# Layer 2: Global Node tooling & npm-based Agent CLIs (Codex pinned to 0.80.0 for wire_api="chat" gateway compat)
+RUN NPM_CONFIG_REGISTRY="${NPM_REGISTRY}" sh -c ' \
+      PKGS="pnpm@${PNPM_VERSION} @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION}"; \
+      if [ "${INSTALL_DSH}" = "true" ]; then PKGS="${PKGS} @deepseek-ai/dsh@latest"; fi; \
+      npm install -g --no-audit --no-fund ${PKGS} \
+    ' \
+    && rm -rf /root/.npm /tmp/*
+
+# Layer 3: Kimi Code CLI -> /usr/local/bin/kimi
+RUN if [ "${INSTALL_KIMI}" = "true" ]; then \
+      curl -fsSL https://code.kimi.com/kimi-code/install.sh \
+        | env KIMI_INSTALL_DIR=/usr/local KIMI_CODE_HOME=/tmp/kimi-install-home KIMI_NO_MODIFY_PATH=1 KIMI_VERSION="${KIMI_VERSION}" bash \
+      && chmod 0755 /usr/local/bin/kimi \
+      && rm -rf /tmp/kimi-install-home /tmp/kimi-install* /tmp/* \
+      && /usr/local/bin/kimi --version; \
+    fi
+
+# Layer 4: Antigravity CLI (agy) -> /usr/local/bin/agy
+RUN if [ "${INSTALL_AGY}" = "true" ]; then \
+      curl -fsSL https://antigravity.google/cli/install.sh \
+        | bash -s -- --dir /usr/local/bin \
+      && chmod 0755 /usr/local/bin/agy \
+      && rm -rf /root/.cache/antigravity /tmp/* \
+      && /usr/local/bin/agy --version; \
+    fi
+
+# Layer 5: System-wide tmux & shell configuration (outside /home/node bind mount)
+COPY docker/tmux.conf /etc/tmux.conf
+COPY docker/sandbox-bashrc.sh /etc/profile.d/ccnow-sandbox.sh
+RUN chmod 0644 /etc/tmux.conf \
+    && chmod 0755 /etc/profile.d/ccnow-sandbox.sh \
+    && echo '[ -r /etc/profile.d/ccnow-sandbox.sh ] && . /etc/profile.d/ccnow-sandbox.sh' >> /etc/bash.bashrc
+
+# Layer 6: Workspace, precompiled /opt/ccnow dependencies & fallback agent scripts
 RUN mkdir -p /workspace /opt/ccnow /home/node/.ccnow \
     && chown -R node:node /workspace /opt/ccnow /home/node
+COPY --from=deps-builder --chown=node:node /opt/ccnow /opt/ccnow
+COPY --chown=node:node client/ccnow-agent.js /opt/ccnow/ccnow-agent.js
+COPY --chown=node:node client/oar-runtime.js /opt/ccnow/oar-runtime.js
 
-# Pre-install lightweight @botiverse/oar (omit optional heavy SDKs to stay well within sandbox memory quota)
-WORKDIR /opt/ccnow
-RUN npm init -y >/dev/null 2>&1 \
-    && npm install --omit=optional --no-audit --no-fund @botiverse/oar@^0.128.1 \
-    && chown -R node:node /opt/ccnow
-
-# Fallback copy of ccnow-agent.js & oar-runtime.js (at runtime host scripts are bind-mounted read-only)
-COPY client/ccnow-agent.js /opt/ccnow/ccnow-agent.js
-COPY client/oar-runtime.js /opt/ccnow/oar-runtime.js
-
+# Layer 7: Non-root execution environment & build-time verification
 USER node
 WORKDIR /workspace
 
 ENV HOME=/home/node \
+    PATH="/home/node/.local/bin:/home/node/.kimi-code/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     NODE_PATH=/opt/ccnow/node_modules \
     CCNOW_CONFIG_DIR=/home/node/.ccnow \
     CCNOW_DEFAULT_WORKSPACE=/workspace \
     CCNOW_DEFAULT_WORKSPACE_NAME=workspace
+
+RUN echo "=== Sandbox Tooling Verification ===" \
+    && node -v \
+    && pnpm -v \
+    && tmux -V \
+    && git --version \
+    && python3 --version \
+    && rg --version | head -n 1 \
+    && fd --version \
+    && claude --version \
+    && codex --version \
+    && ( [ "${INSTALL_KIMI}" != "true" ] || kimi --version ) \
+    && ( [ "${INSTALL_AGY}" != "true" ] || agy --version ) \
+    && node -e "require('/opt/ccnow/node_modules/node-pty'); console.log('node-pty verify OK')" \
+    && node --input-type=module -e "import('/opt/ccnow/node_modules/@botiverse/oar/dist/index.js').then(() => console.log('oar verify OK'))"
 
 CMD ["node", "/opt/ccnow/ccnow-agent.js", "start"]

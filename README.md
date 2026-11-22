@@ -161,9 +161,11 @@ sudo node scripts/setup-host-admin-agent.js
 ```
 
 #### B. 构建云电脑 Docker 沙箱镜像（`docker-sandbox`，多用户推荐）
-构建基于 `node:22-bookworm-slim` 的硬化非 root 沙箱镜像后，普通用户即可在网页「设备管理」一键唤醒专属云电脑：
+构建基于 `node:26.4-trixie-slim` 的硬化非 root 沙箱镜像（对齐宿主机 Node 版本、`tmux`、原生 `node-pty`、`@botiverse/oar` 及 `claude` / `codex` / `agy` / `kimi` 等智能体 CLI）后，普通用户即可在网页「设备管理」一键唤醒专属云电脑：
 ```bash
-docker build -f docker/Dockerfile.sandbox -t ccnow-sandbox:latest .
+npm run build:sandbox
+# 或直接使用 Docker 构建：
+# docker build -f docker/Dockerfile.sandbox -t ccnow-sandbox:latest .
 ```
 
 #### C. 接入个人电脑（`external`：Mac / Windows / Linux）

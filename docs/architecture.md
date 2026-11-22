@@ -51,7 +51,7 @@ flowchart TD
 
 ### 3.1 托管算力（Managed Compute：`docker-sandbox`）
 - **调度者**：控制面内置的 `services/containerService.js` 全权负责生命周期。
-- **底层镜像**：`docker/Dockerfile.sandbox`（`ccnow-sandbox:latest`，基于 `node:22-bookworm-slim`，非 root `uid=1000`）。
+- **底层镜像**：`docker/Dockerfile.sandbox`（`ccnow-sandbox:latest`，基于 `node:26.4-trixie-slim`，非 root `uid=1000`，预装 `tmux`、`node-pty`、`@botiverse/oar`、`claude`、`codex`、`agy`、`kimi`、`pnpm`、`python3`、`ripgrep`、`fd` 等完整算力工具链）。
 - **内核级隔离与硬化**：
   - 独立 rootfs、PID、Mount、Network 命名空间；
   - `--cap-drop=ALL`、`--security-opt=no-new-privileges:true`；

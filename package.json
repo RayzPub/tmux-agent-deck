@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "build": "node bin/build.js",
+    "build:sandbox": "bash scripts/build-sandbox-image.sh",
     "generate-icons": "node bin/generate-icons.js",
     "migrate:sqlite": "node scripts/migrate-json-to-sqlite.js",
     "test": "node test/gateway.test.js",

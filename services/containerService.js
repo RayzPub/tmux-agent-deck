@@ -146,7 +146,7 @@ function prepareUserSandboxDirs(username) {
  * route cleanly through the Control Plane LLM Proxy using the container's scoped virtual key
  * (never writing plaintext upstream API keys to disk).
  */
-function syncSandboxAgentConfigs(sandboxHomeDir, serverUrl) {
+function syncSandboxAgentConfigs(sandboxHomeDir, serverUrl, virtualKey) {
   let defaultOpenAiModel = 'glm-5.3-flash';
   try {
     const gwConfig = require('./llmGatewayService').loadConfig();
@@ -172,6 +172,9 @@ wire_api = "chat"
 
 [projects."/workspace"]
 trust_level = "trusted"
+
+[projects."/home/node"]
+trust_level = "trusted"
 `;
     fs.writeFileSync(codexTomlPath, tomlContent, 'utf8');
   } catch (err) {
@@ -195,6 +198,7 @@ trust_level = "trusted"
       delete settings.env.ANTHROPIC_BASE_URL;
       delete settings.env.ANTHROPIC_MODEL;
       delete settings.env.ANTHROPIC_API_KEY;
+      delete settings.env.ANTHROPIC_AUTH_TOKEN;
     }
     delete settings.model;
     fs.writeFileSync(claudeSettingsPath, JSON.stringify(settings, null, 2), 'utf8');
@@ -202,7 +206,50 @@ trust_level = "trusted"
     console.warn(`[ContainerService] Failed to sync sandbox Claude config:`, err.message);
   }
 
-  // Ensure UID 1000 (host ubuntu / container node) owns .codex and .claude
+  // 3. Claude Code: pre-approve /workspace, /home/node and scoped virtual key suffix in ~/.claude.json
+  try {
+    const claudeJsonPath = safeResolve(sandboxHomeDir, '.claude.json');
+    let claudeJson = {};
+    if (fs.existsSync(claudeJsonPath)) {
+      try {
+        claudeJson = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf8')) || {};
+      } catch (_) {
+        claudeJson = {};
+      }
+    }
+    claudeJson.hasCompletedOnboarding = true;
+    if (!claudeJson.projects || typeof claudeJson.projects !== 'object') {
+      claudeJson.projects = {};
+    }
+    for (const trustDir of ['/workspace', '/home/node']) {
+      if (!claudeJson.projects[trustDir] || typeof claudeJson.projects[trustDir] !== 'object') {
+        claudeJson.projects[trustDir] = {};
+      }
+      claudeJson.projects[trustDir].hasTrustDialogAccepted = true;
+      claudeJson.projects[trustDir].hasCompletedProjectOnboarding = true;
+    }
+    if (virtualKey && typeof virtualKey === 'string' && virtualKey.trim().length >= 3) {
+      const suffix = virtualKey.trim().slice(-20);
+      if (!claudeJson.customApiKeyResponses || typeof claudeJson.customApiKeyResponses !== 'object') {
+        claudeJson.customApiKeyResponses = { approved: [], rejected: [] };
+      }
+      if (!Array.isArray(claudeJson.customApiKeyResponses.approved)) {
+        claudeJson.customApiKeyResponses.approved = [];
+      }
+      if (!Array.isArray(claudeJson.customApiKeyResponses.rejected)) {
+        claudeJson.customApiKeyResponses.rejected = [];
+      }
+      if (!claudeJson.customApiKeyResponses.approved.includes(suffix)) {
+        claudeJson.customApiKeyResponses.approved.push(suffix);
+      }
+      claudeJson.customApiKeyResponses.rejected = claudeJson.customApiKeyResponses.rejected.filter(r => r !== suffix);
+    }
+    fs.writeFileSync(claudeJsonPath, JSON.stringify(claudeJson, null, 2), 'utf8');
+  } catch (err) {
+    console.warn(`[ContainerService] Failed to sync sandbox ~/.claude.json:`, err.message);
+  }
+
+  // Ensure UID 1000 (host ubuntu / container node) owns .codex, .claude, and .claude.json
   const isRoot = !process.getuid || process.getuid() === 0;
   if (isRoot) {
     const runUser = getRunUser() || 'ubuntu';
@@ -213,18 +260,31 @@ trust_level = "trusted"
 }
 
 /**
+ * Inspect local Docker image ID; returns null if image is missing
+ */
+async function getImageId(imageName) {
+  try {
+    const { stdout } = await runDocker(['image', 'inspect', '--format', '{{.Id}}', imageName], 5000);
+    return stdout || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Inspect a Docker container state; returns null if container does not exist
  */
 async function inspectContainer(containerName) {
   try {
     const { stdout } = await runDocker(
-      ['inspect', '--format', '{{.State.Status}}|{{.State.Running}}|{{.State.StartedAt}}|{{.Id}}', containerName],
+      ['inspect', '--format', '{{.State.Status}}|{{.State.Running}}|{{.State.StartedAt}}|{{.Id}}|{{.Image}}', containerName],
       5000
     );
-    const [status, running, startedAt, id] = stdout.split('|');
+    const [status, running, startedAt, id, imageId] = stdout.split('|');
     return {
       exists: true,
       id: (id || '').slice(0, 12),
+      imageId: imageId || null,
       status: status || 'unknown',
       running: running === 'true',
       startedAt: startedAt || null
@@ -307,14 +367,24 @@ async function ensureUserSandbox(username, options = {}) {
     { encoding: 'utf8', mode: 0o600 }
   );
 
-  const existing = await inspectContainer(containerName);
+  let existing = await inspectContainer(containerName);
+  const latestImageId = await getImageId(DOCKER_SANDBOX_IMAGE);
+  const imageOutdated = Boolean(existing && latestImageId && existing.imageId && existing.imageId !== latestImageId);
   const agentScriptHostPath = path.join(PROJECT_ROOT, 'client', 'ccnow-agent.js');
   const oarRuntimeHostPath = path.join(PROJECT_ROOT, 'client', 'oar-runtime.js');
   const controlPort = options.port || PORT || 80;
   const serverUrl = `http://host.docker.internal:${controlPort}`;
+  const virtualKey = `sk-ccnow-${managed.deviceId}.${deviceSecret}`;
 
   // Sync Claude Code & Codex CLI gateway configs into sandbox home before start/run
-  syncSandboxAgentConfigs(sandboxHomeDir, serverUrl);
+  syncSandboxAgentConfigs(sandboxHomeDir, serverUrl, virtualKey);
+
+  // Recreate container automatically if explicitly requested or if a stopped container is using an outdated image
+  if (existing && (options.recreate === true || (!existing.running && imageOutdated))) {
+    console.log(`[ContainerService] Recreating sandbox ${containerName} (recreate=${Boolean(options.recreate)}, imageOutdated=${imageOutdated})`);
+    await runDocker(['rm', '-f', containerName], 15000);
+    existing = null;
+  }
 
   if (existing && existing.running) {
     touchSandboxActivity(safeUser);
@@ -326,6 +396,7 @@ async function ensureUserSandbox(username, options = {}) {
       containerId: existing.id,
       deviceId: managed.deviceId,
       isOnline,
+      imageOutdated,
       status: existing.status,
       limits: {
         memory: DOCKER_SANDBOX_MEMORY,
@@ -346,6 +417,7 @@ async function ensureUserSandbox(username, options = {}) {
       containerId: existing.id,
       deviceId: managed.deviceId,
       isOnline,
+      imageOutdated: false,
       status: 'running',
       limits: {
         memory: DOCKER_SANDBOX_MEMORY,
@@ -381,9 +453,12 @@ async function ensureUserSandbox(username, options = {}) {
     '-e', 'CCNOW_DEFAULT_WORKSPACE=/workspace',
     '-e', 'CCNOW_DEFAULT_WORKSPACE_NAME=workspace',
     '-e', `ANTHROPIC_BASE_URL=${serverUrl}`,
-    '-e', `ANTHROPIC_API_KEY=sk-ccnow-${managed.deviceId}.${deviceSecret}`,
+    '-e', `ANTHROPIC_API_KEY=${virtualKey}`,
     '-e', `OPENAI_BASE_URL=${serverUrl}/v1`,
-    '-e', `OPENAI_API_KEY=sk-ccnow-${managed.deviceId}.${deviceSecret}`,
+    '-e', `OPENAI_API_BASE=${serverUrl}/v1`,
+    '-e', `OPENAI_API_KEY=${virtualKey}`,
+    '-e', 'CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1',
+    '-e', 'COLORTERM=truecolor',
     DOCKER_SANDBOX_IMAGE
   ];
 
@@ -400,6 +475,7 @@ async function ensureUserSandbox(username, options = {}) {
     containerId: containerId.slice(0, 12),
     deviceId: managed.deviceId,
     isOnline,
+    imageOutdated: false,
     status: 'running',
     limits: {
       memory: DOCKER_SANDBOX_MEMORY,
@@ -454,12 +530,15 @@ async function getSandboxStatus(username) {
   const devices = deviceService.getUserDevices(username);
   const sandboxDev = devices.find(d => d.deviceKind === 'docker-sandbox' && d.containerName === containerName) || null;
   const container = docker.available ? await inspectContainer(containerName) : null;
+  const latestImageId = (docker.available && docker.imageReady) ? await getImageId(DOCKER_SANDBOX_IMAGE) : null;
+  const imageOutdated = Boolean(container && latestImageId && container.imageId && container.imageId !== latestImageId);
   const lastActivity = lastActivityMap.get(safeUser) || null;
 
   return {
     dockerAvailable: docker.available,
     imageReady: docker.imageReady,
     image: DOCKER_SANDBOX_IMAGE,
+    imageOutdated,
     containerName,
     exists: Boolean(container),
     running: Boolean(container && container.running),
