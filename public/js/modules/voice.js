@@ -49,14 +49,13 @@ function showVoiceHud(target) {
     }
   }
 
-  // Mount left-aligned inside chat composer shell when in Chat mode; fixed left-aligned on mobile terminal bar
-  const chatComposerShell = target === 'chat' ? document.querySelector('#agentChatContainer .chat-composer-shell') : null;
-  const chatInputRow = chatComposerShell ? chatComposerShell.querySelector('.chat-input-row') : null;
-  if (chatComposerShell && chatInputRow) {
+  // Mount inside the unified composer status dock in Chat mode (same height & baseline as AI status pill)
+  const chatStatusDock = target === 'chat' ? document.getElementById('chatComposerStatusDock') : null;
+  if (chatStatusDock) {
     voiceHudEl.classList.add('is-inline');
     voiceHudEl.classList.remove('is-floating');
-    if (voiceHudEl.parentNode !== chatComposerShell) {
-      chatComposerShell.insertBefore(voiceHudEl, chatInputRow);
+    if (voiceHudEl.parentNode !== chatStatusDock) {
+      chatStatusDock.appendChild(voiceHudEl);
     }
   } else {
     voiceHudEl.classList.remove('is-inline');

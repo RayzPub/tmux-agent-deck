@@ -11092,21 +11092,18 @@ body.light-minimalist .ic-popover-cancel:hover:not(:disabled) {
 }
 
 .ccnow-voice-hud.is-inline {
-  display: grid;
-  grid-template-rows: 0fr;
+  display: none;
   opacity: 0;
-  margin-bottom: 0;
+  transform: translateY(4px) scale(0.98);
   pointer-events: none;
-  justify-items: start;
-  transition: grid-template-rows 200ms cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
-              margin-bottom 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ccnow-voice-hud.is-inline.is-visible {
-  grid-template-rows: 1fr;
+  display: inline-flex;
   opacity: 1;
-  margin-bottom: 7px;
+  transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 

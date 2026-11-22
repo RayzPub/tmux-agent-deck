@@ -191,13 +191,15 @@ export function initChatMode() {
       <!-- 20px Dual-Ring Composer Engine -->
       <div class="agent-chat-composer">
         <div class="chat-composer-shell">
-          <!-- Inline AI Status Bar (Auto-hidden when idle; live semantic SVG + tabular-nums timer when active) -->
-          <div class="chat-inline-ai-status" id="chatInlineAiStatus" data-stage="idle" role="status" aria-live="polite">
-            <div class="chat-inline-ai-status-inner">
-              <span class="ai-status-icon-slot" aria-hidden="true"></span>
-              <span class="ai-status-label"></span>
-              <span class="ai-status-detail hidden"></span>
-              <span class="ai-status-timer hidden"></span>
+          <!-- Unified Composer Status Dock (AI Status & Voice HUD share identical height & spacing above composer) -->
+          <div class="chat-composer-status-dock" id="chatComposerStatusDock">
+            <div class="chat-inline-ai-status" id="chatInlineAiStatus" data-stage="idle" role="status" aria-live="polite">
+              <div class="chat-inline-ai-status-inner">
+                <span class="ai-status-icon-slot" aria-hidden="true"></span>
+                <span class="ai-status-label"></span>
+                <span class="ai-status-detail hidden"></span>
+                <span class="ai-status-timer hidden"></span>
+              </div>
             </div>
           </div>
 

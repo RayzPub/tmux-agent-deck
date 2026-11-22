@@ -3575,38 +3575,50 @@ body.light-minimalist .editor-jump-line-highlight {
    micro-animations, shimmer sweep, blur-swap text, and tabular-nums timer.
    Full Dual-Theme Parity (:root Dark & body.light-minimalist Light)
    ========================================================================== */
-.chat-inline-ai-status {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
+/* Unified Status Dock above Composer (AI Status + Voice HUD aligned at exact same height & gap) */
+.chat-composer-status-dock {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 0;
   margin-bottom: 0;
+  transition: margin-bottom 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chat-composer-status-dock:has(.is-visible) {
+  margin-bottom: 6px;
+}
+
+.chat-inline-ai-status {
+  display: none;
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
   pointer-events: none;
-  transition: grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
-              margin-bottom 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .chat-inline-ai-status.is-visible {
-  grid-template-rows: 1fr;
+  display: inline-flex;
   opacity: 1;
-  margin-bottom: 7px;
+  transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
 .chat-inline-ai-status-inner {
   overflow: hidden;
-  min-height: 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   width: fit-content;
   max-width: 100%;
-  padding: 0 10px;
-  height: 28px;
+  padding: 0 11px;
+  height: 32px;
   border-radius: 999px;
   background: var(--surface-2, #22252e);
-  border: 0.5px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24), inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
   color: var(--c-text, #e2e8f0);
   font-size: 12px;
   line-height: 1;
