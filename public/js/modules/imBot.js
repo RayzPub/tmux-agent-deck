@@ -1,6 +1,9 @@
 // Cyberpunk TMUX Agent Deck - IM Bot Integration Client
 // This file is completely modular and self-contained to prevent regressions.
 
+import { toast } from './toast.js';
+import { morphInlineConfirm } from './inlineConfirm.js';
+
 export function initImBot() {
     // 1. Inject the IM Bot button in the header
     const pushToggleBtn = document.getElementById('pushToggleBtn');
@@ -354,13 +357,19 @@ export function initImBot() {
             </div>
           `).join('');
 
-          // Hook unbind buttons
+          // Hook unbind buttons (in-place morphing confirmation)
           devicesList.querySelectorAll('.im-bot-device-unbind').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              const chatId = parseInt(e.target.getAttribute('data-chat-id'), 10);
-              if (confirm(`Are you sure you want to disconnect Telegram ID ${chatId}?`)) {
-                await unbindDevice(chatId, null, 'telegram');
-              }
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const triggerBtn = e.currentTarget;
+              const chatId = parseInt(triggerBtn.getAttribute('data-chat-id'), 10);
+              morphInlineConfirm(triggerBtn, {
+                label: '解绑?',
+                confirmTitle: `确认解绑 Telegram ID ${chatId}`,
+                cancelTitle: '取消',
+                compact: true,
+                onConfirm: () => unbindDevice(chatId, null, 'telegram'),
+              });
             });
           });
         } else {
@@ -393,13 +402,19 @@ export function initImBot() {
             </div>
           `).join('');
 
-          // Hook unbind buttons
+          // Hook unbind buttons (in-place morphing confirmation)
           devicesList.querySelectorAll('.im-bot-device-unbind').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              const openid = e.target.getAttribute('data-openid');
-              if (confirm(`Are you sure you want to disconnect WeChat User?`)) {
-                await unbindDevice(null, openid, 'wechat');
-              }
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const triggerBtn = e.currentTarget;
+              const openid = triggerBtn.getAttribute('data-openid');
+              morphInlineConfirm(triggerBtn, {
+                label: '解绑?',
+                confirmTitle: '确认解绑微信账号',
+                cancelTitle: '取消',
+                compact: true,
+                onConfirm: () => unbindDevice(null, openid, 'wechat'),
+              });
             });
           });
         } else {
@@ -416,12 +431,13 @@ export function initImBot() {
           body: JSON.stringify({ chatId, openid, platform })
         });
         if (res.ok) {
+          toast.success('IM 账号已解除绑定');
           await refreshStatus();
         } else {
-          alert('Failed to unbind device.');
+          toast.error('解除绑定失败');
         }
       } catch (err) {
-        alert(`Error unbinding device: ${err.message}`);
+        toast.error(`解除绑定失败: ${err.message}`);
       }
     };
 
@@ -430,7 +446,7 @@ export function initImBot() {
         const res = await fetch(`/api/im/binding-token?platform=${currentPlatform}`);
         if (!res.ok) {
           const errData = await res.json();
-          alert(errData.error || 'Failed to generate token');
+          toast.error(errData.error || '生成绑定令牌失败');
           return;
         }
 
@@ -493,7 +509,7 @@ export function initImBot() {
               if (statusData.status === 'bound') {
                 stopPolling();
                 qrSection.classList.add('hidden');
-                alert(`🎉 Bound successfully!`);
+                toast.success('IM Bot 账号绑定成功');
                 await refreshStatus();
               } else if (statusData.status === 'expired') {
                 stopPolling();
@@ -528,7 +544,7 @@ export function initImBot() {
         pollInterval = setInterval(checkStatus, 3000);
 
       } catch (err) {
-        alert(`Error starting bind: ${err.message}`);
+        toast.error(`启动绑定失败: ${err.message}`);
       }
     };
 

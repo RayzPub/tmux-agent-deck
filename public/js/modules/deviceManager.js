@@ -6,6 +6,8 @@
  */
 
 import { state } from './state.js';
+import { toast } from './toast.js';
+import { morphInlineConfirm } from './inlineConfirm.js';
 
 let currentSocket = null;
 let currentPairCommand = '';
@@ -322,16 +324,18 @@ export async function loadDeviceList() {
           });
           const json = await res.json();
           if (json.success) {
-            alert(`🎉 远程升级指令执行成功！\n客户端已完成热重启。\n版本: ${json.oldVersion || ''} ➔ ${json.newVersion || '最新'}`);
+            toast.success('远程升级指令执行成功', {
+              description: `客户端已完成热重启 (${json.oldVersion || ''} ➔ ${json.newVersion || '最新'})`,
+            });
             await loadDeviceList();
           } else {
-            alert(`❌ 升级失败: ${json.error || '未知错误'}`);
+            toast.error(`升级失败: ${json.error || '未知错误'}`);
             btn.disabled = false;
             btn.innerHTML = originalHtml;
             if (window.lucide) window.lucide.createIcons();
           }
         } catch (err) {
-          alert(`❌ 升级请求失败: ${err.message}`);
+          toast.error(`升级请求失败: ${err.message}`);
           btn.disabled = false;
           btn.innerHTML = originalHtml;
           if (window.lucide) window.lucide.createIcons();
@@ -339,13 +343,19 @@ export async function loadDeviceList() {
       });
     });
 
-    // Bind remove buttons
+    // Bind remove buttons (in-place morphing confirmation)
     container.querySelectorAll('.remove-device-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const devId = e.currentTarget.getAttribute('data-device-id');
-        if (confirm('确认解除该设备的绑定吗？解绑后本地 Agent 将无法连入。')) {
-          await deleteDevice(devId);
-        }
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const triggerBtn = e.currentTarget;
+        const devId = triggerBtn.getAttribute('data-device-id');
+        morphInlineConfirm(triggerBtn, {
+          label: '解绑?',
+          confirmTitle: '确认解除设备绑定',
+          cancelTitle: '取消',
+          compact: true,
+          onConfirm: () => deleteDevice(devId),
+        });
       });
     });
 
@@ -396,8 +406,9 @@ async function deleteDevice(deviceId) {
     if (state.currentDeviceId === deviceId) {
       switchToDevice(pickDefaultDevice(state.remoteDevices));
     }
+    toast.success('设备已解除绑定');
   } catch (err) {
-    alert(`解绑失败: ${err.message}`);
+    toast.error(`解绑失败: ${err.message}`);
   }
 }
 
@@ -418,7 +429,7 @@ function copyPairCommand() {
       }, 2000);
     }
   }).catch(() => {
-    alert('复制失败，请手动选取复制');
+    toast.warning('复制失败，请手动选取复制');
   });
 }
 
@@ -495,8 +506,9 @@ export async function loadSandboxPanel() {
           updateSwitcherDropdownItems();
           await loadDeviceList();
           await loadSandboxPanel();
+          toast.success('云电脑已启动');
         } catch (err) {
-          alert(`启动云电脑失败: ${err.message}`);
+          toast.error(`启动云电脑失败: ${err.message}`);
           await loadSandboxPanel();
         }
       });
@@ -519,8 +531,9 @@ export async function loadSandboxPanel() {
           if (data.deviceId && state.currentDeviceId === data.deviceId) {
             switchToDevice(pickDefaultDevice(state.remoteDevices));
           }
+          toast.info('云电脑已休眠');
         } catch (err) {
-          alert(`休眠云电脑失败: ${err.message}`);
+          toast.error(`休眠云电脑失败: ${err.message}`);
           await loadSandboxPanel();
         }
       });

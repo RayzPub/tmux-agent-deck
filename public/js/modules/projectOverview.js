@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { activateTab, updateProjectTabStatus } from './tabs.js';
 import { attachSession } from './terminal.js';
+import { toast } from './toast.js';
 
 let autoStatusInterval = null;
 let boardViewMode = localStorage.getItem('deck_taskboard_view_mode') || 'kanban'; // 'kanban' | 'grid'
@@ -760,7 +761,7 @@ function bindBoardEvents(container, data) {
       activeQuickReplySession = null;
       renderProjectOverview();
     } catch (err) {
-      alert('发送失败: ' + err.message);
+      toast.error('发送失败: ' + err.message);
       if (btnEl) btnEl.disabled = false;
     }
   };
@@ -823,7 +824,7 @@ function bindBoardEvents(container, data) {
           todoIdToDelete: todo.id
         });
       } catch (err) {
-        alert('启动任务会话失败: ' + err.message);
+        toast.error('启动任务会话失败: ' + err.message);
         btn.disabled = false;
       }
     });
@@ -1046,7 +1047,7 @@ function openNewTaskModal(data) {
       closeModal();
       renderProjectOverview();
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message);
       saveTodoBtn.disabled = false;
     }
   });
@@ -1059,7 +1060,7 @@ function openNewTaskModal(data) {
       closeModal();
       await launchTaskSession(payload);
     } catch (err) {
-      alert('启动会话失败: ' + err.message);
+      toast.error('启动会话失败: ' + err.message);
     }
   });
 }

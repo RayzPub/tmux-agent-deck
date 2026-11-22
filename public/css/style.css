@@ -10549,6 +10549,547 @@ body.light-minimalist .cyber-badge {
 }
 
 /* ==========================================================================
+   GLOBAL TOAST NOTIFICATION SYSTEM (Concentric Corners + Animated SVG Glyphs)
+   Full Dual-Theme Parity (:root Dark & body.light-minimalist Light)
+   ========================================================================== */
+.ccnow-toast-viewport {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10050;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.ccnow-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 220px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 17px; /* Concentric: tile radius (9px) + padding (8px) */
+  background: var(--surface-3, #262a36);
+  color: var(--c-text, #f2f5fa);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.42), 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  transform: translateY(-10px) scale(0.96);
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
+}
+
+.ccnow-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.ccnow-toast.is-leaving {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+  transition: opacity 180ms ease-in, transform 180ms ease-in;
+}
+
+.ccnow-toast-tile {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25);
+}
+
+.ccnow-toast-tile.is-bumping {
+  animation: ccnowToastBump 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ccnow-toast-tile-success {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.ccnow-toast-tile-error {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.ccnow-toast-tile-warning {
+  background: #f59e0b;
+  color: #ffffff;
+}
+
+.ccnow-toast-tile-info {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.ccnow-toast-tile-default {
+  background: var(--c-accent, #ac9bff);
+  color: #0f172a;
+}
+
+.ccnow-toast-tile-loading {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--c-accent, #ac9bff);
+}
+
+.ccnow-toast-svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.ccnow-glyph-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: ccnowGlyphDraw 320ms cubic-bezier(0.22, 1, 0.36, 1) 110ms forwards;
+}
+
+.ccnow-glyph-draw-delay {
+  animation-delay: 190ms;
+}
+
+.ccnow-glyph-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  transform: scale(0.4);
+  animation: ccnowGlyphDotPop 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms forwards;
+}
+
+.ccnow-toast-spin {
+  animation: ccnowSpin 850ms linear infinite;
+}
+
+.ccnow-toast-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ccnow-toast-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--c-text, #f2f5fa);
+  word-break: break-word;
+}
+
+.ccnow-toast-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--c-muted, #94a3b8);
+  word-break: break-word;
+}
+
+.ccnow-toast-action {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--c-text, #f2f5fa);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 140ms ease, transform 70ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ccnow-toast-action:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.ccnow-toast-action:active {
+  transform: scale(0.96);
+}
+
+.ccnow-toast-close {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--c-muted, #94a3b8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: background 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.ccnow-toast-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--c-text, #f2f5fa);
+  opacity: 1;
+}
+
+/* Light Minimalist Toast Adaptation */
+body.light-minimalist .ccnow-toast {
+  background: #ffffff;
+  color: #0f172a;
+  border: 0.5px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+body.light-minimalist .ccnow-toast-tile-default {
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+body.light-minimalist .ccnow-toast-tile-loading {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+body.light-minimalist .ccnow-toast-title {
+  color: #0f172a;
+}
+
+body.light-minimalist .ccnow-toast-desc {
+  color: #475569;
+}
+
+body.light-minimalist .ccnow-toast-action {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+body.light-minimalist .ccnow-toast-action:hover {
+  background: #e2e8f0;
+}
+
+body.light-minimalist .ccnow-toast-close {
+  color: #64748b;
+}
+
+body.light-minimalist .ccnow-toast-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+@keyframes ccnowGlyphDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ccnowGlyphDotPop {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ccnowToastBump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ccnowSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   IN-PLACE MORPHING CONFIRM PILL & ANCHORED CONFIRM POPOVER
+   Full Dual-Theme Parity (:root Dark & body.light-minimalist Light)
+   ========================================================================== */
+.ic-morph-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 0.5px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  opacity: 0;
+  transform: scale(0.92);
+  transform-origin: right center;
+  transition: opacity 180ms cubic-bezier(0.32, 0.72, 0, 1), transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.ic-morph-pill.is-open {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.session-card-menu .ic-morph-pill {
+  width: 100%;
+  border-radius: 8px;
+  padding: 4px 6px 4px 8px;
+}
+
+.ic-morph-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ic-trash-svg {
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.ic-trash-lid {
+  transform-box: view-box;
+  transform-origin: 4px 6px;
+  transition: transform 340ms cubic-bezier(0.34, 1.25, 0.64, 1);
+}
+
+.ic-morph-pill.is-open .ic-trash-lid,
+.ic-popover.is-open .ic-trash-lid {
+  transform: rotate(-32deg) translateY(-1px);
+}
+
+.ic-morph-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ic-circle-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 140ms ease, transform 70ms cubic-bezier(0.32, 0.72, 0, 1), color 140ms ease;
+}
+
+.ic-circle-btn:active:not(:disabled) {
+  transform: scale(0.88);
+}
+
+.ic-circle-confirm {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.4), inset 0 0.5px 0 rgba(255, 255, 255, 0.25);
+}
+
+.ic-circle-confirm:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.ic-circle-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--c-text, #e2e8f0);
+}
+
+.ic-circle-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+body.light-minimalist .ic-morph-pill {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+body.light-minimalist .ic-circle-cancel {
+  background: #ffffff;
+  color: #475569;
+  box-shadow: 0 0.5px 1px rgba(15, 23, 42, 0.08), inset 0 0 0 0.5px #cbd5e1;
+}
+
+body.light-minimalist .ic-circle-cancel:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Anchored Confirm Popover */
+.ic-popover {
+  position: fixed;
+  z-index: 10040;
+  width: min(280px, calc(100vw - 20px));
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-3, #262a36);
+  color: var(--c-text, #f2f5fa);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.96);
+  transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
+}
+
+.ic-popover.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.ic-popover-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ic-popover-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border: 0.5px solid rgba(239, 68, 68, 0.28);
+}
+
+.ic-popover-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.ic-popover-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--c-text, #f2f5fa);
+}
+
+.ic-popover-desc {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--c-muted, #94a3b8);
+}
+
+.ic-popover-footer {
+  margin-top: 11px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ic-popover-btn {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 140ms ease, transform 70ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ic-popover-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ic-popover-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--c-text, #e2e8f0);
+}
+
+.ic-popover-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.ic-popover-confirm {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.35);
+}
+
+.ic-popover-confirm:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+body.light-minimalist .ic-popover {
+  background: #ffffff;
+  color: #0f172a;
+  border: 0.5px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+body.light-minimalist .ic-popover-icon {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+body.light-minimalist .ic-popover-title {
+  color: #0f172a;
+}
+
+body.light-minimalist .ic-popover-desc {
+  color: #475569;
+}
+
+body.light-minimalist .ic-popover-cancel {
+  background: #f1f5f9;
+  color: #334155;
+  border: 0.5px solid #cbd5e1;
+}
+
+body.light-minimalist .ic-popover-cancel:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+/* ==========================================================================
+   GLOBAL ACCESSIBILITY: PREFERS-REDUCED-MOTION
+   Gracefully minimizes motion while preserving functional state clarity
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ccnow-glyph-draw {
+    stroke-dashoffset: 0 !important;
+  }
+
+  .ccnow-glyph-dot {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .ccnow-toast-spin,
+  .cyber-spinner,
+  .spin {
+    animation: none !important;
+  }
+}
+
+/* ==========================================================================
    GLOBAL VISIBILITY OVERRIDE (HIGHEST CASCADE PRECEDENCE)
    Ensures .hidden ALWAYS hides elements regardless of earlier specificity
    ========================================================================== */

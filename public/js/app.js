@@ -16,6 +16,8 @@ import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/app
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
 import { initMobileInput, initPreventZoom, syncTerminalAgentQuickButtons } from './modules/mobileInput.js';
 import { initDeviceManager } from './modules/deviceManager.js';
+import { toast } from './modules/toast.js';
+import { morphInlineConfirm, popoverInlineConfirm } from './modules/inlineConfirm.js';
 
 // Lock zoom immediately at script evaluation
 initPreventZoom();
@@ -161,7 +163,10 @@ if (fullscreenToggleBtn) {
         } else if (document.documentElement.webkitRequestFullscreen) {
           await document.documentElement.webkitRequestFullscreen();
         } else {
-          alert('当前浏览器环境暂不支持网页直接进入全屏。推荐在 Safari / Chrome 点击分享，选择“添加到主屏幕”，即可享受全屏独立 App 沉浸体验！');
+          toast.info('当前浏览器暂不支持网页直接全屏', {
+            description: '推荐在 Safari / Chrome 点击分享并选择“添加到主屏幕”体验全屏独立 App',
+            duration: 5500,
+          });
         }
       } else {
         if (document.exitFullscreen) {
@@ -436,19 +441,23 @@ export function renderSessions(sessions) {
 
     const killBtn = card.querySelector('.session-menu-item[data-action="kill"]');
     if (killBtn) {
-      killBtn.addEventListener('click', async (e) => {
+      killBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (cardMenu) {
-          cardMenu.classList.add('hidden');
-          cardMenu.classList.remove('dropup');
-        }
-        card.classList.remove('menu-open');
         const name = killBtn.getAttribute('data-name');
-        const titleLabel = getSessionDisplayTitle(name, state.sessionListCache);
-        const confirmLabel = titleLabel && titleLabel !== name ? `"${titleLabel}" (${name})` : `"${name}"`;
-        if (confirm(`您确定要终止会话 ${confirmLabel} 吗？`)) {
-          await killSession(name);
-        }
+        morphInlineConfirm(killBtn, {
+          label: '确认结束?',
+          confirmTitle: '确认终止会话',
+          cancelTitle: '取消',
+          compact: true,
+          onConfirm: async () => {
+            if (cardMenu) {
+              cardMenu.classList.add('hidden');
+              cardMenu.classList.remove('dropup');
+            }
+            card.classList.remove('menu-open');
+            await killSession(name);
+          },
+        });
       });
     }
 
@@ -486,11 +495,11 @@ async function renameSessionTitle(sessionName, newTitle) {
       await loadSessions();
     } else {
       const data = await response.json().catch(() => ({}));
-      alert('重命名会话失败: ' + (data.error || '未知错误'));
+      toast.error('重命名会话失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error('Failed to rename session:', err);
-    alert('重命名会话时发生网络错误');
+    toast.error('重命名会话时发生网络错误');
   }
 }
 
@@ -534,13 +543,14 @@ async function killSession(name) {
       if (state.activeTabId === 'tab-project-overview') {
         renderProjectOverview({ silent: true });
       }
+      toast.success('会话已终止');
     } else {
       const data = await response.json();
-      alert('关闭会话失败: ' + (data.error || '未知错误'));
+      toast.error('关闭会话失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
-    alert('尝试关闭会话时发生网络错误');
+    toast.error('尝试关闭会话时发生网络错误');
   }
 }
 
@@ -827,33 +837,43 @@ sessionWorkspaceSelect.addEventListener('change', () => {
 });
 
 // Delete Workspace
-explorerDeleteWorkspaceBtn.addEventListener('click', async () => {
+explorerDeleteWorkspaceBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
   if (!state.currentWorkspacePath) {
-    alert('无法删除默认工作区。');
+    toast.warning('无法删除默认工作区');
     return;
   }
   const ws = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
   if (!ws) return;
-  
-  const confirmDelete = confirm(`您确定要移除工作区 "${ws.name}" 吗？\n\n注意：此操作仅从控制面板列表中移除该工作区配置，并不会删除您磁盘上的实际目录或文件。`);
-  if (!confirmDelete) return;
 
-  try {
-    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(ws.name)}${devParam}`, { method: 'DELETE' });
-    if (response.ok) {
-      state.currentWorkspacePath = '';
-      localStorage.setItem('lastWorkspacePath', '');
-      await loadWorkspaces();
-      refreshFileTree();
-      loadSessions();
-    } else {
-      const data = await response.json();
-      alert('删除工作区失败: ' + (data.error || '未知错误'));
-    }
-  } catch (err) {
-    console.error(err);
-  }
+  popoverInlineConfirm(explorerDeleteWorkspaceBtn, {
+    title: `移除工作区「${ws.name}」？`,
+    description: '仅从面板列表移除配置，不会删除磁盘上的目录或文件',
+    confirmLabel: '确认移除',
+    cancelLabel: '取消',
+    icon: 'trash',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+        const response = await fetch(`/api/workspaces/${encodeURIComponent(ws.name)}${devParam}`, { method: 'DELETE' });
+        if (response.ok) {
+          state.currentWorkspacePath = '';
+          localStorage.setItem('lastWorkspacePath', '');
+          await loadWorkspaces();
+          refreshFileTree();
+          loadSessions();
+          toast.success(`工作区「${ws.name}」已从列表移除`);
+        } else {
+          const data = await response.json();
+          toast.error('删除工作区失败: ' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('删除工作区时发生网络错误');
+      }
+    },
+  });
 });
 
 explorerNewWorkspaceBtn.addEventListener('click', () => {
@@ -905,7 +925,7 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
   // In single-user mode (on cloud), path is required
   const isRemoteDevice = state.currentDeviceId && state.currentDeviceId !== 'cloud';
   if (!state.multiUserEnabled && !isRemoteDevice && !wsPath) {
-    alert('请输入工作区路径。');
+    toast.warning('请输入工作区路径');
     return;
   }
 
@@ -931,9 +951,10 @@ createWorkspaceForm.addEventListener('submit', async (ev) => {
       await loadWorkspaces();
       refreshFileTree();
       renderSessions(state.sessionListCache);
+      toast.success(`工作区「${wsName}」创建成功`);
     } else {
       const data = await response.json();
-      alert('创建工作区失败: ' + (data.error || '未知错误'));
+      toast.error('创建工作区失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
@@ -1017,7 +1038,7 @@ collapseAllBtn.addEventListener('click', () => {
 
 gitDiffWorkspaceBtn.addEventListener('click', () => {
   if (state.isGit === false) {
-    alert('当前工作区所在目录不是 Git 仓库，无法筛选修改文件。');
+    toast.info('当前工作区不是 Git 仓库，无法筛选修改文件');
     return;
   }
   state.showOnlyGitChanges = !state.showOnlyGitChanges;
@@ -1340,7 +1361,7 @@ createSessionForm.addEventListener('submit', async (e) => {
       }
     } else {
       const data = await response.json();
-      alert('创建会话失败: ' + (data.error || '未知错误'));
+      toast.error('创建会话失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
@@ -1360,17 +1381,26 @@ if (reloadBtn) {
   });
 }
 
-logoutBtn.addEventListener('click', async () => {
-  if (confirm('断开与服务器控制面板的连接？')) {
-    try {
-      clearSessionCache();
-      await fetch('/api/logout', { method: 'POST' });
-      window.location.href = '/login';
-    } catch (err) {
-      console.error(err);
-      window.location.href = '/login';
-    }
-  }
+logoutBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  popoverInlineConfirm(logoutBtn, {
+    title: '断开与控制面板的连接？',
+    description: '将退出当前登录会话并返回登录页',
+    confirmLabel: '断开连接',
+    cancelLabel: '取消',
+    icon: 'power',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        clearSessionCache();
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+      } catch (err) {
+        console.error(err);
+        window.location.href = '/login';
+      }
+    },
+  });
 });
 
 // Initialize Mobile Command Input & VisualViewport Linkage
@@ -2066,15 +2096,15 @@ initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
           body: JSON.stringify(keys)
         });
         if (res.ok) {
-          alert('API Key 配置保存成功！');
+          toast.success('API Key 配置保存成功');
           if (adminPanelModal) adminPanelModal.classList.add('hidden');
         } else {
           const data = await res.json();
-          alert(data.error || '保存配置失败');
+          toast.error(data.error || '保存配置失败');
         }
       } catch (err) {
         console.error('Failed to save user keys:', err);
-        alert('保存配置时发生错误');
+        toast.error('保存配置时发生错误');
       }
     });
   }
@@ -2149,14 +2179,14 @@ initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
           updateClaudeOAuthUI(state.claudeOAuthMode);
           applyAgentVisibility();
           await loadLlmModels();
-          alert('全局智能体配置保存成功！');
+          toast.success('全局智能体配置保存成功');
         } else {
           const data = await res.json();
-          alert(data.error || '保存配置失败');
+          toast.error(data.error || '保存配置失败');
         }
       } catch (err) {
         console.error('Failed to save settings:', err);
-        alert('保存配置时发生错误');
+        toast.error('保存配置时发生错误');
       }
     });
   }
@@ -2220,9 +2250,10 @@ initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
         if (res.ok) {
           inviteNoteInput.value = '';
           loadInviteCodes();
+          toast.success('邀请码已生成');
         } else {
           const data = await res.json();
-          alert(data.error || '生成邀请码失败');
+          toast.error(data.error || '生成邀请码失败');
         }
       } catch (err) {
         console.error(err);
@@ -2237,7 +2268,7 @@ initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
         const link = cell.getAttribute('data-link');
         try {
           await navigator.clipboard.writeText(link);
-          alert('注册邀请链接已复制到剪贴板！');
+          toast.success('注册邀请链接已复制到剪贴板');
         } catch (err) {
           const input = document.createElement('input');
           input.value = link;
@@ -2245,30 +2276,39 @@ initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
           input.select();
           document.execCommand('copy');
           document.body.removeChild(input);
-          alert('注册邀请链接已复制到剪贴板！');
+          toast.success('注册邀请链接已复制到剪贴板');
         }
       }
       
       const deleteBtn = e.target.closest('.delete-invite-btn');
       if (deleteBtn) {
+        e.stopPropagation();
         const code = deleteBtn.getAttribute('data-code');
-        if (confirm(`您确定要撤销邀请码 ${code} 吗？`)) {
-          try {
-            const res = await fetch('/api/admin/invite-codes', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code })
-            });
-            if (res.ok) {
-              loadInviteCodes();
-            } else {
-              const data = await res.json();
-              alert(data.error || 'Failed to revoke invite code');
+        morphInlineConfirm(deleteBtn, {
+          label: '撤销?',
+          confirmTitle: `确认撤销邀请码 ${code}`,
+          cancelTitle: '取消',
+          compact: true,
+          onConfirm: async () => {
+            try {
+              const res = await fetch('/api/admin/invite-codes', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+              });
+              if (res.ok) {
+                toast.success(`邀请码 ${code} 已撤销`);
+                loadInviteCodes();
+              } else {
+                const data = await res.json();
+                toast.error(data.error || '撤销邀请码失败');
+              }
+            } catch (err) {
+              console.error(err);
+              toast.error('撤销邀请码时发生网络错误');
             }
-          } catch (err) {
-            console.error(err);
-          }
-        }
+          },
+        });
       }
     });
   }
@@ -2376,7 +2416,7 @@ function initShareModal() {
     generateShareLinkBtn.addEventListener('click', async () => {
       const activeTab = state.tabs.find(t => t.id === state.activeTabId && t.type === 'editor');
       if (!activeTab) {
-        alert('无法获取当前编辑文件');
+        toast.warning('无法获取当前编辑文件');
         return;
       }
 
@@ -2416,11 +2456,11 @@ function initShareModal() {
           shareExpiryText.textContent = `有效期至: ${expiryDate.toLocaleString()}`;
           shareResultSection.classList.remove('hidden');
         } else {
-          alert('生成分享链接失败: ' + (data.error || '未知错误'));
+          toast.error('生成分享链接失败: ' + (data.error || '未知错误'));
         }
       } catch (err) {
         console.error(err);
-        alert('生成分享链接时发生网络错误。');
+        toast.error('生成分享链接时发生网络错误');
       } finally {
         generateShareLinkBtn.disabled = false;
         generateShareLinkBtn.innerHTML = originalText;

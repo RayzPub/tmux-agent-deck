@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { updateGitStatus, applyGitTreeClasses } from './explorer.js';
 import { isTouchDevice } from './terminal.js';
+import { toast } from './toast.js';
 
 export function getLanguageFromExtension(path) {
   if (!path) return 'plaintext';
@@ -463,11 +464,11 @@ export async function saveEditorFile() {
       }, 2000);
     } else {
       editorStatusMsg.textContent = '保存失败';
-      alert('保存文件失败: ' + (data.error || '未知错误'));
+      toast.error('保存文件失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     console.error(err);
     editorStatusMsg.textContent = '网络错误';
-    alert('保存文件时发生网络错误。');
+    toast.error('保存文件时发生网络错误');
   }
 }

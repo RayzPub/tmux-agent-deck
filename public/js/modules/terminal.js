@@ -3,6 +3,7 @@ import { closeTab, renderTabs, switchMainPanel } from './tabs.js';
 import { refreshFileTree } from './explorer.js';
 import { toggleTerminalSlashPopover, syncTerminalAgentQuickButtons } from './mobileInput.js';
 import { getSessionDisplayTitle } from './sessionUtils.js';
+import { toast } from './toast.js';
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches || 
@@ -11,31 +12,12 @@ export function isTouchDevice() {
 }
 
 export function showTipToast(message, duration = 4000, type = 'warning') {
-  const existing = document.querySelector('.connection-toast.tip-toast');
-  if (existing) {
-    const msgEl = existing.querySelector('.toast-message');
-    if (msgEl) msgEl.textContent = message;
-    existing.className = `connection-toast ${type} tip-toast`;
-    return;
-  }
-  const isSpinner = message.includes('正在') || message.includes('加载') || message.includes('连接');
-  const toast = document.createElement('div');
-  toast.className = `connection-toast ${type} tip-toast`;
-  toast.innerHTML = `
-    ${isSpinner 
-      ? '<div class="cyber-spinner"></div>' 
-      : '<i data-lucide="info"></i>'}
-    <span class="toast-message">${message}</span>
-  `;
-  document.body.appendChild(toast);
-  if (window.lucide && !isSpinner) {
-    window.lucide.createIcons();
-  }
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.4s ease';
-    setTimeout(() => toast.remove(), 400);
-  }, duration);
+  const cleanMsg = String(message || '').replace(/^[💡📋🎉❌✅⚠️]\s*/u, '');
+  const isSpinner = cleanMsg.includes('正在') || cleanMsg.includes('加载') || cleanMsg.includes('连接');
+  const mappedType = isSpinner
+    ? 'loading'
+    : (type === 'success' || type === 'error' || type === 'info' || type === 'warning' ? type : 'info');
+  return toast.show(cleanMsg, { type: mappedType, duration: isSpinner ? duration : duration });
 }
 
 export function writeToClipboard(text) {
@@ -870,8 +852,10 @@ export function attachSession(sessionName) {
 
     sessionSocket.on('connect_error', (err) => {
       console.error('Socket Auth Error:', err.message);
-      alert('会话连接未授权。正在跳转至登录页面。');
-      window.location.href = '/login';
+      toast.error('会话连接未授权，正在跳转至登录页面');
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 900);
     });
 
     container.addEventListener('click', () => {

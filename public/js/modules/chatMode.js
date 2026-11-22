@@ -11,6 +11,8 @@ import { stopVoiceInput, bindChatVoiceInput } from './voice.js';
 import { restorePwaViewportScroll } from './mobileInput.js';
 import { buildMermaidCardHtml, renderMermaidBlocks, handleMermaidContainerClick } from './mermaidRenderer.js';
 import { enhanceChatFileLinks, handleChatFileLinkClick, parseFilePathCandidate } from './chatFileLink.js';
+import { toast } from './toast.js';
+import { createInlineAiStatusController, renderAiStatusIconSvg, inferToolStage } from './aiStatus.js';
 import {
   resolveSessionAgentType,
   getAgentDisplayName,
@@ -18,6 +20,8 @@ import {
   isClearCommandForAgent,
   filterSlashCommands
 } from './slashCommands.js';
+
+const inlineAiStatus = createInlineAiStatusController(() => document.getElementById('chatInlineAiStatus'));
 
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
@@ -156,6 +160,16 @@ export function initChatMode() {
       <!-- 20px Dual-Ring Composer Engine -->
       <div class="agent-chat-composer">
         <div class="chat-composer-shell">
+          <!-- Inline AI Status Bar (Auto-hidden when idle; live semantic SVG + tabular-nums timer when active) -->
+          <div class="chat-inline-ai-status" id="chatInlineAiStatus" data-stage="idle" role="status" aria-live="polite">
+            <div class="chat-inline-ai-status-inner">
+              <span class="ai-status-icon-slot" aria-hidden="true"></span>
+              <span class="ai-status-label"></span>
+              <span class="ai-status-detail hidden"></span>
+              <span class="ai-status-timer hidden"></span>
+            </div>
+          </div>
+
           <!-- Slash Command Floating Popover -->
           <div class="chat-slash-popover hidden" id="chatSlashPopover"></div>
 
@@ -303,9 +317,12 @@ function updateScrollFadeMask(el) {
  */
 function smoothScrollToBottom(container, duration = 240) {
   if (!container) return;
-  const startY = container.scrollTop;
   const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-  if (maxScroll <= startY) {
+  const reducedMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const startY = container.scrollTop;
+  if (reducedMotion || maxScroll <= startY) {
     container.scrollTop = maxScroll;
     updateScrollFadeMask(container);
     return;
@@ -819,7 +836,7 @@ async function uploadAttachedFiles(fileList) {
   if (!fileList || fileList.length === 0) return;
   const currentSess = getCurrentSessionName();
   if (!currentSess) {
-    alert('当前没有活跃的会话');
+    toast.warning('当前没有活跃的会话');
     return;
   }
 
@@ -888,7 +905,7 @@ async function uploadAttachedFiles(fileList) {
     }
   } catch (err) {
     console.error('[ChatMode] Upload error:', err);
-    alert(`上传文件失败: ${err.message}`);
+    toast.error(`上传文件失败: ${err.message}`);
     newItems.forEach(item => {
       const idx = currentAttachments.indexOf(item);
       if (idx !== -1) currentAttachments.splice(idx, 1);
@@ -1467,7 +1484,7 @@ export function sendChatMessage(overrideText) {
   }
 
   // 4. Update status indicator
-  updateStatusBadge('思考与执行中...', 'working');
+  updateStatusBadge('思考与执行中...', 'thinking');
 
   // 5. Trigger quick update
   if (sessMode !== 'chat_only') {
@@ -1483,20 +1500,20 @@ export function sendChatMessage(overrideText) {
  * Trigger OAR 0.128.1 native manual context compaction (/compact)
  */
 async function triggerOarCompact(sessionName) {
-  updateStatusBadge('正在压缩上下文...', 'working');
+  updateStatusBadge('正在压缩上下文...', 'compacting');
   try {
     const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/oar-compact${devParam}`, {
       method: 'POST'
     });
     const data = await res.json().catch(() => ({}));
-    updateStatusBadge('就绪', 'ready');
+    updateStatusBadge('上下文压缩完成', 'ready');
     if (data && data.message && !data.supported) {
       showTipToast(data.message);
     }
     loadAndRenderChatHistory(sessionName, false);
   } catch (e) {
-    updateStatusBadge('异常', 'idle');
+    updateStatusBadge('上下文压缩异常', 'error');
     console.error('[OAR] Compact failed:', e);
   }
 }
@@ -1505,7 +1522,7 @@ async function triggerOarCompact(sessionName) {
  * Dispatch message directly to OAR Pure Chat Engine API (with fast streaming poll & deviceId routing)
  */
 async function sendToOarEngine(sessionName, content, images = []) {
-  updateStatusBadge('OAR 智能体思考中...', 'working');
+  updateStatusBadge('正在深度思考...', 'thinking');
   // Switch to high-frequency polling (500ms) while OAR is streaming events
   startChatPolling(sessionName, 500);
 
@@ -1528,7 +1545,7 @@ async function sendToOarEngine(sessionName, content, images = []) {
       }
     } else {
       const err = await res.json().catch(() => ({}));
-      updateStatusBadge('异常', 'idle');
+      updateStatusBadge('智能体响应异常', 'error');
       console.error('[OAR] Send message error:', err);
       loadAndRenderChatHistory(sessionName, false);
       if (getCurrentSessionName() === sessionName) {
@@ -1536,7 +1553,7 @@ async function sendToOarEngine(sessionName, content, images = []) {
       }
     }
   } catch (e) {
-    updateStatusBadge('网络错误', 'idle');
+    updateStatusBadge('网络请求失败', 'error');
     console.error('[OAR] Send message fetch failed:', e);
     if (getCurrentSessionName() === sessionName) {
       startChatPolling(sessionName, 2000);
@@ -1560,6 +1577,7 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
 
   if (isSessionSwitch) {
     isScrollPinned = true;
+    inlineAiStatus.reset(sessionName);
     if (domAlreadyMatches) {
       // DOM already displays this exact session & version: zero-cost instant switch!
       scrollToChatBottom(false);
@@ -1759,11 +1777,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
           <div class="cds-accordion-header">
             <div class="cds-accordion-header-left">
               ${isActivelyThinking ? `
-                <span class="cds-quiet-dots">
-                  <span class="cds-quiet-dot"></span>
-                  <span class="cds-quiet-dot"></span>
-                  <span class="cds-quiet-dot"></span>
-                </span>
+                <span class="cds-ai-inline-icon">${renderAiStatusIconSvg('thinking', 14)}</span>
                 <span class="cds-shimmer-text cds-accordion-title">正在深入思考...</span>
               ` : `
                 <i data-lucide="sparkles" style="width: 13px; height: 13px;"></i>
@@ -1820,15 +1834,19 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
                 ? `<div class="cds-tool-item-args"><span class="chat-file-link" data-file-path="${escapeHtml(parsedToolFile.path)}" role="button" tabindex="0" title="点击打开预览: ${escapeHtml(parsedToolFile.path)}">${escapeHtml(String(inputSummary))}</span></div>`
                 : `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>`)
             : '';
-          const statusTag = t.status === 'running'
-            ? '<span style="margin-left:auto;font-size:10px;opacity:0.75;">执行中...</span>'
+          const isRunningTool = t.status === 'running';
+          const toolStage = inferToolStage(t.name);
+          const statusTag = isRunningTool
+            ? '<span class="cds-tool-running-tag">执行中...</span>'
             : (t.exitCode !== undefined && t.exitCode !== null
               ? `<span style="margin-left:auto;font-size:10px;opacity:0.7;font-variant-numeric:tabular-nums;">exit ${escapeHtml(String(t.exitCode))}</span>`
               : '');
           return `
-            <div class="cds-tool-item">
+            <div class="cds-tool-item${isRunningTool ? ' is-running' : ''}">
               <div class="cds-tool-item-head">
-                <i data-lucide="wrench" style="width: 11px; height: 11px;"></i>
+                ${isRunningTool
+                  ? `<span class="cds-ai-inline-icon">${renderAiStatusIconSvg(toolStage, 12)}</span>`
+                  : `<i data-lucide="wrench" style="width: 11px; height: 11px;"></i>`}
                 <span>${escapeHtml(t.name)}</span>
                 ${statusTag}
               </div>
@@ -1837,12 +1855,14 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
           `;
         }).join('');
 
+        const runningTool = otherTools.find(t => t.status === 'running');
         bodyHtml += `
           <div class="cds-accordion ${isExpanded ? 'expanded' : ''}" data-acc-key="${escapeHtml(accKey)}">
             <div class="cds-accordion-header">
               <div class="cds-accordion-header-left">
-                <i data-lucide="terminal" style="width: 13px; height: 13px;"></i>
-                <span class="cds-accordion-title">已调用 ${otherTools.length} 项工具: ${escapeHtml(toolNames)}</span>
+                ${runningTool
+                  ? `<span class="cds-ai-inline-icon">${renderAiStatusIconSvg(inferToolStage(runningTool.name), 13)}</span><span class="cds-shimmer-text cds-accordion-title">正在执行工具: ${escapeHtml(runningTool.name)}</span>`
+                  : `<i data-lucide="terminal" style="width: 13px; height: 13px;"></i><span class="cds-accordion-title">已调用 ${otherTools.length} 项工具: ${escapeHtml(toolNames)}</span>`}
               </div>
               <span class="cds-accordion-chevron">
                 <i data-lucide="chevron-down"></i>
@@ -1939,7 +1959,19 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     `;
   });
 
-  // Pending action card (ask_question / permission / yn)
+  // Pending action card (ask_question / permission / yn) + Live Inline AI Status
+  const lastMessage = messages[messages.length - 1];
+  const lastRunningTool = lastMessage && lastMessage.role !== 'user' && Array.isArray(lastMessage.tools)
+    ? lastMessage.tools.find(t => t.status === 'running')
+    : null;
+  const lastActivelyThinking = Boolean(
+    lastMessage &&
+    lastMessage.role !== 'user' &&
+    lastMessage.thinking &&
+    !lastMessage.content &&
+    (!lastMessage.tools || lastMessage.tools.length === 0)
+  );
+
   if (data.pendingAction) {
     if (data.pendingAction.type === 'ask_question') {
       if (!hasRenderedActiveQuestion) {
@@ -1955,8 +1987,20 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     } else {
       updateStatusBadge('就绪', 'ready');
     }
-  } else if (data.isGenerating) {
-    updateStatusBadge(data.statusText || 'OAR 智能体思考中...', 'working');
+  } else if (data.isGenerating || lastRunningTool || lastActivelyThinking) {
+    if (lastRunningTool) {
+      const toolStage = inferToolStage(lastRunningTool.name);
+      const stageLabel = toolStage === 'researching'
+        ? '正在检索分析'
+        : (toolStage === 'writing' ? '正在编写修改' : '正在执行工具');
+      updateStatusBadge(stageLabel, toolStage, lastRunningTool.name);
+    } else if (lastActivelyThinking) {
+      updateStatusBadge('正在深入思考...', 'thinking');
+    } else if (lastMessage && lastMessage.role !== 'user' && lastMessage.content) {
+      updateStatusBadge(data.statusText || '正在生成回复...', 'writing');
+    } else {
+      updateStatusBadge(data.statusText || '正在思考与执行...', 'thinking');
+    }
   } else {
     updateStatusBadge('就绪', 'ready');
   }
@@ -2442,19 +2486,25 @@ function appendUserMessageToUI(text, attachments = []) {
 }
 
 /**
- * Update minimalist top status badge
+ * Update minimalist status indicator + live inline AI status bar
  */
-function updateStatusBadge(text, stateType) {
+function updateStatusBadge(text, stateType, detail = '') {
   const dot = document.getElementById('chatStatusDot');
   const statusText = document.getElementById('chatStatusText');
   const interruptBtn = document.getElementById('chatInterruptBtn');
-  if (!dot || !statusText) return;
 
-  statusText.textContent = text;
-  dot.className = 'agent-status-dot ' + (stateType || 'ready');
+  const isWorking = ['working', 'thinking', 'researching', 'analyzing', 'writing', 'compacting'].includes(stateType);
+
+  if (dot && statusText) {
+    statusText.textContent = text;
+    dot.className = 'agent-status-dot ' + (isWorking ? 'working' : (stateType || 'ready'));
+  }
+
+  // Update sleek inline AI status pill above composer
+  inlineAiStatus.setStatus(stateType || 'ready', text, detail);
 
   if (interruptBtn) {
-    if (stateType === 'working') {
+    if (isWorking) {
       interruptBtn.classList.remove('hidden');
       interruptBtn.style.display = 'inline-flex';
     } else {

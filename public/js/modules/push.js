@@ -1,4 +1,5 @@
 import { state } from './state.js';
+import { toast } from './toast.js';
 
 function urlB64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -99,7 +100,9 @@ export async function togglePushSubscription() {
   }
 
   if (!state.swRegistration) {
-    alert('消息推送尚未就绪或在此浏览器中不受支持。请确保您使用的是安全的网络连接（HTTPS）以及有效的 SSL 证书。');
+    toast.warning('消息推送尚未就绪或当前浏览器不支持', {
+      description: '请确保使用 HTTPS 安全连接及有效 SSL 证书',
+    });
     return;
   }
   
@@ -112,15 +115,16 @@ export async function togglePushSubscription() {
       }
       state.isSubscribed = false;
       updatePushBtnUI();
+      toast.info('已关闭浏览器消息推送');
     } catch (err) {
       console.error('Error unsubscribing:', err);
-      alert('取消推送订阅失败: ' + err.message);
+      toast.error('取消推送订阅失败: ' + err.message);
     }
   } else {
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        alert('通知权限已被拒绝。');
+        toast.warning('通知权限已被拒绝，请在浏览器设置中允许通知');
         return;
       }
 
@@ -139,9 +143,10 @@ export async function togglePushSubscription() {
       await registerSubscriptionOnServer(subscription);
       state.isSubscribed = true;
       updatePushBtnUI();
+      toast.success('消息推送订阅成功');
     } catch (err) {
       console.error('Failed to subscribe the user:', err);
-      alert('订阅推送失败: ' + err.message);
+      toast.error('订阅推送失败: ' + err.message);
     }
   }
 }

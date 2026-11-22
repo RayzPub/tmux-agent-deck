@@ -3561,4 +3561,371 @@ body.light-minimalist .editor-jump-line-highlight {
   border-left: 2px solid #4f46e5;
 }
 
+/* ==========================================================================
+   INLINE AI STATUS BAR & SEMANTIC STAGE ANIMATED SVG ICONS
+   Quietly hidden when idle; reveals above composer with stage-specific SVG
+   micro-animations, shimmer sweep, blur-swap text, and tabular-nums timer.
+   Full Dual-Theme Parity (:root Dark & body.light-minimalist Light)
+   ========================================================================== */
+.chat-inline-ai-status {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+  transition: grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+              margin-bottom 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chat-inline-ai-status.is-visible {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 7px;
+  pointer-events: auto;
+}
+
+.chat-inline-ai-status-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 10px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface-2, #22252e);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  color: var(--c-text, #e2e8f0);
+  font-size: 12px;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.chat-inline-ai-status[data-stage="waiting"] .chat-inline-ai-status-inner {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.chat-inline-ai-status[data-stage="done"] .chat-inline-ai-status-inner {
+  border-color: rgba(34, 197, 94, 0.32);
+  background: rgba(34, 197, 94, 0.09);
+}
+
+.chat-inline-ai-status[data-stage="error"] .chat-inline-ai-status-inner {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.ai-status-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--c-accent, #ac9bff);
+}
+
+.chat-inline-ai-status[data-stage="waiting"] .ai-status-icon-slot {
+  color: #f59e0b;
+}
+
+.chat-inline-ai-status[data-stage="done"] .ai-status-icon-slot {
+  color: #22c55e;
+}
+
+.chat-inline-ai-status[data-stage="error"] .ai-status-icon-slot {
+  color: #ef4444;
+}
+
+.ai-status-icon-slot.is-pop {
+  animation: aiStatusIconPop 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ai-status-label {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--c-text, #f2f5fa);
+}
+
+.ai-status-label.is-swap {
+  animation: aiStatusLabelSwap 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chat-inline-ai-status.is-shimmer .ai-status-label {
+  background: linear-gradient(
+    90deg,
+    var(--c-muted, #94a3b8) 32%,
+    var(--c-text, #ffffff) 50%,
+    var(--c-muted, #94a3b8) 68%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: aiStatusLabelSwap 240ms cubic-bezier(0.22, 1, 0.36, 1),
+             aiStatusShimmer 2.1s linear infinite;
+}
+
+.ai-status-detail {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--c-muted, #94a3b8);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-status-timer {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-muted, #94a3b8);
+  padding-left: 5px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+/* Inline Semantic SVG Icons inside Thinking & Running Tool Accordions */
+.cds-ai-inline-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--c-accent, #ac9bff);
+}
+
+.cds-tool-running-tag {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--c-accent, #ac9bff);
+  opacity: 0.9;
+}
+
+/* Semantic SVG Micro-Animations */
+.ai-st-sparkle-main {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aiStSparkleSpin 2.4s ease-in-out infinite;
+}
+
+.ai-st-sparkle-twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aiStTwinkle 1.25s ease-in-out infinite;
+}
+
+.ai-st-lens-orbit {
+  animation: aiStLensOrbit 2s linear infinite;
+}
+
+.ai-st-bar {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: aiStBarBounce 0.95s ease-in-out infinite;
+}
+
+.ai-st-bar-2 { animation-delay: 0.16s; }
+.ai-st-bar-3 { animation-delay: 0.32s; }
+
+.ai-st-wave {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: aiStWaveDraw 1.8s ease-in-out infinite;
+}
+
+.ai-st-pen {
+  transform-box: fill-box;
+  transform-origin: bottom left;
+  animation: aiStPenWiggle 1.8s ease-in-out infinite;
+}
+
+.ai-st-ring-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aiStRingPulse 1.5s ease-in-out infinite;
+}
+
+.ai-st-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: aiStStrokeDraw 340ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.ai-st-draw-delay {
+  animation-delay: 110ms;
+}
+
+@keyframes aiStatusIconPop {
+  from {
+    opacity: 0;
+    transform: scale(0.55) rotate(-18deg);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: blur(0);
+  }
+}
+
+@keyframes aiStatusLabelSwap {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes aiStatusShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes aiStSparkleSpin {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(90deg) scale(0.84); }
+}
+
+@keyframes aiStTwinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.45); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes aiStLensOrbit {
+  0% { transform: translate(0px, -1.6px); }
+  25% { transform: translate(1.6px, 0px); }
+  50% { transform: translate(0px, 1.6px); }
+  75% { transform: translate(-1.6px, 0px); }
+  100% { transform: translate(0px, -1.6px); }
+}
+
+@keyframes aiStBarBounce {
+  0%, 100% { transform: scaleY(0.38); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes aiStWaveDraw {
+  0% { stroke-dashoffset: 1; opacity: 1; }
+  72% { stroke-dashoffset: 0; opacity: 1; }
+  90% { stroke-dashoffset: 0; opacity: 0.15; }
+  100% { stroke-dashoffset: 1; opacity: 0; }
+}
+
+@keyframes aiStPenWiggle {
+  0%, 100% { transform: translate(-1.5px, 0px) rotate(-4deg); }
+  50% { transform: translate(1.5px, -1px) rotate(4deg); }
+}
+
+@keyframes aiStRingPulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+@keyframes aiStStrokeDraw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Light Minimalist Theme Parity for Inline AI Status */
+body.light-minimalist .chat-inline-ai-status-inner {
+  background: #ffffff;
+  border: 0.5px solid #cbd5e1;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+}
+
+body.light-minimalist .chat-inline-ai-status[data-stage="waiting"] .chat-inline-ai-status-inner {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+body.light-minimalist .chat-inline-ai-status[data-stage="done"] .chat-inline-ai-status-inner {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+body.light-minimalist .chat-inline-ai-status[data-stage="error"] .chat-inline-ai-status-inner {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+body.light-minimalist .ai-status-icon-slot,
+body.light-minimalist .cds-ai-inline-icon,
+body.light-minimalist .cds-tool-running-tag {
+  color: #4f46e5;
+}
+
+body.light-minimalist .chat-inline-ai-status[data-stage="waiting"] .ai-status-icon-slot {
+  color: #d97706;
+}
+
+body.light-minimalist .chat-inline-ai-status[data-stage="done"] .ai-status-icon-slot {
+  color: #16a34a;
+}
+
+body.light-minimalist .chat-inline-ai-status[data-stage="error"] .ai-status-icon-slot {
+  color: #dc2626;
+}
+
+body.light-minimalist .ai-status-label {
+  color: #0f172a;
+}
+
+body.light-minimalist .chat-inline-ai-status.is-shimmer .ai-status-label {
+  background: linear-gradient(
+    90deg,
+    #64748b 32%,
+    #4f46e5 50%,
+    #64748b 68%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+body.light-minimalist .ai-status-detail {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+body.light-minimalist .ai-status-timer {
+  color: #64748b;
+  border-left-color: #e2e8f0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-inline-ai-status.is-shimmer .ai-status-label {
+    background: none !important;
+    -webkit-background-clip: border-box !important;
+    background-clip: border-box !important;
+    color: var(--c-text, #f2f5fa) !important;
+  }
+
+  body.light-minimalist .chat-inline-ai-status.is-shimmer .ai-status-label {
+    color: #0f172a !important;
+  }
+
+  .ai-st-draw,
+  .ai-st-wave {
+    stroke-dashoffset: 0 !important;
+  }
+}
+
+
 

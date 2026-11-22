@@ -1,4 +1,5 @@
 import { state } from './state.js';
+import { toast } from './toast.js';
 
 let availableThemes = [];
 let selectedThemeId = null;
@@ -137,13 +138,14 @@ export function initAppIconAdminPanel() {
           if (hintEl) {
             hintEl.textContent = `✅ 应用图标已成功切换为 [ ${savedTheme ? savedTheme.name : selectedThemeId} ]`;
           }
+          toast.success(`应用图标已切换为「${savedTheme ? savedTheme.name : selectedThemeId}」`);
         } else {
           const errData = await res.json();
-          alert(errData.error || '保存应用图标失败');
+          toast.error(errData.error || '保存应用图标失败');
         }
       } catch (err) {
         console.error('Failed to save app icon:', err);
-        alert('保存应用图标时发生网络错误');
+        toast.error('保存应用图标时发生网络错误');
       } finally {
         saveAppIconBtn.disabled = false;
         saveAppIconBtn.innerHTML = originalText;
