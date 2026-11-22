@@ -566,193 +566,197 @@
       </div>
       
       <form id="createSessionForm" class="modal-form">
-        <div class="input-group session-name-group">
-          <div class="session-name-label-row">
-            <label for="newSessionName">
-              <span class="label-tech-text">// 会话名称</span>
-              <span class="label-optional-tag">可选</span>
-            </label>
-            <span class="session-auto-pill" id="sessionAutoTitlePill" title="留空将根据首条对话自动摘要标题，并自动分配唯一自增 ID">
-              <i data-lucide="sparkles"></i>
-              <span>自动摘要</span>
-            </span>
-          </div>
-          <div class="input-wrapper session-name-input-wrapper">
-            <i data-lucide="sparkles" class="input-icon" id="newSessionNameIcon"></i>
-            <input 
-              type="text" 
-              id="newSessionName" 
-              placeholder="留空自动摘要，或输入名称" 
-              maxlength="60"
-              autocomplete="off"
-            >
-            <button type="button" class="input-clear-btn hidden" id="clearSessionNameBtn" title="清空并恢复自动摘要">
-              <i data-lucide="x"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="input-group" style="display: none;">
-          <label for="sessionWorkspaceSelect">
-            <span class="label-tech-text">// 工作区</span>
-          </label>
-          <div class="input-wrapper">
-            <i data-lucide="folder-git-2" class="input-icon" style="color: var(--text-secondary);"></i>
-            <select id="sessionWorkspaceSelect" class="cyber-select" style="padding-left: 48px;">
-              <!-- populated dynamically -->
-            </select>
-          </div>
-        </div>
-
-        <div class="input-group">
-          <label>
-            <span class="label-tech-text">// 工作区上下文</span>
-          </label>
-          <div class="active-workspace-badge-container">
-            <i data-lucide="folder" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
-            <span id="modalActiveWorkspaceName">默认工作区</span>
-          </div>
-        </div>
-
-        <div id="newWorkspaceFields" class="hidden" style="display: flex; flex-direction: column; gap: 15px; border: 1px dashed rgba(0, 240, 255, 0.2); padding: 15px; border-radius: 4px; background: rgba(0, 240, 255, 0.02); margin-top: -10px;">
-          <span style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);">// 初始化新工作区</span>
-          <div class="input-group" style="margin-bottom: 0;">
-            <label for="modalNewWorkspaceName">
-              <span class="label-tech-text" style="font-size: 9px;">工作区名称</span>
-            </label>
-            <div class="input-wrapper">
-              <i data-lucide="tag" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
-              <input 
-                type="text" 
-                id="modalNewWorkspaceName" 
-                placeholder="例如 my-workspace" 
-                style="padding: 10px 10px 10px 40px; font-size: 14px;"
-              >
-            </div>
-          </div>
-          <div class="input-group" style="margin-bottom: 0;">
-            <label for="modalNewWorkspacePath">
-              <span class="label-tech-text" style="font-size: 9px;">服务器绝对路径</span>
-            </label>
-            <div style="display: flex; gap: 8px; width: 100%;">
-              <div class="input-wrapper" style="flex: 1;">
-                <i data-lucide="folder" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
+        <div class="session-modal-body" id="sessionModalBody">
+          <div class="session-basic-row">
+            <div class="input-group session-name-group">
+              <div class="session-name-label-row">
+                <label for="newSessionName">
+                  <span class="label-tech-text">// 会话名称</span>
+                  <span class="label-optional-tag">可选</span>
+                </label>
+                <span class="session-auto-pill" id="sessionAutoTitlePill" title="留空将根据首条对话自动摘要标题，并自动分配唯一自增 ID">
+                  <i data-lucide="sparkles"></i>
+                  <span>自动摘要</span>
+                </span>
+              </div>
+              <div class="input-wrapper session-name-input-wrapper">
+                <i data-lucide="sparkles" class="input-icon" id="newSessionNameIcon"></i>
                 <input 
                   type="text" 
-                  id="modalNewWorkspacePath" 
-                  placeholder="例如 /home/ubuntu/project-x" 
-                  style="padding: 10px 10px 10px 40px; font-size: 14px; width: 100%;"
+                  id="newSessionName" 
+                  placeholder="留空自动摘要，或输入名称" 
+                  maxlength="60"
+                  autocomplete="off"
                 >
+                <button type="button" class="input-clear-btn hidden" id="clearSessionNameBtn" title="清空并恢复自动摘要">
+                  <i data-lucide="x"></i>
+                </button>
               </div>
-              <button type="button" class="cyber-btn-outline" id="browseModalWorkspacePathBtn" style="padding: 8px 12px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono);" title="浏览服务器文件夹">
-                <i data-lucide="folder-search" style="width: 16px; height: 16px;"></i>
-              </button>
+            </div>
+
+            <div class="input-group" style="display: none;">
+              <label for="sessionWorkspaceSelect">
+                <span class="label-tech-text">// 工作区</span>
+              </label>
+              <div class="input-wrapper">
+                <i data-lucide="folder-git-2" class="input-icon" style="color: var(--text-secondary);"></i>
+                <select id="sessionWorkspaceSelect" class="cyber-select" style="padding-left: 48px;">
+                  <!-- populated dynamically -->
+                </select>
+              </div>
+            </div>
+
+            <div class="input-group session-workspace-group">
+              <label>
+                <span class="label-tech-text">// 工作区上下文</span>
+              </label>
+              <div class="active-workspace-badge-container">
+                <i data-lucide="folder" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
+                <span id="modalActiveWorkspaceName">默认工作区</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="input-group">
-          <label>
-            <span class="label-tech-text">// 会话运行模式</span>
-          </label>
-          <div class="agent-cards-container session-mode-cards-container">
-            <label class="agent-card-option" title="双模随时平滑切换 (推荐)">
-              <input type="radio" name="sessionMode" value="hybrid" checked>
-              <div class="agent-card-inner">
-                <i data-lucide="split"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">会话与终端</span>
-                  <span class="agent-desc">双模平滑切换</span>
-                </div>
+          <div id="newWorkspaceFields" class="hidden" style="display: flex; flex-direction: column; gap: 15px; border: 1px dashed rgba(0, 240, 255, 0.2); padding: 15px; border-radius: 4px; background: rgba(0, 240, 255, 0.02); margin-top: -4px;">
+            <span style="font-size: 11px; font-family: var(--font-mono); color: var(--neon-cyan); text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);">// 初始化新工作区</span>
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="modalNewWorkspaceName">
+                <span class="label-tech-text" style="font-size: 9px;">工作区名称</span>
+              </label>
+              <div class="input-wrapper">
+                <i data-lucide="tag" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
+                <input 
+                  type="text" 
+                  id="modalNewWorkspaceName" 
+                  placeholder="例如 my-workspace" 
+                  style="padding: 10px 10px 10px 40px; font-size: 14px;"
+                >
               </div>
-            </label>
-            <label class="agent-card-option" title="纯会话模式 (原生流式对话，免终端干扰)">
-              <input type="radio" name="sessionMode" value="chat_only">
-              <div class="agent-card-inner">
-                <i data-lucide="messages-square"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">纯会话 (OAR)</span>
-                  <span class="agent-desc">原生流式对话</span>
+            </div>
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="modalNewWorkspacePath">
+                <span class="label-tech-text" style="font-size: 9px;">服务器绝对路径</span>
+              </label>
+              <div style="display: flex; gap: 8px; width: 100%;">
+                <div class="input-wrapper" style="flex: 1;">
+                  <i data-lucide="folder" class="input-icon" style="width: 14px; height: 14px; left: 15px;"></i>
+                  <input 
+                    type="text" 
+                    id="modalNewWorkspacePath" 
+                    placeholder="例如 /home/ubuntu/project-x" 
+                    style="padding: 10px 10px 10px 40px; font-size: 14px; width: 100%;"
+                  >
                 </div>
+                <button type="button" class="cyber-btn-outline" id="browseModalWorkspacePathBtn" style="padding: 8px 12px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono);" title="浏览服务器文件夹">
+                  <i data-lucide="folder-search" style="width: 16px; height: 16px;"></i>
+                </button>
               </div>
-            </label>
-            <label class="agent-card-option" title="纯终端模式 (原生 ANSI 命令行专注操控)">
-              <input type="radio" name="sessionMode" value="terminal_only">
-              <div class="agent-card-inner">
-                <i data-lucide="terminal"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">纯终端</span>
-                  <span class="agent-desc">命令行专注操控</span>
-                </div>
-              </div>
-            </label>
+            </div>
           </div>
-        </div>
 
-        <div class="input-group">
-          <label>
-            <span class="label-tech-text">// 初始智能体环境</span>
-          </label>
-          <div class="agent-cards-container">
-            <label class="agent-card-option" title="Antigravity AI 智能体">
-              <input type="radio" name="sessionAgent" value="agy" checked>
-              <div class="agent-card-inner">
-                <i data-lucide="bot"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">Antigravity</span>
-                  <span class="agent-desc">Antigravity AI</span>
-                </div>
-              </div>
+          <div class="input-group">
+            <label>
+              <span class="label-tech-text">// 会话运行模式</span>
             </label>
-            <label class="agent-card-option" title="Claude Code 命令行智能体">
-              <input type="radio" name="sessionAgent" value="claude">
-              <div class="agent-card-inner">
-                <i data-lucide="message-square"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">Claude</span>
-                  <span class="agent-desc">Claude Code</span>
+            <div class="agent-cards-container session-mode-cards-container">
+              <label class="agent-card-option" title="双模随时平滑切换 (推荐)">
+                <input type="radio" name="sessionMode" value="hybrid" checked>
+                <div class="agent-card-inner">
+                  <i data-lucide="split"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">会话与终端</span>
+                    <span class="agent-desc">双模平滑切换</span>
+                  </div>
                 </div>
-              </div>
-            </label>
-            <label class="agent-card-option" title="Codex 智能体">
-              <input type="radio" name="sessionAgent" value="codex">
-              <div class="agent-card-inner">
-                <i data-lucide="code"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">Codex</span>
-                  <span class="agent-desc">Codex 智能体</span>
+              </label>
+              <label class="agent-card-option" title="纯会话模式 (原生流式对话，免终端干扰)">
+                <input type="radio" name="sessionMode" value="chat_only">
+                <div class="agent-card-inner">
+                  <i data-lucide="messages-square"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">纯会话 (OAR)</span>
+                    <span class="agent-desc">原生流式对话</span>
+                  </div>
                 </div>
-              </div>
-            </label>
-            <label class="agent-card-option" title="Kimi Code CLI 智能体">
-              <input type="radio" name="sessionAgent" value="kimi">
-              <div class="agent-card-inner">
-                <i data-lucide="sparkles"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">Kimi</span>
-                  <span class="agent-desc">Kimi CLI</span>
+              </label>
+              <label class="agent-card-option" title="纯终端模式 (原生 ANSI 命令行专注操控)">
+                <input type="radio" name="sessionMode" value="terminal_only">
+                <div class="agent-card-inner">
+                  <i data-lucide="terminal"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">纯终端</span>
+                    <span class="agent-desc">命令行专注操控</span>
+                  </div>
                 </div>
-              </div>
-            </label>
-            <label class="agent-card-option" title="标准 Bash 命令行环境">
-              <input type="radio" name="sessionAgent" value="default">
-              <div class="agent-card-inner">
-                <i data-lucide="terminal"></i>
-                <div class="agent-card-info">
-                  <span class="agent-title">Shell</span>
-                  <span class="agent-desc">标准 Bash</span>
-                </div>
-              </div>
-            </label>
+              </label>
+            </div>
           </div>
-        </div>
 
-        <div class="input-group hidden" id="sessionModelGroup" style="margin-top: 14px;">
-          <label>
-            <span class="label-tech-text">// 模型选择</span>
-          </label>
-          <div class="model-cards-container" id="sessionModelCardsContainer">
-            <!-- Dynamically populated from /api/llm-models -->
+          <div class="input-group">
+            <label>
+              <span class="label-tech-text">// 初始智能体环境</span>
+            </label>
+            <div class="agent-cards-container">
+              <label class="agent-card-option" title="Antigravity AI 智能体">
+                <input type="radio" name="sessionAgent" value="agy" checked>
+                <div class="agent-card-inner">
+                  <i data-lucide="bot"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">Antigravity</span>
+                    <span class="agent-desc">Antigravity AI</span>
+                  </div>
+                </div>
+              </label>
+              <label class="agent-card-option" title="Claude Code 命令行智能体">
+                <input type="radio" name="sessionAgent" value="claude">
+                <div class="agent-card-inner">
+                  <i data-lucide="message-square"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">Claude</span>
+                    <span class="agent-desc">Claude Code</span>
+                  </div>
+                </div>
+              </label>
+              <label class="agent-card-option" title="Codex 智能体">
+                <input type="radio" name="sessionAgent" value="codex">
+                <div class="agent-card-inner">
+                  <i data-lucide="code"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">Codex</span>
+                    <span class="agent-desc">Codex 智能体</span>
+                  </div>
+                </div>
+              </label>
+              <label class="agent-card-option" title="Kimi Code CLI 智能体">
+                <input type="radio" name="sessionAgent" value="kimi">
+                <div class="agent-card-inner">
+                  <i data-lucide="sparkles"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">Kimi</span>
+                    <span class="agent-desc">Kimi CLI</span>
+                  </div>
+                </div>
+              </label>
+              <label class="agent-card-option" title="标准 Bash 命令行环境">
+                <input type="radio" name="sessionAgent" value="default">
+                <div class="agent-card-inner">
+                  <i data-lucide="terminal"></i>
+                  <div class="agent-card-info">
+                    <span class="agent-title">Shell</span>
+                    <span class="agent-desc">标准 Bash</span>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="input-group hidden" id="sessionModelGroup">
+            <label>
+              <span class="label-tech-text">// 模型选择</span>
+            </label>
+            <div class="model-cards-container" id="sessionModelCardsContainer">
+              <!-- Dynamically populated from /api/llm-models -->
+            </div>
           </div>
         </div>
 

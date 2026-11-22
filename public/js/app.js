@@ -1166,7 +1166,7 @@ export async function loadLlmModels() {
   }
 }
 
-function renderSessionFlatModels(agent) {
+function renderSessionFlatModels(agent, options = {}) {
   const modelGroup = document.getElementById('sessionModelGroup');
   const container = document.getElementById('sessionModelCardsContainer');
   if (!modelGroup || !container) return;
@@ -1202,11 +1202,20 @@ function renderSessionFlatModels(agent) {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+
+  if (options.scrollIntoView) {
+    requestAnimationFrame(() => {
+      modelGroup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
 }
 
 newSessionBtn.addEventListener('click', () => {
   closeSidebarOnMobile();
   sessionModal.classList.remove('hidden');
+
+  const modalBody = document.getElementById('sessionModalBody');
+  if (modalBody) modalBody.scrollTop = 0;
 
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
@@ -1228,7 +1237,7 @@ newSessionBtn.addEventListener('click', () => {
 // Update models, mode recommendation, and name hint when user switches agent or mode options
 document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
   radio.addEventListener('change', () => {
-    renderSessionFlatModels(radio.value);
+    renderSessionFlatModels(radio.value, { scrollIntoView: true });
 
     // Smart mode suggestion
     if (radio.value === 'default') {
