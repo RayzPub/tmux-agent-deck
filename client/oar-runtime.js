@@ -534,13 +534,31 @@ function createDeviceOarManager(options = {}) {
     const refused = preCaps?.refusedSessionOptions || runtime.refusedSessionOptions || {};
     const cwd = (sess.workspacePath && fs.existsSync(sess.workspacePath)) ? sess.workspacePath : process.cwd();
 
+    const resolveLaunchModel = (rawModel) => {
+      if (typeof rawModel !== 'string') return null;
+      const trimmed = rawModel.trim();
+      if (!trimmed || trimmed === 'default') return null;
+      // Allow real provider/model IDs (e.g. "deepseek/deepseek-flash", "glm-5.3-flash"),
+      // while ignoring UI display labels that contain spaces or non-ASCII text.
+      if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return null;
+      return trimmed;
+    };
+
+    const resolvedModel = resolveLaunchModel(sess.model);
     const buildOpts = ({ includeResume = true, includeModel = true } = {}) => {
       const opts = { cwd, retainedBytes: OAR_RETAINED_BYTES };
-      if (!refused.env) opts.env = env;
-      if (includeResume && sess.oarSessionId) opts.resume = sess.oarSessionId;
-      if (includeModel && sess.model && sess.model !== 'default' && !sess.model.includes('/')) {
-        opts.model = sess.model;
+      const sessionEnv = { ...env };
+      if (includeModel && resolvedModel) {
+        opts.model = resolvedModel;
+        if (runtimeId === 'claude') {
+          sessionEnv.ANTHROPIC_MODEL = resolvedModel;
+        } else if (runtimeId === 'codex') {
+          sessionEnv.OPENAI_MODEL = resolvedModel;
+          sessionEnv.CODEX_MODEL = resolvedModel;
+        }
       }
+      if (!refused.env) opts.env = sessionEnv;
+      if (includeResume && sess.oarSessionId) opts.resume = sess.oarSessionId;
       return opts;
     };
 

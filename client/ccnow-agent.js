@@ -944,7 +944,7 @@ var require_tmuxHandlers = __commonJS({
           workspacePath: pureChat.workspacePath && fs2.existsSync(pureChat.workspacePath) ? pureChat.workspacePath : process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd(),
           agentType: pureChat.agentType || "claude",
           sessionMode: "chat_only",
-          model: pureChat.agentModel || pureChat.modelName || ""
+          model: pureChat.modelName || pureChat.agentModel || ""
         };
       }
       let workspacePath = process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd();
@@ -1070,7 +1070,7 @@ var require_tmuxHandlers = __commonJS({
             oarMgr.getOrCreateSession(finalName, {
               agentType: effectiveAgent,
               workspacePath: targetDir,
-              model: agentModel || modelName || ""
+              model: modelName || agentModel || ""
             });
           }
           send({ action: "tmux:new_session_result", reqId, success: true, sessionName: finalName });
@@ -2564,13 +2564,28 @@ var require_oar_runtime = __commonJS({
         const preCaps = capsMod?.installedSessionCapabilities ? capsMod.installedSessionCapabilities(runtime, installation) : {};
         const refused = preCaps?.refusedSessionOptions || runtime.refusedSessionOptions || {};
         const cwd = sess.workspacePath && fs2.existsSync(sess.workspacePath) ? sess.workspacePath : process.cwd();
+        const resolveLaunchModel = (rawModel) => {
+          if (typeof rawModel !== "string") return null;
+          const trimmed = rawModel.trim();
+          if (!trimmed || trimmed === "default") return null;
+          if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return null;
+          return trimmed;
+        };
+        const resolvedModel = resolveLaunchModel(sess.model);
         const buildOpts = ({ includeResume = true, includeModel = true } = {}) => {
           const opts = { cwd, retainedBytes: OAR_RETAINED_BYTES };
-          if (!refused.env) opts.env = env;
-          if (includeResume && sess.oarSessionId) opts.resume = sess.oarSessionId;
-          if (includeModel && sess.model && sess.model !== "default" && !sess.model.includes("/")) {
-            opts.model = sess.model;
+          const sessionEnv = { ...env };
+          if (includeModel && resolvedModel) {
+            opts.model = resolvedModel;
+            if (runtimeId === "claude") {
+              sessionEnv.ANTHROPIC_MODEL = resolvedModel;
+            } else if (runtimeId === "codex") {
+              sessionEnv.OPENAI_MODEL = resolvedModel;
+              sessionEnv.CODEX_MODEL = resolvedModel;
+            }
           }
+          if (!refused.env) opts.env = sessionEnv;
+          if (includeResume && sess.oarSessionId) opts.resume = sess.oarSessionId;
           return opts;
         };
         let liveSession = null;
@@ -3034,7 +3049,8 @@ var require_chatHandlers = __commonJS({
           if (oarMgr) {
             const snapshot = oarMgr.getHistorySnapshot(sessionName, {
               agentType: pureChat.agentType || "claude",
-              workspacePath: pureChat.workspacePath || process.cwd()
+              workspacePath: pureChat.workspacePath || process.cwd(),
+              model: pureChat.modelName || ""
             });
             if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
               return send({

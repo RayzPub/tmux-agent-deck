@@ -123,7 +123,8 @@ async function handleChatHistory(send, reqId, sessionName, since) {
       if (oarMgr) {
         const snapshot = oarMgr.getHistorySnapshot(sessionName, {
           agentType: pureChat.agentType || 'claude',
-          workspacePath: pureChat.workspacePath || process.cwd()
+          workspacePath: pureChat.workspacePath || process.cwd(),
+          model: pureChat.modelName || ''
         });
         if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
           return send({

@@ -28,7 +28,7 @@ function readTmuxSessionMeta(sessionName) {
         : (process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd()),
       agentType: pureChat.agentType || 'claude',
       sessionMode: 'chat_only',
-      model: pureChat.agentModel || pureChat.modelName || ''
+      model: pureChat.modelName || pureChat.agentModel || ''
     };
   }
 
@@ -170,7 +170,7 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
         oarMgr.getOrCreateSession(finalName, {
           agentType: effectiveAgent,
           workspacePath: targetDir,
-          model: agentModel || modelName || ''
+          model: modelName || agentModel || ''
         });
       }
 
