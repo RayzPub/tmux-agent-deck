@@ -311,7 +311,7 @@ export function showToast(message, options = {}) {
 }
 
 export const toast = {
-  show: (msg, opts) => showToast(msg, { ...(typeof opts === 'object' ? opts : { duration: opts }), type: 'default' }),
+  show: (msg, opts) => showToast(msg, { type: 'default', ...(typeof opts === 'object' ? opts : { duration: opts }) }),
   success: (msg, opts) => showToast(msg, { ...(typeof opts === 'object' ? opts : { duration: opts }), type: 'success' }),
   error: (msg, opts) => showToast(msg, { ...(typeof opts === 'object' ? opts : { duration: opts }), type: 'error' }),
   warning: (msg, opts) => showToast(msg, { ...(typeof opts === 'object' ? opts : { duration: opts }), type: 'warning' }),

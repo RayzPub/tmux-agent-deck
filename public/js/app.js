@@ -18,9 +18,25 @@ import { initMobileInput, initPreventZoom, syncTerminalAgentQuickButtons } from 
 import { initDeviceManager } from './modules/deviceManager.js';
 import { toast } from './modules/toast.js';
 import { morphInlineConfirm, popoverInlineConfirm } from './modules/inlineConfirm.js';
+import { createMatrixOrb } from './modules/matrixOrb.js';
 
 // Lock zoom immediately at script evaluation
 initPreventZoom();
+
+// Mount calm dot-matrix orb on main welcome canvas (auto-pauses when panel is hidden)
+const welcomeOrbSlot = document.getElementById('welcomeOrbSlot');
+if (welcomeOrbSlot) {
+  const welcomeOrb = createMatrixOrb(welcomeOrbSlot, {
+    size: 168,
+    dots: 13,
+    state: 'idle',
+    opacity: 0.72,
+  });
+  if (welcomeOrb) {
+    welcomeOrbSlot.addEventListener('mouseenter', () => welcomeOrb.setState('thinking'));
+    welcomeOrbSlot.addEventListener('mouseleave', () => welcomeOrb.setState('idle'));
+  }
+}
 
 // Expose immediately for terminal and tab operations
 window.applySessionViewMode = applySessionViewMode;
@@ -340,15 +356,6 @@ export function renderSessions(sessions) {
       }
     }
 
-    let modeBadgeHtml = '';
-    if (session.sessionMode === 'chat_only') {
-      modeBadgeHtml = '<span class="session-mode-badge mode-chat" title="纯会话模式 (OAR 统一运行时驱动)">OAR</span>';
-    } else if (session.sessionMode === 'terminal_only') {
-      modeBadgeHtml = '<span class="session-mode-badge mode-terminal" title="纯终端模式 (原生 ANSI 命令行)">终端</span>';
-    } else {
-      modeBadgeHtml = '<span class="session-mode-badge mode-hybrid" title="混合双模 (支持在聊天与终端间平滑切换)">双模</span>';
-    }
-
     const displayTitle = (session.displayTitle && session.displayTitle.trim()) ? session.displayTitle.trim() : session.name;
     const safeDisplayTitle = escapeHtmlText(displayTitle);
     const safeSessionName = escapeHtmlText(session.name);
@@ -365,7 +372,6 @@ export function renderSessions(sessions) {
         </div>
       </div>
       <div class="session-sub-row">
-        ${modeBadgeHtml}
         <div class="card-actions">
           <button class="session-more-btn" data-action="toggle-menu" data-name="${safeSessionName}" title="更多操作">
             <i data-lucide="more-horizontal"></i>

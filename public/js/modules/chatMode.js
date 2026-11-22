@@ -13,6 +13,7 @@ import { buildMermaidCardHtml, renderMermaidBlocks, handleMermaidContainerClick 
 import { enhanceChatFileLinks, handleChatFileLinkClick, parseFilePathCandidate } from './chatFileLink.js';
 import { toast } from './toast.js';
 import { createInlineAiStatusController, renderAiStatusIconSvg, inferToolStage } from './aiStatus.js';
+import { createMatrixOrb } from './matrixOrb.js';
 import {
   resolveSessionAgentType,
   getAgentDisplayName,
@@ -22,6 +23,36 @@ import {
 } from './slashCommands.js';
 
 const inlineAiStatus = createInlineAiStatusController(() => document.getElementById('chatInlineAiStatus'));
+let chatEmptyOrb = null;
+let voiceOrbBridgeBound = false;
+
+function destroyChatEmptyOrb() {
+  if (chatEmptyOrb) {
+    chatEmptyOrb.destroy();
+    chatEmptyOrb = null;
+  }
+}
+
+function mountChatEmptyOrb(container) {
+  destroyChatEmptyOrb();
+  if (!container) return;
+  const slot = container.querySelector('.chat-empty-orb');
+  if (!slot) return;
+  chatEmptyOrb = createMatrixOrb(slot, {
+    size: 156,
+    dots: 13,
+    state: 'idle',
+    opacity: 0.72,
+  });
+  if (!voiceOrbBridgeBound) {
+    voiceOrbBridgeBound = true;
+    window.addEventListener('ccnow:voice-state', (e) => {
+      if (!chatEmptyOrb) return;
+      const listening = Boolean(e?.detail?.listening);
+      chatEmptyOrb.setState(listening ? 'listening' : 'idle');
+    });
+  }
+}
 
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
@@ -100,8 +131,8 @@ export function initChatMode() {
   if (!document.getElementById('deckModeSwitcher')) {
     const switcher = document.createElement('div');
     switcher.id = 'deckModeSwitcher';
-    switcher.className = 'deck-mode-switcher';
-    switcher.style.display = 'none'; // Initially hidden until session support is verified
+    switcher.className = 'deck-mode-switcher hidden';
+    switcher.style.display = 'none'; // Initially hidden until hybrid dual-mode support is verified
     switcher.innerHTML = `
       <button class="deck-mode-btn active" id="modeBtnTerminal" title="经典字符终端">
         <i data-lucide="terminal"></i>
@@ -468,6 +499,12 @@ export async function checkSessionSupport(sessionName) {
   return false;
 }
 
+function setModeSwitcherVisible(switcher, visible) {
+  if (!switcher) return;
+  switcher.classList.toggle('hidden', !visible);
+  switcher.style.display = visible ? 'inline-flex' : 'none';
+}
+
 /**
  * Apply the current session's view mode to the UI
  */
@@ -486,7 +523,7 @@ export async function applySessionViewMode(sessionName, forceMode) {
   const currentSess = getCurrentSessionName(sessionName);
 
   if (!currentSess) {
-    if (switcher) switcher.style.display = 'none';
+    setModeSwitcherVisible(switcher, false);
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
     if (terminalWrapper) {
@@ -520,10 +557,16 @@ export async function applySessionViewMode(sessionName, forceMode) {
     sessionModeCache.set(currentSess, 'chat_only');
     sessionSupportCache.set(currentSess, true);
     targetMode = 'chat';
+  } else if (sessionMeta && sessionMeta.sessionMode === 'terminal_only') {
+    sessionModeCache.set(currentSess, 'terminal_only');
+    targetMode = 'terminal';
   }
 
   const cachedSupport = sessionSupportCache.get(currentSess);
   const cachedSessMode = sessionModeCache.get(currentSess);
+  const optimisticHybrid = cachedSupport === true && cachedSessMode === 'hybrid';
+  setModeSwitcherVisible(switcher, optimisticHybrid);
+
   if (targetMode === 'chat' && cachedSupport !== false) {
     terminalContainer.classList.add('hidden');
     if (terminalWrapper) {
@@ -533,7 +576,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     chatContainer.classList.remove('hidden');
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
-    if (switcher) switcher.style.display = 'inline-flex';
     if (mobileControls) {
       mobileControls.classList.add('hidden');
       mobileControls.style.display = 'none';
@@ -557,8 +599,6 @@ export async function applySessionViewMode(sessionName, forceMode) {
     if (workspaceMain) {
       workspaceMain.classList.add('has-mobile-controls');
     }
-  } else if (cachedSupport !== true && switcher) {
-    switcher.style.display = 'none';
   }
 
   const isSupported = await checkSessionSupport(currentSess);
@@ -570,7 +610,7 @@ export async function applySessionViewMode(sessionName, forceMode) {
   }
 
   if (sessMode === 'terminal_only' || !isSupported) {
-    if (switcher) switcher.style.display = 'none';
+    setModeSwitcherVisible(switcher, false);
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
     if (terminalWrapper) {
@@ -593,17 +633,11 @@ export async function applySessionViewMode(sessionName, forceMode) {
     return;
   }
 
-  // Pure Chat Mode: Lock to Chat Mode and show OAR branding in switcher
+  // Only show Terminal/Chat mode switcher in dual-mode ('hybrid'); hide in single-mode ('chat_only')
   let switcherIconsDirty = false;
   if (sessMode === 'chat_only') {
     targetMode = 'chat';
-    btnTerminal.style.opacity = '0.5';
-    btnTerminal.title = '纯会话模式 (由 OAR 运行时驱动，无需终端物理按键)';
-    if (btnChat.dataset.modeLabel !== 'chat_only') {
-      btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>纯会话 (OAR)</span>';
-      btnChat.dataset.modeLabel = 'chat_only';
-      switcherIconsDirty = true;
-    }
+    setModeSwitcherVisible(switcher, false);
   } else {
     btnTerminal.style.opacity = '1';
     btnTerminal.title = '切换至终端交互界面';
@@ -612,9 +646,9 @@ export async function applySessionViewMode(sessionName, forceMode) {
       btnChat.dataset.modeLabel = 'hybrid';
       switcherIconsDirty = true;
     }
+    setModeSwitcherVisible(switcher, true);
   }
 
-  if (switcher) switcher.style.display = 'inline-flex';
   sessionViewModes.set(currentSess, targetMode);
 
   if (targetMode === 'chat') {
@@ -1349,16 +1383,12 @@ export async function clearChatContext() {
   if (container) {
     container.innerHTML = `
       <div class="chat-empty-state">
-        <div class="chat-empty-icon">
-          <i data-lucide="sparkles"></i>
-        </div>
+        <div class="chat-empty-orb" aria-hidden="true"></div>
         <div class="chat-empty-title">上下文已清空</div>
         <div class="chat-empty-subtitle">终端与会话上下文已重置，输入消息开启全新对话</div>
       </div>
     `;
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
+    mountChatEmptyOrb(container);
   }
 
   // 4. Update status indicator
@@ -1743,20 +1773,20 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
       : '在下方输入需求，开启智能体协作对话';
     container.innerHTML = `
       <div class="chat-empty-state">
-        <div class="chat-empty-icon">
-          <i data-lucide="sparkles" style="width: 26px; height: 26px; color: var(--accent-primary, var(--neon-cyan)); opacity: 0.85;"></i>
-        </div>
+        <div class="chat-empty-orb" aria-hidden="true"></div>
         <div class="chat-empty-title">会话「${escapeHtml(displaySession)}」已就绪</div>
         <div class="chat-empty-desc">
           ${emptyDesc}
         </div>
       </div>
     `;
+    mountChatEmptyOrb(container);
     updateStatusBadge('就绪', 'ready');
-    if (window.lucide) window.lucide.createIcons();
     updateScrollFadeMask(container);
     return;
   }
+
+  destroyChatEmptyOrb();
 
   let html = '';
   let hasRenderedActiveQuestion = false;
@@ -1835,7 +1865,6 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
                 : `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>`)
             : '';
           const isRunningTool = t.status === 'running';
-          const toolStage = inferToolStage(t.name);
           const statusTag = isRunningTool
             ? '<span class="cds-tool-running-tag">执行中...</span>'
             : (t.exitCode !== undefined && t.exitCode !== null
@@ -1844,9 +1873,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
           return `
             <div class="cds-tool-item${isRunningTool ? ' is-running' : ''}">
               <div class="cds-tool-item-head">
-                ${isRunningTool
-                  ? `<span class="cds-ai-inline-icon">${renderAiStatusIconSvg(toolStage, 12)}</span>`
-                  : `<i data-lucide="wrench" style="width: 11px; height: 11px;"></i>`}
+                <i data-lucide="wrench" style="width: 11px; height: 11px;"></i>
                 <span>${escapeHtml(t.name)}</span>
                 ${statusTag}
               </div>
@@ -1989,17 +2016,15 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     }
   } else if (data.isGenerating || lastRunningTool || lastActivelyThinking) {
     if (lastRunningTool) {
+      // Tool details already render inside the conversation stream; keep inline status concise (no duplicate tool name)
       const toolStage = inferToolStage(lastRunningTool.name);
-      const stageLabel = toolStage === 'researching'
-        ? '正在检索分析'
-        : (toolStage === 'writing' ? '正在编写修改' : '正在执行工具');
-      updateStatusBadge(stageLabel, toolStage, lastRunningTool.name);
+      updateStatusBadge('处理中...', toolStage);
     } else if (lastActivelyThinking) {
-      updateStatusBadge('正在深入思考...', 'thinking');
+      updateStatusBadge('思考中...', 'thinking');
     } else if (lastMessage && lastMessage.role !== 'user' && lastMessage.content) {
-      updateStatusBadge(data.statusText || '正在生成回复...', 'writing');
+      updateStatusBadge('生成回复中...', 'writing');
     } else {
-      updateStatusBadge(data.statusText || '正在思考与执行...', 'thinking');
+      updateStatusBadge('处理中...', 'thinking');
     }
   } else {
     updateStatusBadge('就绪', 'ready');
@@ -2447,6 +2472,7 @@ function appendUserMessageToUI(text, attachments = []) {
 
   const emptyState = container.querySelector('.chat-empty-state');
   if (emptyState) {
+    destroyChatEmptyOrb();
     container.innerHTML = '';
   }
 

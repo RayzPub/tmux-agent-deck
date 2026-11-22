@@ -1684,6 +1684,10 @@ body.light-minimalist .chat-icon-btn.chat-interrupt-btn {
    Light Mode Minimalist Styling (body.light-minimalist)
    Strictly aligned with AGENTS.md Section 5 (Indigo #4f46e5 + #eef2ff + #0f172a)
    ========================================================================== */
+.deck-mode-switcher.hidden {
+  display: none !important;
+}
+
 body.light-minimalist .deck-mode-switcher {
   background: #f1f5f9;
   box-shadow: inset 0 0 0 1px #cbd5e1, 0 2px 8px rgba(15, 23, 42, 0.06);
@@ -2443,6 +2447,10 @@ body.light-minimalist .agent-chat-statusbar {
   box-sizing: border-box !important;
   pointer-events: auto !important;
   touch-action: manipulation !important;
+}
+
+.deck-mode-switcher.hidden {
+  display: none !important;
 }
 
 body.light-minimalist .deck-mode-switcher {
@@ -3907,6 +3915,28 @@ body.light-minimalist .ai-status-detail {
 body.light-minimalist .ai-status-timer {
   color: #64748b;
   border-left-color: #e2e8f0;
+}
+
+.chat-empty-orb {
+  width: 156px;
+  height: 156px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .chat-empty-orb {
+    width: 124px;
+    height: 124px;
+    margin-bottom: 12px;
+  }
+
+  .chat-empty-orb .ccnow-matrix-orb-canvas {
+    width: 124px !important;
+    height: 124px !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

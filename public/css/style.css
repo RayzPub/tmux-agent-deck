@@ -10653,11 +10653,11 @@ body.light-minimalist .cyber-badge {
 .ccnow-glyph-draw {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: ccnowGlyphDraw 320ms cubic-bezier(0.22, 1, 0.36, 1) 110ms forwards;
+  animation: ccnowGlyphDraw 280ms cubic-bezier(0.22, 1, 0.36, 1) 40ms forwards;
 }
 
 .ccnow-glyph-draw-delay {
-  animation-delay: 190ms;
+  animation-delay: 120ms;
 }
 
 .ccnow-glyph-dot {
@@ -10665,7 +10665,7 @@ body.light-minimalist .cyber-badge {
   transform-origin: center;
   opacity: 0;
   transform: scale(0.4);
-  animation: ccnowGlyphDotPop 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms forwards;
+  animation: ccnowGlyphDotPop 220ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms forwards;
 }
 
 .ccnow-toast-spin {
@@ -11060,6 +11060,155 @@ body.light-minimalist .ic-popover-cancel:hover:not(:disabled) {
 }
 
 /* ==========================================================================
+   CALM DOT-MATRIX ORB & VOICE LISTENING HUD
+   Subtle, low-distraction visual feedback with full dual-theme parity
+   ========================================================================== */
+.ccnow-matrix-orb-canvas {
+  display: block;
+  pointer-events: none;
+}
+
+.welcome-orb-wrap {
+  width: 168px;
+  height: 168px;
+  margin: 0 auto 18px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+@media (max-width: 768px) {
+  .welcome-orb-wrap {
+    width: 132px;
+    height: 132px;
+    margin-bottom: 12px;
+  }
+
+  .welcome-orb-wrap .ccnow-matrix-orb-canvas {
+    width: 132px !important;
+    height: 132px !important;
+  }
+}
+
+.ccnow-voice-hud.is-inline {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+  justify-items: start;
+  transition: grid-template-rows 200ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              margin-bottom 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ccnow-voice-hud.is-inline.is-visible {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 7px;
+  pointer-events: auto;
+}
+
+.ccnow-voice-hud.is-floating {
+  position: fixed;
+  left: calc(14px + env(safe-area-inset-left, 0px));
+  bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(8px) scale(0.96);
+  z-index: 10035;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ccnow-voice-hud.is-floating.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.ccnow-voice-hud-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(320px, calc(100vw - 28px));
+  height: 32px;
+  padding: 0 6px 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2, #22252e);
+  color: var(--c-text, #f2f5fa);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
+}
+
+.ccnow-voice-hud-orb {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ccnow-voice-hud-status {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--c-text, #f2f5fa);
+  padding-right: 2px;
+}
+
+.ccnow-voice-hud-stop {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 70ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ccnow-voice-hud-stop:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.ccnow-voice-hud-stop:active {
+  transform: scale(0.92);
+}
+
+body.light-minimalist .ccnow-voice-hud-inner {
+  background: #ffffff;
+  color: #0f172a;
+  border: 0.5px solid #cbd5e1;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+body.light-minimalist .ccnow-voice-hud-status {
+  color: #0f172a;
+}
+
+body.light-minimalist .ccnow-voice-hud-stop {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+body.light-minimalist .ccnow-voice-hud-stop:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+/* ==========================================================================
    GLOBAL ACCESSIBILITY: PREFERS-REDUCED-MOTION
    Gracefully minimizes motion while preserving functional state clarity
    ========================================================================== */
@@ -11107,6 +11256,7 @@ body.light-minimalist .ic-popover-cancel:hover:not(:disabled) {
 .session-card-menu.hidden,
 .mobile-bottom-controls.hidden,
 .agent-chat-container.hidden,
+.deck-mode-switcher.hidden,
 .drawer-staging-tray.hidden,
 .chat-attachment-tray.hidden,
 .sidebar-panel-content.hidden {

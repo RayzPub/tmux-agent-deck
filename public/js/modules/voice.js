@@ -1,9 +1,114 @@
 import { state } from './state.js';
+import { createMatrixOrb } from './matrixOrb.js';
 
 let sharedRecognition = null;
 let isListening = false;
 let wantsListening = false;
 let activeTarget = 'mobile'; // 'mobile' | 'chat'
+let voiceHudEl = null;
+let voiceOrbInstance = null;
+
+function dispatchVoiceState(listening) {
+  try {
+    window.dispatchEvent(new CustomEvent('ccnow:voice-state', {
+      detail: { listening, target: activeTarget },
+    }));
+  } catch (e) {}
+}
+
+function showVoiceHud(target) {
+  if (!voiceHudEl) {
+    voiceHudEl = document.createElement('div');
+    voiceHudEl.id = 'ccnowVoiceHud';
+    voiceHudEl.className = 'ccnow-voice-hud';
+    voiceHudEl.setAttribute('role', 'status');
+    voiceHudEl.setAttribute('aria-live', 'polite');
+    voiceHudEl.innerHTML = `
+      <div class="ccnow-voice-hud-inner">
+        <div class="ccnow-voice-hud-orb" id="ccnowVoiceHudOrb"></div>
+        <span class="ccnow-voice-hud-status" id="ccnowVoiceHudStatus">正在聆听...</span>
+        <button type="button" class="ccnow-voice-hud-stop" id="ccnowVoiceHudStopBtn" title="停止语音输入" aria-label="停止语音输入">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="2.5" />
+          </svg>
+        </button>
+      </div>
+    `;
+
+    const stopBtn = voiceHudEl.querySelector('#ccnowVoiceHudStopBtn');
+    if (stopBtn) {
+      stopBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        wantsListening = false;
+        if (sharedRecognition) {
+          try { sharedRecognition.stop(); } catch (err) {}
+        }
+        hideVoiceHud();
+      });
+    }
+  }
+
+  // Mount left-aligned inside chat composer shell when in Chat mode; fixed left-aligned on mobile terminal bar
+  const chatComposerShell = target === 'chat' ? document.querySelector('#agentChatContainer .chat-composer-shell') : null;
+  const chatInputRow = chatComposerShell ? chatComposerShell.querySelector('.chat-input-row') : null;
+  if (chatComposerShell && chatInputRow) {
+    voiceHudEl.classList.add('is-inline');
+    voiceHudEl.classList.remove('is-floating');
+    if (voiceHudEl.parentNode !== chatComposerShell) {
+      chatComposerShell.insertBefore(voiceHudEl, chatInputRow);
+    }
+  } else {
+    voiceHudEl.classList.remove('is-inline');
+    voiceHudEl.classList.add('is-floating');
+    if (voiceHudEl.parentNode !== document.body) {
+      document.body.appendChild(voiceHudEl);
+    }
+  }
+
+  voiceHudEl.dataset.target = target || 'chat';
+  const statusEl = voiceHudEl.querySelector('#ccnowVoiceHudStatus');
+  if (statusEl) statusEl.textContent = '正在聆听...';
+
+  const orbSlot = voiceHudEl.querySelector('#ccnowVoiceHudOrb');
+  if (orbSlot) {
+    if (voiceOrbInstance) {
+      voiceOrbInstance.destroy();
+      voiceOrbInstance = null;
+    }
+    voiceOrbInstance = createMatrixOrb(orbSlot, {
+      size: 28,
+      dots: 9,
+      state: 'listening',
+      opacity: 0.88,
+    });
+  }
+
+  requestAnimationFrame(() => {
+    if (voiceHudEl) voiceHudEl.classList.add('is-visible');
+  });
+}
+
+function pulseVoiceHudActivity(hasText) {
+  if (!voiceHudEl) return;
+  const statusEl = voiceHudEl.querySelector('#ccnowVoiceHudStatus');
+  if (statusEl && hasText) {
+    statusEl.textContent = '正在录入语音...';
+  }
+  if (voiceOrbInstance) {
+    voiceOrbInstance.pulseLevel(0.88, 360);
+  }
+}
+
+function hideVoiceHud() {
+  if (voiceHudEl) {
+    voiceHudEl.classList.remove('is-visible');
+  }
+  if (voiceOrbInstance) {
+    voiceOrbInstance.destroy();
+    voiceOrbInstance = null;
+  }
+}
 
 function getOrCreateRecognition() {
   if (sharedRecognition) return sharedRecognition;
@@ -17,6 +122,8 @@ function getOrCreateRecognition() {
 
   recognition.onstart = () => {
     isListening = true;
+    showVoiceHud(activeTarget);
+    dispatchVoiceState(true);
     if (activeTarget === 'chat') {
       const chatMic = document.getElementById('chatMicBtn');
       const chatInput = document.getElementById('chatComposerTextarea');
@@ -33,6 +140,8 @@ function getOrCreateRecognition() {
   recognition.onend = () => {
     isListening = false;
     wantsListening = false;
+    hideVoiceHud();
+    dispatchVoiceState(false);
     const chatMic = document.getElementById('chatMicBtn');
     const chatInput = document.getElementById('chatComposerTextarea');
     if (chatMic) chatMic.classList.remove('listening');
@@ -51,6 +160,8 @@ function getOrCreateRecognition() {
       .map(result => result[0])
       .map(result => result.transcript)
       .join('');
+
+    pulseVoiceHudActivity(Boolean(transcript));
 
     if (activeTarget === 'chat') {
       const chatInput = document.getElementById('chatComposerTextarea');
@@ -72,6 +183,8 @@ function getOrCreateRecognition() {
     console.warn('Speech recognition notice/error:', event.error);
     isListening = false;
     wantsListening = false;
+    hideVoiceHud();
+    dispatchVoiceState(false);
     try {
       recognition.stop();
     } catch(e) {}
