@@ -301,7 +301,7 @@ export function renderSessions(sessions) {
 
   if (filteredSessions.length === 0) {
     if (welcomeSloganDesc) {
-      welcomeSloganDesc.textContent = '当前没有活跃的智能体会话，请新建会话以建立终端连接通道。';
+      welcomeSloganDesc.textContent = '当前没有活跃的智能体会话，请新建会话开始协作，或打开左侧任务看板查看全局进度。';
     }
 
     sessionList.innerHTML = `
@@ -312,7 +312,7 @@ export function renderSessions(sessions) {
     return;
   } else {
     if (welcomeSloganDesc) {
-      welcomeSloganDesc.textContent = '请从侧边栏选择已有的 tmux 会话，或新建会话以建立终端连接通道。';
+      welcomeSloganDesc.textContent = '请从侧边栏选择已有会话，或新建智能体会话（支持双模、OAR 纯会话与纯终端）。';
     }
   }
 

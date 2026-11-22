@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-  <title>CCNOW · AI 智能体后台控制中心</title>
-  <meta name="description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+  <title>CCNOW · 多设备 AI 智能体控制中心</title>
+  <meta name="description" content="CCNOW — 统一调度云端 Docker 沙箱、主服务器与个人电脑的 AI 编程智能体工作台。支持双模/OAR纯会话/终端、任务看板总览、Mermaid 渲染、Git Diff 与手机折叠屏 PWA。">
   <link rel="canonical" href="https://ccnow.cloud/welcome">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://ccnow.cloud/welcome">
-  <meta property="og:title" content="CCNOW · AI 智能体后台控制中心">
-  <meta property="og:description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+  <meta property="og:title" content="CCNOW · 多设备 AI 智能体控制中心">
+  <meta property="og:description" content="统一调度云端 Docker 沙箱与个人电脑的 AI 编程智能体控制中心。支持 Antigravity、Claude Code、Codex、Kimi，三模会话、任务看板与全端 PWA。">
   <meta property="og:image" content="https://ccnow.cloud/docs/images/dashboard_preview.webp">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="CCNOW · AI 智能体后台控制中心">
-  <meta name="twitter:description" content="CCNOW — 专为 AI 编程智能体设计的网页端控制面板。后台持久运行、手机完美适配、微信/TG 双向遥控。">
+  <meta name="twitter:title" content="CCNOW · 多设备 AI 智能体控制中心">
+  <meta name="twitter:description" content="统一调度云端 Docker 沙箱与个人电脑的 AI 编程智能体控制中心。支持三模会话、任务看板、Mermaid 图表与全端 PWA。">
   <meta name="twitter:image" content="https://ccnow.cloud/docs/images/dashboard_preview.webp">
 
   <!-- Google Fonts -->
@@ -151,7 +151,7 @@
       display: inline-block; flex: none;
     }
     @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity: .4; transform: scale(.75);} }
-    .nav-links { display: flex; align-items: center; gap: clamp(14px, 2.5vw, 32px); }
+    .nav-links { display: flex; align-items: center; gap: clamp(14px, 2.2vw, 28px); }
     .nav-links a.nav-link {
       font-family: var(--font-mono); font-size: .82rem; color: var(--muted);
       transition: color .2s; position: relative;
@@ -179,7 +179,7 @@
       color: var(--muted); border-bottom: 1px solid rgba(255,255,255,.05);
     }
     .mobile-menu a:last-child { border-bottom: none; color: var(--cyan); }
-    @media (max-width: 860px) {
+    @media (max-width: 960px) {
       .nav-links { display: none; }
       .hamburger { display: flex; }
     }
@@ -214,7 +214,7 @@
     }
     .hero-badge {
       font-family: var(--font-mono); font-size: .78rem; color: var(--cyan);
-      border: 1px solid var(--line); border-radius: 999px; padding: 7px 18px;
+      border: 0.5px solid var(--line); border-radius: 999px; padding: 7px 18px;
       background: rgba(0,240,255,.06);
       display: inline-flex; align-items: center; gap: 9px;
       animation: fadeUp .7s .1s both;
@@ -247,21 +247,31 @@
       99%, 100% { opacity: 0; }
     }
     .hero-sub {
-      max-width: 640px; color: var(--muted); font-size: clamp(.95rem, 2.4vw, 1.08rem);
+      max-width: 700px; color: var(--muted); font-size: clamp(.95rem, 2.3vw, 1.08rem);
       font-weight: 300; animation: fadeUp .7s .34s both;
     }
     .hero-sub strong { color: var(--text); font-weight: 600; }
-    .hero-ctas { display: flex; gap: 16px; margin-top: 34px; flex-wrap: wrap; justify-content: center; animation: fadeUp .7s .46s both; }
+    .hero-agents-strip {
+      display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+      margin-top: 22px; animation: fadeUp .7s .4s both;
+    }
+    .agent-chip {
+      font-family: var(--font-mono); font-size: .74rem; color: var(--muted);
+      padding: 5px 13px; border-radius: 999px;
+      border: 0.5px solid rgba(255,255,255,.1); background: rgba(255,255,255,.03);
+    }
+    .agent-chip strong { color: var(--cyan); font-weight: 500; }
+    .hero-ctas { display: flex; gap: 16px; margin-top: 30px; flex-wrap: wrap; justify-content: center; animation: fadeUp .7s .46s both; }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
 
     /* ============ Hero Device Mockup ============ */
     .device-mockup-wrapper {
-      width: min(840px, 100%); margin-top: 56px; text-align: left;
+      width: min(860px, 100%); margin-top: 52px; text-align: left;
       animation: fadeUp .8s .6s both;
       perspective: 1000px;
     }
     .device-mockup {
-      background: rgba(8, 10, 18, .88); border: 1px solid var(--line);
+      background: rgba(8, 10, 18, .88); border: 0.5px solid var(--line);
       border-radius: var(--radius); overflow: hidden;
       box-shadow: 0 24px 70px rgba(0,0,0,.55), 0 0 60px rgba(0,240,255,.07);
       backdrop-filter: blur(8px);
@@ -306,8 +316,8 @@
     .c-prompt { color: var(--cyan); }
 
     /* ============ Sections ============ */
-    .section { max-width: 1180px; margin: 0 auto; padding: clamp(70px, 10vw, 120px) 24px 0; }
-    .section-head { text-align: center; margin-bottom: clamp(36px, 6vw, 60px); }
+    .section { max-width: 1180px; margin: 0 auto; padding: clamp(70px, 10vw, 116px) 24px 0; }
+    .section-head { text-align: center; margin-bottom: clamp(36px, 6vw, 56px); }
     .section-tag {
       font-family: var(--font-mono); font-size: .76rem; color: var(--cyan);
       letter-spacing: .12em;
@@ -316,7 +326,7 @@
       font-family: var(--font-display); font-size: clamp(1.5rem, 4.4vw, 2.3rem);
       font-weight: 700; margin: 12px 0 10px; letter-spacing: .04em;
     }
-    .section-sub { color: var(--muted); max-width: 620px; margin: 0 auto; font-weight: 300; font-size: .96rem; }
+    .section-sub { color: var(--muted); max-width: 660px; margin: 0 auto; font-weight: 300; font-size: .96rem; }
 
     /* Reveal on scroll */
     .reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s cubic-bezier(.22,.8,.3,1); }
@@ -325,29 +335,79 @@
     /* ============ Stats ============ */
     .stats {
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
-      background: var(--line); border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--line); border: 0.5px solid var(--line); border-radius: var(--radius);
       overflow: hidden; margin-top: 10px;
     }
     .stat {
       background: var(--bg-2); padding: 30px 22px; text-align: center;
       transition: background .3s;
     }
-    .stat:hover { background: #0e1322; }
+    .stat:hover { background: #202a42; }
     .stat-num {
       font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 700;
       color: var(--cyan); text-shadow: 0 0 18px rgba(0,240,255,.5);
+      font-variant-numeric: tabular-nums;
     }
     .stat-num em { font-style: normal; font-size: .55em; color: var(--muted); margin-left: 2px; }
     .stat-label { font-weight: 600; font-size: .92rem; margin-top: 6px; }
     .stat-desc { color: var(--muted); font-size: .8rem; margin-top: 4px; font-weight: 300; }
     @media (max-width: 860px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 
+    /* ============ Unified Architecture Strip ============ */
+    .arch-flow {
+      display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px;
+      margin-bottom: 32px; font-family: var(--font-mono); font-size: .78rem;
+    }
+    .arch-node-pill {
+      padding: 7px 15px; border-radius: 999px;
+      background: rgba(0, 240, 255, .07); border: 0.5px solid var(--line); color: var(--text);
+    }
+    .arch-node-pill strong { color: var(--cyan); }
+    .arch-arrow { color: var(--muted-soft); }
+    .arch-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px;
+    }
+    @media (max-width: 900px) { .arch-grid { grid-template-columns: 1fr; } }
+    .arch-card {
+      position: relative; background: var(--panel); border: 0.5px solid rgba(255,255,255,.08);
+      border-radius: var(--radius); padding: 28px 24px; overflow: hidden;
+      transition: transform .3s, border-color .3s, box-shadow .3s;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .arch-card:hover {
+      transform: translateY(-4px); border-color: var(--line);
+      box-shadow: 0 16px 40px rgba(0,0,0,.42), 0 0 28px rgba(0,240,255,.08);
+    }
+    .arch-card-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .arch-tag {
+      font-family: var(--font-mono); font-size: .7rem; padding: 4px 10px; border-radius: 999px;
+      color: var(--cyan); background: rgba(0,240,255,.1); border: 0.5px solid rgba(0,240,255,.25);
+    }
+    .arch-tag.pink {
+      color: var(--pink); background: rgba(255,45,120,.1); border-color: rgba(255,45,120,.28);
+    }
+    .arch-tag.amber {
+      color: var(--amber); background: rgba(255,176,32,.1); border-color: rgba(255,176,32,.28);
+    }
+    .arch-card h3 { font-size: 1.06rem; font-weight: 600; }
+    .arch-card > p { color: var(--muted); font-size: .87rem; font-weight: 300; }
+    .arch-points { margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+    .arch-points li {
+      font-size: .83rem; color: var(--muted); font-weight: 300;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .arch-points li::before {
+      content: '▸'; color: var(--cyan); font-family: var(--font-mono); flex: none;
+    }
+
     /* ============ Feature Cards ============ */
     .features-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 22px;
     }
     .card {
-      position: relative; background: var(--panel); border: 1px solid rgba(255,255,255,.07);
+      position: relative; background: var(--panel); border: 0.5px solid rgba(255,255,255,.08);
       border-radius: var(--radius); padding: 30px 26px; overflow: hidden;
       transition: transform .3s, border-color .3s, box-shadow .3s;
     }
@@ -360,7 +420,7 @@
     .card:hover::before { opacity: 1; }
     .card-icon {
       width: 46px; height: 46px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
-      border: 1px solid var(--line); background: rgba(0,240,255,.07); color: var(--cyan);
+      border: 0.5px solid var(--line); background: rgba(0,240,255,.07); color: var(--cyan);
       margin-bottom: 18px; box-shadow: 0 0 18px rgba(0,240,255,.12);
     }
     .card-icon.pink { color: var(--pink); border-color: rgba(255,45,120,.25); background: rgba(255,45,120,.07); box-shadow: 0 0 18px rgba(255,45,120,.12); }
@@ -444,6 +504,7 @@
     .corner.br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
     .panel-info h3 { font-family: var(--font-display); font-size: 1.25rem; margin-bottom: 12px; letter-spacing: .03em; }
     .panel-info h3 span { color: var(--cyan); }
+    .panel-info.pink-theme h3 span { color: var(--pink); }
     .panel-info > p { color: var(--muted); font-weight: 300; font-size: .93rem; margin-bottom: 20px; }
     .panel-info li { display: flex; gap: 11px; margin-bottom: 13px; font-size: .89rem; color: var(--muted); font-weight: 300; }
     .panel-info li strong { color: var(--text); font-weight: 600; }
@@ -451,24 +512,27 @@
     .panel-info.pink-theme li svg { color: var(--pink); }
 
     /* ============ Install ============ */
+    .install-stack {
+      max-width: 840px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px;
+    }
     .install-term {
-      max-width: 820px; margin: 0 auto; border: 0.5px solid var(--line);
+      width: 100%; border: 0.5px solid var(--line);
       border-radius: var(--radius); background: rgba(8,10,18,.9); overflow: hidden;
       box-shadow: 0 20px 55px rgba(0,0,0,.5), 0 0 0 0.5px rgba(0,240,255,.15);
     }
-    .install-body { padding: 22px 24px; font-family: var(--font-mono); font-size: clamp(.74rem, 2.6vw, .88rem); position: relative; }
-    .install-comment { color: var(--muted); display: block; margin-bottom: 14px; font-size: .82em; }
+    .install-body { padding: 22px 24px; font-family: var(--font-mono); font-size: clamp(.74rem, 2.5vw, .87rem); position: relative; }
+    .install-comment { color: var(--muted); display: block; margin-bottom: 14px; font-size: .82em; padding-right: 92px; }
     .install-line { display: flex; gap: 10px; align-items: baseline; overflow-x: auto; }
     .install-line .c-prompt { flex: none; line-height: 1.55; }
-    #installCode {
+    .install-code-text {
       flex: 1; min-width: 0;
       white-space: nowrap;
       overflow-x: auto;
       line-height: 1.55;
       scrollbar-width: thin;
     }
-    #installCode::-webkit-scrollbar { height: 6px; }
-    #installCode::-webkit-scrollbar-thumb { background: rgba(0,240,255,.25); border-radius: 4px; }
+    .install-code-text::-webkit-scrollbar { height: 6px; }
+    .install-code-text::-webkit-scrollbar-thumb { background: rgba(0,240,255,.25); border-radius: 4px; }
     .copy-btn {
       position: absolute; top: 14px; right: 14px;
       display: inline-flex; align-items: center; gap: 7px;
@@ -479,6 +543,14 @@
     .copy-btn:hover { background: rgba(0,240,255,.14); }
     .copy-btn.copied { color: var(--green); border-color: rgba(57,255,20,.4); }
     .copy-btn svg { width: 12px; height: 12px; }
+    .install-tip-card {
+      padding: 16px 20px; border-radius: 12px;
+      border: 0.5px solid rgba(255,255,255,.09); background: var(--panel);
+      display: flex; align-items: flex-start; gap: 14px;
+      font-size: .86rem; color: var(--muted); font-weight: 300;
+    }
+    .install-tip-card strong { color: var(--text); font-weight: 600; }
+    .install-tip-card svg { width: 18px; height: 18px; color: var(--cyan); flex: none; margin-top: 3px; }
     .badges { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 34px; }
     .badge {
       display: inline-flex; align-items: center; gap: 8px;
@@ -490,7 +562,7 @@
     .badge svg { width: 13px; height: 13px; }
 
     /* ============ FAQ (CDS CSS Grid 0fr -> 1fr Accordion) ============ */
-    .faq { max-width: 780px; margin: 0 auto; }
+    .faq { max-width: 820px; margin: 0 auto; }
     .faq-item {
       border: 0.5px solid rgba(255,255,255,.09); border-radius: 12px; margin-bottom: 13px;
       background: var(--panel); overflow: hidden;
@@ -561,8 +633,6 @@
     #toTop:hover { box-shadow: 0 0 20px rgba(0,240,255,.25); }
     #toTop svg { width: 18px; height: 18px; }
 
-    .stat-num { font-variant-numeric: tabular-nums; }
-
     .theme-pill-btn {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 7px 14px; border-radius: 999px; cursor: pointer;
@@ -577,7 +647,7 @@
 
     /* ============ Light Minimalist Theme (body.light-minimalist) ============ */
     body.light-minimalist {
-      --bg: #f8fafc;
+      --bg: #f4f5f8;
       --bg-2: #ffffff;
       --panel: #ffffff;
       --line: #cbd5e1;
@@ -585,7 +655,7 @@
       --cyan-dim: rgba(79, 70, 229, .45);
       --pink: #6366f1;
       --green: #10b981;
-      --amber: #f59e0b;
+      --amber: #d97706;
       --text: #0f172a;
       --muted: #475569;
       --muted-soft: #64748b;
@@ -598,8 +668,8 @@
     }
     body.light-minimalist .grid-floor {
       background-image:
-        linear-gradient(rgba(15,23,42,.06) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(15,23,42,.06) 1px, transparent 1px);
+        linear-gradient(rgba(15,23,42,.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15,23,42,.05) 1px, transparent 1px);
     }
     body.light-minimalist .nav {
       background: rgba(255, 255, 255, .82);
@@ -630,6 +700,14 @@
     body.light-minimalist .hero-badge {
       background: #eef2ff;
       border-color: #c7d2fe;
+      color: #4f46e5;
+    }
+    body.light-minimalist .agent-chip {
+      background: #ffffff;
+      border-color: #e2e8f0;
+      color: #475569;
+    }
+    body.light-minimalist .agent-chip strong {
       color: #4f46e5;
     }
     body.light-minimalist .hero-title {
@@ -681,14 +759,39 @@
     body.light-minimalist .stat-num {
       text-shadow: none;
     }
+    body.light-minimalist .arch-node-pill {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #0f172a;
+    }
+    body.light-minimalist .arch-node-pill strong {
+      color: #4f46e5;
+    }
+    body.light-minimalist .arch-card,
     body.light-minimalist .card {
       background: #ffffff;
       border: 1px solid #e2e8f0;
       box-shadow: 0 1px 3px rgba(15, 23, 42, .04), 0 4px 12px rgba(15, 23, 42, .03);
     }
+    body.light-minimalist .arch-card:hover,
     body.light-minimalist .card:hover {
       border-color: #c7d2fe;
       box-shadow: 0 12px 30px rgba(79, 70, 229, .08), 0 0 0 1px rgba(79, 70, 229, .15);
+    }
+    body.light-minimalist .arch-tag {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+      color: #4f46e5;
+    }
+    body.light-minimalist .arch-tag.pink {
+      background: #f5f3ff;
+      border-color: #ddd6fe;
+      color: #6d28d9;
+    }
+    body.light-minimalist .arch-tag.amber {
+      background: #fffbeb;
+      border-color: #fde68a;
+      color: #b45309;
     }
     body.light-minimalist .card-icon,
     body.light-minimalist .card-icon.pink {
@@ -729,6 +832,11 @@
     body.light-minimalist .install-term .copy-btn {
       color: #818cf8;
       border-color: rgba(129, 140, 248, .3);
+    }
+    body.light-minimalist .install-tip-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, .04);
     }
     body.light-minimalist .badge {
       background: #ffffff;
@@ -793,9 +901,10 @@
   <nav class="nav" id="nav">
     <a href="#" class="nav-logo"><span class="pulse-dot"></span>CCNOW</a>
     <div class="nav-links">
-      <a class="nav-link" href="#features">// 功能特性</a>
+      <a class="nav-link" href="#architecture">// 统一架构</a>
+      <a class="nav-link" href="#features">// 核心特性</a>
       <a class="nav-link" href="#showcase">// 界面预览</a>
-      <a class="nav-link" href="#installation">// 部署安装</a>
+      <a class="nav-link" href="#installation">// 快速部署</a>
       <a class="nav-link" href="#faq">// 常见问题</a>
       <button type="button" class="theme-pill-btn" id="welcomeThemeToggleBtn" title="切换深浅主题">
         <svg id="welcomeThemeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -811,9 +920,10 @@
     </button>
   </nav>
   <div class="mobile-menu" id="mobileMenu">
-    <a href="#features">// 功能特性</a>
+    <a href="#architecture">// 统一架构</a>
+    <a href="#features">// 核心特性</a>
     <a href="#showcase">// 界面预览</a>
-    <a href="#installation">// 部署安装</a>
+    <a href="#installation">// 快速部署</a>
     <a href="#faq">// 常见问题</a>
     <a href="javascript:void(0)" id="mobileThemeToggleLink">// 切换深浅主题</a>
     <a href="/login">→ 登录控制台</a>
@@ -822,20 +932,27 @@
   <main>
     <!-- ================= Hero ================= -->
     <header class="hero">
-      <span class="hero-badge"><span class="pulse-dot"></span>v2.0 // AI AGENT CONTROL CENTER</span>
+      <span class="hero-badge"><span class="pulse-dot"></span>CONTROL PLANE // MULTI-DEVICE AI AGENT WORKSPACE</span>
       <h1 class="hero-title glitch" data-text="CCNOW">CCNOW</h1>
       <p class="hero-sub">
-        专为 <strong>AI 编程智能体</strong> 打造的网页端控制面板。
-        任务在后台 <strong>7×24 持续运行</strong>，断网、休眠、关页都不中断 ——
-        无论电脑还是手机，随时随地重连现场、掌控开发进度。
+        统一调度 <strong>云端 Docker 沙箱</strong>、<strong>主服务器</strong> 与 <strong>个人电脑</strong> 的 AI 编程智能体控制中心。
+        支持 <strong>双模 / OAR 纯会话 / 原生终端</strong> 与 <strong>任务看板总览</strong> ——
+        任务在后台 7×24 持续推进，电脑、手机与折叠屏随时重连掌控现场。
       </p>
+      <div class="hero-agents-strip">
+        <span class="agent-chip"><strong>Antigravity</strong> (agy)</span>
+        <span class="agent-chip"><strong>Claude Code</strong></span>
+        <span class="agent-chip"><strong>Codex CLI</strong></span>
+        <span class="agent-chip"><strong>Kimi Code</strong></span>
+        <span class="agent-chip"><strong>OAR</strong> 免 Tmux 纯会话</span>
+      </div>
       <div class="hero-ctas">
         <a href="/login" class="btn btn-primary">
           <span class="console-btn-text">进入控制台</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
         </a>
-        <a href="#features" class="btn btn-ghost">
-          <span>探索功能</span>
+        <a href="#architecture" class="btn btn-ghost">
+          <span>探索架构与功能</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </a>
       </div>
@@ -849,7 +966,7 @@
               <i class="yellow"></i>
               <i class="green"></i>
             </div>
-            <div class="device-title">控制面板 // 运行监控</div>
+            <div class="device-title">CCNOW // 多设备智能体控制中心</div>
             <div class="device-status">
               <span class="pulse-dot"></span>
               在线运行
@@ -860,7 +977,7 @@
             <div class="device-reflection"></div>
             <picture>
               <source srcset="/docs/images/dashboard_preview.webp" type="image/webp">
-              <img src="/docs/images/dashboard_preview.png" alt="Dashboard Preview" fetchpriority="high">
+              <img src="/docs/images/dashboard_preview.png" alt="CCNOW 控制面板预览" fetchpriority="high">
             </picture>
           </div>
         </div>
@@ -872,23 +989,85 @@
       <div class="stats reveal">
         <div class="stat">
           <div class="stat-num"><span data-count="24" data-suffix="/7">0/7</span></div>
-          <div class="stat-label">后台持续运行</div>
-          <div class="stat-desc">关闭网页，AI 仍在 Tmux 中继续编码</div>
+          <div class="stat-label">后台持久托管</div>
+          <div class="stat-desc">Tmux / OAR 与独立守护进程，断网不中断</div>
         </div>
         <div class="stat">
-          <div class="stat-num"><span data-count="50" data-suffix="ms" data-prefix="&lt;">0</span></div>
-          <div class="stat-label">终端响应延迟</div>
-          <div class="stat-desc">超低延迟虚拟控制台，打字零卡顿</div>
+          <div class="stat-num"><span data-count="3" data-suffix=" 种">0</span></div>
+          <div class="stat-label">会话运行模式</div>
+          <div class="stat-desc">双模互切 · OAR 纯会话 · 原生低延迟终端</div>
         </div>
         <div class="stat">
-          <div class="stat-num"><span data-count="4" data-suffix=" 端">0</span></div>
-          <div class="stat-label">全平台覆盖</div>
-          <div class="stat-desc">电脑 / 手机 / 微信 / Telegram 四端联动</div>
+          <div class="stat-num"><span data-count="3" data-suffix=" 类">0</span></div>
+          <div class="stat-label">统一算力接入</div>
+          <div class="stat-desc">云端沙箱 · 主服务器 · 个人 Mac/Win/Linux</div>
         </div>
         <div class="stat">
           <div class="stat-num"><span data-count="100" data-suffix="%">0%</span></div>
-          <div class="stat-label">沙盒安全隔离</div>
-          <div class="stat-desc">多用户独立工作区，数据互不干扰</div>
+          <div class="stat-label">容器与密钥隔离</div>
+          <div class="stat-desc">硬化 Docker 沙箱 + 作用域虚拟 Key 代理</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Unified Compute Architecture ================= -->
+    <section class="section" id="architecture">
+      <div class="section-head reveal">
+        <span class="section-tag">// ARCHITECTURE</span>
+        <h2 class="section-title">统一控制面 · 多设备算力模型</h2>
+        <p class="section-sub">一套 Web 控制面通过 <code>/device-tunnel</code> 与模块化 <code>ccnow-agent</code> 统一纳管所有算力，左上角一键切换设备即可无缝切换工作区、会话、文件树与任务看板。</p>
+      </div>
+
+      <div class="arch-flow reveal">
+        <span class="arch-node-pill"><strong>Control Plane</strong> 控制面</span>
+        <span class="arch-arrow">→</span>
+        <span class="arch-node-pill"><strong>User</strong> 租户</span>
+        <span class="arch-arrow">→</span>
+        <span class="arch-node-pill"><strong>Device</strong> 算力设备</span>
+        <span class="arch-arrow">→</span>
+        <span class="arch-node-pill"><strong>Workspace</strong> 工作区</span>
+        <span class="arch-arrow">→</span>
+        <span class="arch-node-pill"><strong>Session</strong> 智能体会话</span>
+      </div>
+
+      <div class="arch-grid">
+        <div class="arch-card reveal">
+          <div class="arch-card-head">
+            <h3>云电脑 · 托管沙箱</h3>
+            <span class="arch-tag">docker-sandbox</span>
+          </div>
+          <p>为每位受邀用户分配独立硬化 Docker 容器，开箱即得云端开发环境，彻底消除多租户越权与资源抢占。</p>
+          <ul class="arch-points">
+            <li>非 root 运行、<code>--cap-drop=ALL</code> 与 CPU / 内存 / PIDs 硬限额</li>
+            <li>按需秒级唤醒、闲置自动休眠释放内存，挂载卷持久保留代码</li>
+            <li>通过作用域虚拟 Key 访问控制面 LLM 网关，真实 API Key 零暴露</li>
+          </ul>
+        </div>
+
+        <div class="arch-card reveal">
+          <div class="arch-card-head">
+            <h3>我的电脑 · 边缘接入</h3>
+            <span class="arch-tag pink">external</span>
+          </div>
+          <p>把家里的 Mac、办公室的 Linux 或 Windows 笔记本直接接入云端面板，本地代码库与工具链零迁移。</p>
+          <ul class="arch-points">
+            <li>一行配对命令反连 443 端口，天然穿透 NAT 与防火墙，零端口暴露</li>
+            <li>按需自动补全可选依赖，没装 Tmux 也能直接运行 OAR 纯会话</li>
+            <li>保留本机模型配置与 OAuth 登录态（BYOK），不消耗云主机带宽</li>
+          </ul>
+        </div>
+
+        <div class="arch-card reveal">
+          <div class="arch-card-head">
+            <h3>主服务器 · 宿主机常驻</h3>
+            <span class="arch-tag amber">host-admin</span>
+          </div>
+          <p>将控制面所在云主机注册为管理员专属常驻节点，作为个人主力研发与系统运维的高速算力底座。</p>
+          <ul class="arch-points">
+            <li>独立 <code>systemd</code> 进程树隔离，重启控制面服务会话永不掉线</li>
+            <li>本机回环直连 LLM 网关与本地文件，零延迟、零公网流量损耗</li>
+            <li>支持远程自动热更新与防误删保护，7×24 稳定在线</li>
+          </ul>
         </div>
       </div>
     </section>
@@ -898,38 +1077,38 @@
       <div class="section-head reveal">
         <span class="section-tag">// FEATURES</span>
         <h2 class="section-title">核心功能特性</h2>
-        <p class="section-sub">打破传统终端限制，赋予 AI 智能体开发任务持久化、可视化与跨设备掌控力。</p>
+        <p class="section-sub">从对话引擎、全局任务看板到代码预览分享，为 AI 原生研发工作流量身打磨每一个细节。</p>
       </div>
       <div class="features-grid">
         <div class="card reveal">
-          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/></svg></div>
-          <h3>AI 智能体后台持续运行</h3>
-          <p>一键启动 Agy、Claude Code 等 AI 编程助手。任务在服务器 Tmux 会话中独立执行，即使电脑休眠、断网或关闭网页也不中断，重连即可瞬间恢复现场。</p>
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg></div>
+          <h3>三模会话 & 五大智能体环境</h3>
+          <p>支持 <strong>会话与终端（双模）</strong>、<strong>纯会话（OAR 原生流式，免 Tmux）</strong> 与 <strong>纯终端</strong> 三种模式；内置 Antigravity、Claude Code、Codex、Kimi Code 与 Bash 一键启动，留空会话名自动分配唯一自增 ID 并 AI 摘要任务标题。</p>
         </div>
         <div class="card reveal">
-          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-          <h3>多用户沙盒与安全隔离</h3>
-          <p>完整的多用户管理模式。非管理员用户拥有独立的文件目录与虚拟运行环境，Shell 历史与个人配置完全隔离，保障开发数据的机密性与安全。</p>
+          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg></div>
+          <h3>任务看板总览 (Session-as-Task)</h3>
+          <p>跨工作区全局盯盘视图，按「需确认 · 执行中 · 待命 · 待办」四列看板或工作区网格实时聚合全部会话状态。支持卡片内直接回复指令、重命名标题、搜索过滤，以及待办任务一键拉起会话。</p>
         </div>
         <div class="card reveal">
-          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="12" y1="2" x2="12" y2="4"/></svg></div>
-          <h3>设备原生消息推送</h3>
-          <p>当 AI 完成长耗时任务，或关键操作需要您授权时，系统会向手机或电脑发送原生推送通知 —— 即使没打开网页也能第一时间掌握状态。</p>
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
+          <h3>富媒体对话 · Mermaid & 路径直达</h3>
+          <p>AI 输出的 <strong>Mermaid 流程图/架构图</strong> 自动渲染并支持双主题适配、源码切换与缩放灯箱；回复中提到的 <strong>文件路径（含行号）</strong> 点击即在编辑器打开定位；更有智能体感知 <code>/</code> 快捷指令面板。</p>
         </div>
         <div class="card reveal">
-          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg></div>
-          <h3>微信与 Telegram 远程控制</h3>
-          <p>扫码即可绑定微信或 Telegram。在聊天框中直接接收 AI 关键动作通知、查看终端实时截图、发送文本命令并一键审批，省去打开电脑的麻烦。</p>
+          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg></div>
+          <h3>在线编辑、Git Diff 与限时分享</h3>
+          <p>集成 Monaco 代码编辑器、红绿 Git 变更审查与文件拖拽上传；内置 Markdown、图片与 HTML 实时预览，并可为生成的网页产物一键生成 <strong>1–72 小时限时免密分享链接</strong>。</p>
         </div>
         <div class="card reveal">
-          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-          <h3>超低延迟交互终端</h3>
-          <p>网页内提供响应敏捷的虚拟控制台，键盘反馈迅速。终端尺寸自动跟随浏览器窗口对齐，保障各种设备上的顺畅体验。</p>
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
+          <h3>LLM 统一网关 & SQLite 持久化</h3>
+          <p>后台内置多厂商 LLM Gateway 与可视化配置器，支持按会话选模型及 Claude OAuth 官方直连；控制面数据全面基于 <code>node:sqlite</code> WAL 模式持久化，搭配管理员邀请码注册与 JWT 鉴权。</p>
         </div>
         <div class="card reveal">
-          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
-          <h3>严密的安全认证</h3>
-          <p>基于成熟的安全加密与 Token 校验，网页端采用管理员专属邀请码注册机制，全方位保护服务器命令行不被未授权访问。</p>
+          <div class="card-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
+          <h3>深浅双主题 · 手机与折叠屏 PWA</h3>
+          <p>支持赛博深色与浅色极简双主题及自定义桌面图标；深度适配手机与折叠屏视口，内置虚拟辅助键、语音输入与 Web Push 离线推送，息屏也能及时收到 AI 完成或审批提醒。</p>
         </div>
       </div>
     </section>
@@ -939,15 +1118,15 @@
       <div class="section-head reveal">
         <span class="section-tag">// SHOWCASE</span>
         <h2 class="section-title">图形化工作台预览</h2>
-        <p class="section-sub">多维度图形化看板，轻松掌控多智能体并行任务与代码编辑流程。</p>
+        <p class="section-sub">从多设备切换、多智能体并发监控到代码 Diff 审阅与移动 PWA，一站式闭环体验。</p>
       </div>
 
       <div class="tabs-head-wrap reveal">
         <div class="tabs-head">
-          <button class="tab-btn active" data-tab="tab-workspace">01 · 工作区初始化</button>
-          <button class="tab-btn" data-tab="tab-agent">02 · AI 运行控制台</button>
-          <button class="tab-btn" data-tab="tab-editor">03 · 修改 Diff 对比</button>
-          <button class="tab-btn" data-tab="tab-mobile">04 · 手机移动视口</button>
+          <button class="tab-btn active" data-tab="tab-workspace">01 · 设备与工作区</button>
+          <button class="tab-btn" data-tab="tab-agent">02 · 智能体与看板</button>
+          <button class="tab-btn" data-tab="tab-editor">03 · 编辑与 Diff 审查</button>
+          <button class="tab-btn" data-tab="tab-mobile">04 · 手机与折叠屏</button>
         </div>
       </div>
 
@@ -957,16 +1136,16 @@
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/workspace_preview.webp" type="image/webp">
-              <img src="/docs/images/workspace_preview.png" alt="工作区初始化预览" loading="lazy">
+              <img src="/docs/images/workspace_preview.png" alt="设备与工作区管理预览" loading="lazy">
             </picture>
           </div>
           <div class="panel-info">
-            <h3><span>01 /</span> 快速配置与初始化工作区</h3>
-            <p>为不同的项目分支快速创建独立工作空间，随时导入现有代码库或进行空项目初始化，所有配置通过可视化列表完成。</p>
+            <h3><span>01 /</span> 多设备切换与工作区隔离</h3>
+            <p>左上角切换「云电脑 / 主服务器 / 我的电脑」，整个工作台上下文（工作区、会话列表、文件树与看板）即时无缝联动。</p>
             <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>Git 仓库对接</strong>：输入 Git 地址一键克隆并映射为专属工作区。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>安全沙盒路径</strong>：普通用户工作区无法越权访问服务器敏感目录。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>可视化工作区树</strong>：一目了然列出所有活跃目录，一键启动挂载会话。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>云端沙箱秒级唤醒</strong>：内置云电脑一键启停，闲置自动休眠且数据持久保留。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>可视化目录选择</strong>：轻松绑定现有代码仓库或新建独立工作区目录。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>跨设备透明体验</strong>：远程个人电脑与云主机享受完全一致的文件浏览与会话操控。</span></li>
             </ul>
           </div>
         </div>
@@ -978,16 +1157,16 @@
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/agent_preview.webp" type="image/webp">
-              <img src="/docs/images/agent_preview.png" alt="AI 智能体会话预览" loading="lazy">
+              <img src="/docs/images/agent_preview.png" alt="AI 智能体会话与看板预览" loading="lazy">
             </picture>
           </div>
           <div class="panel-info pink-theme">
-            <h3><span style="color:var(--pink)">02 /</span> AI 智能体并行监控</h3>
-            <p>支持创建多个运行中的 AI 智能体终端，侧边栏清晰列出挂载状态，可观察 AI 运作时的每一步分析与编码动作。</p>
+            <h3><span>02 /</span> 多模智能体与任务看板</h3>
+            <p>并行运行多个 AI 编程智能体，自动根据首条对话摘要任务标题，并可在任务看板总览中一眼掌控全部进度。</p>
             <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>常用智能体预置</strong>：内置 Agy、Claude Code 等环境，一键启动。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>多任务并发运行</strong>：多个独立 AI 会话各自处理不同开发需求。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>操作步骤拦截</strong>：关键动作自动暂停等待，并在微信/TG 推送审批。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>三模自由选择</strong>：双模平滑切换、OAR 免 Tmux 纯会话、低延迟纯终端按需组合。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>智能体感知 <code>/</code> 指令</strong>：自动匹配 Antigravity / Claude / Codex / Kimi 专属斜杠命令。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>看板行内协同</strong>：在看板卡片上直接快捷回复指令，或将待办一键转为新会话。</span></li>
             </ul>
           </div>
         </div>
@@ -999,16 +1178,16 @@
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/editor_diff_preview.webp" type="image/webp">
-              <img src="/docs/images/editor_diff_preview.png" alt="Diff 对比预览" loading="lazy">
+              <img src="/docs/images/editor_diff_preview.png" alt="代码编辑与 Diff 对比预览" loading="lazy">
             </picture>
           </div>
           <div class="panel-info">
-            <h3><span>03 /</span> 文件修改直观对比 (Diff)</h3>
-            <p>在控制面板中直接审阅 AI 对文件做出的所有代码修改，清晰的 Diff 差分让您无需运行 Git 命令即可完成合规检视。</p>
+            <h3><span>03 /</span> 代码编辑、Git Diff 与实时预览</h3>
+            <p>无需离开浏览器即可审阅 AI 对代码库做出的每一行改动，对话中提到的文件路径可直接点击跳转打开。</p>
             <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>直观差异高亮</strong>：红绿底色清晰展示修改、增加及删除行。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>轻量级只读浏览器</strong>：快速审查庞大的文件修改，安全可靠。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>侧边栏文件树</strong>：双击检索工作区文件，多终端快捷联动。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>直观 Git 差异对比</strong>：一键筛选已修改文件，红绿高亮清晰核验代码变更。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>Monaco 编辑器 & 路径跳转</strong>：对话里的 <code>file.js:42</code> 点击直达对应代码行。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>HTML 预览与限时分享</strong>：单页应用成品直接内嵌渲染，并支持生成限时公开链接。</span></li>
             </ul>
           </div>
         </div>
@@ -1020,16 +1199,16 @@
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <picture>
               <source srcset="/docs/images/mobile_preview.webp" type="image/webp">
-              <img src="/docs/images/mobile_preview.jpg" alt="移动端预览" loading="lazy">
+              <img src="/docs/images/mobile_preview.jpg" alt="移动端与折叠屏预览" loading="lazy">
             </picture>
           </div>
           <div class="panel-info pink-theme">
-            <h3><span style="color:var(--pink)">04 /</span> 完美适配手机移动设备</h3>
-            <p>手机与平板浏览器界面完美自适应，支持作为独立桌面图标运行，出门在外也无需担心开发进度。</p>
+            <h3><span>04 /</span> 手机与折叠屏沉浸式 PWA</h3>
+            <p>针对手机竖屏、横屏与折叠屏内屏专项校准安全区与视口，支持添加至主屏幕，像原生 App 一样全屏运行。</p>
             <ul>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>触控虚拟键盘适配</strong>：防止输入框在移动设备上变形或溢出遮挡。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>添加至手机主屏幕</strong>：支持 PWA，像原生 App 一样全屏沉浸运行。</span></li>
-              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>息屏接收关键通知</strong>：阻断性审批即时推送至手机系统层面。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>触控辅助键盘 & 语音输入</strong>：内置 ESC / TAB / S-Tab / Ctrl-C / <code>/</code> 指令与方向键及语音口述。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>扫码免密直连</strong>：桌面端一键生成限时登录二维码，手机扫一扫立即接力操作。</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span><strong>Web Push 息屏提醒</strong>：耗时任务结束或等待确认时直达手机系统通知栏。</span></li>
             </ul>
           </div>
         </div>
@@ -1040,38 +1219,48 @@
     <section class="section" id="installation">
       <div class="section-head reveal">
         <span class="section-tag">// DEPLOY</span>
-        <h2 class="section-title">极简部署 · 一键安装</h2>
-        <p class="section-sub">只需一行命令，即可在您的 Linux 服务器上自动完成所有依赖安装与配置部署。</p>
+        <h2 class="section-title">极简部署 · 一键接入</h2>
+        <p class="section-sub">一行命令部署控制面服务器，或登录控制台复制配对指令将任意个人电脑秒级接入。</p>
       </div>
 
-      <div class="install-term reveal">
-        <div class="term-head">
-          <div class="term-title">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-            deploy@ccnow-installer: ~
+      <div class="install-stack reveal">
+        <div class="install-term">
+          <div class="term-head">
+            <div class="term-title">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              deploy@ccnow-server: ~
+            </div>
+            <div class="term-dots"><i></i><i></i><i></i></div>
           </div>
-          <div class="term-dots"><i></i><i></i><i></i></div>
+          <div class="install-body">
+            <span class="install-comment"># 1. 在 Linux 服务器一键部署 CCNOW 控制面（自动检测依赖并初始化环境）</span>
+            <button class="copy-btn" id="copyBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="copyLabel">复制命令</span>
+            </button>
+            <div class="install-line">
+              <span class="c-prompt">$</span>
+              <span id="installCode" class="install-code-text">curl -fsSL https://raw.githubusercontent.com/RayzPub/tmux-agent-deck/main/install.sh | bash</span>
+            </div>
+          </div>
         </div>
-        <div class="install-body">
-          <span class="install-comment"># 脚本会自动检查环境依赖，克隆代码库并完成安全密码与服务的启动配置</span>
-          <button class="copy-btn" id="copyBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            <span id="copyLabel">复制命令</span>
-          </button>
-          <div class="install-line">
-            <span class="c-prompt">$</span>
-            <span id="installCode">curl -fsSL https://raw.githubusercontent.com/RayzPub/tmux-agent-deck/main/install.sh | bash</span>
+
+        <div class="install-tip-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <div>
+            <strong>接入个人电脑（Mac / Windows / Linux）？</strong> 无需自建服务器！登录控制台后打开 <strong>「系统设置 → 设备管理」</strong>，复制专属配对命令在本地终端运行，<code>ccnow-agent</code> 会自动建立反向加密隧道并补全可选依赖，10 秒即可在线操控本地 AI 智能体。
           </div>
         </div>
       </div>
 
       <div class="badges reveal">
-        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>安全认证访问</span>
-        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>多用户独立沙盒</span>
-        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.7-2.08.47-3.16a4 4 0 1 1 7.8 1.6"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8h-.02"/></svg>双向机器人控制</span>
-        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>消息订阅推送</span>
-        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>后台持续挂载</span>
-        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>终端自适应缩放</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Docker 硬化沙箱</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/></svg>多设备反向隧道</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>OAR 免 Tmux 纯会话</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>任务看板总览</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>node:sqlite WAL 持久化</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>作用域虚拟 Key 网关</span>
+        <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/></svg>深浅双主题 PWA</span>
       </div>
     </section>
 
@@ -1080,40 +1269,52 @@
       <div class="section-head reveal">
         <span class="section-tag">// FAQ</span>
         <h2 class="section-title">常见问题</h2>
-        <p class="section-sub">关于部署、安全与日常使用的高频疑问解答。</p>
+        <p class="section-sub">关于多设备架构、会话模式、安全隔离与日常使用的高频解答。</p>
       </div>
       <div class="faq reveal">
         <div class="faq-item">
-          <button type="button" class="faq-q" aria-expanded="false">关闭浏览器后，AI 任务会中断吗？
+          <button type="button" class="faq-q" aria-expanded="false">关闭浏览器或重启控制面服务后，AI 任务会中断吗？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="faq-a"><div class="faq-a-inner"><p>不会。所有 AI 会话都运行在服务器端的 Tmux 会话中，网页只是一个"遥控器"。关闭页面、断网甚至电脑休眠，AI 都会继续执行任务；重新打开网页即可瞬间恢复到离开时的现场。</p></div></div>
+          <div class="faq-a"><div class="faq-a-inner"><p>不会。所有 AI 会话都由底层设备上的 Tmux 或 OAR 运行时持久托管，网页只是轻量的控制端。宿主机 Agent 与控制面均运行在相互独立的 systemd 单元中，不仅关页、断网不中断，即使升级重启 Web 服务，正在执行的智能体会话也会保持运行并在数秒内自动重连。</p></div></div>
         </div>
         <div class="faq-item">
-          <button type="button" class="faq-q" aria-expanded="false">手机上可以使用吗？体验如何？
+          <button type="button" class="faq-q" aria-expanded="false">「会话与终端」「纯会话 (OAR)」「纯终端」三种模式怎么选？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="faq-a"><div class="faq-a-inner"><p>可以。界面针对手机和平板做了完整自适应，支持 PWA"添加到主屏幕"，像原生 App 一样全屏运行。配合微信/Telegram 机器人，您甚至不用打开网页就能审批操作、查看终端截图。</p></div></div>
+          <div class="faq-a"><div class="faq-a-inner"><p><strong>会话与终端（双模，推荐）</strong>兼顾可视化聊天气泡与完整 ANSI 终端，随时一键切换；<strong>纯会话 (OAR)</strong> 由 Open Agent Runtime 驱动原生结构化对话与工具调用闭环，无终端按键干扰，且<strong>无需安装 Tmux</strong>（非常适合 Windows 或极简环境）；<strong>纯终端</strong>则专注低延迟原汁原味的命令行操控。</p></div></div>
         </div>
         <div class="faq-item">
-          <button type="button" class="faq-q" aria-expanded="false">多人共用一台服务器安全吗？
+          <button type="button" class="faq-q" aria-expanded="false">如何把个人电脑接入 CCNOW？需要公网 IP 吗？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="faq-a"><div class="faq-a-inner"><p>安全。系统提供多用户沙盒机制：每个普通用户拥有独立的文件目录与虚拟运行环境，Shell 历史和配置完全隔离，无法越权访问其他用户或服务器敏感目录。注册采用管理员邀请码机制，杜绝未授权访问。</p></div></div>
+          <div class="faq-a"><div class="faq-a-inner"><p>不需要公网 IP，也无需配置端口转发。登录网页后在「设备管理」点击复制一次性配对命令，在你的 Mac / Linux / Windows 终端执行即可。<code>ccnow-agent</code> 会主动向控制面发起出站加密 WebSocket 连接，自动适配 NAT、公司防火墙或手机热点网络。</p></div></div>
         </div>
         <div class="faq-item">
-          <button type="button" class="faq-q" aria-expanded="false">支持哪些 AI 编程助手？
+          <button type="button" class="faq-q" aria-expanded="false">多人共用一台服务器安全吗？API Key 会泄露吗？
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="faq-a"><div class="faq-a-inner"><p>内置 Agy、Claude Code 等常用 AI 编程助手环境，无需复杂配置即可一键启动。由于本质是 Tmux 终端托管，任何命令行 AI 工具都可以在其中运行。</p></div></div>
+          <div class="faq-a"><div class="faq-a-inner"><p>安全。多用户模式下，每位普通用户由独立的硬化 Docker 沙箱（非 root、丢弃全部内核特权、硬性 CPU/内存/进程数配额）提供内核级隔离，彼此工作区完全不可见。所有真实上游 API Key 仅存储在云端控制面，沙箱只持有作用域虚拟 Key，无法读取或窃取明文上游密钥；注册采用管理员一次性邀请码机制。</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button type="button" class="faq-q" aria-expanded="false">支持哪些 AI 编程助手与模型配置？
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><div class="faq-a-inner"><p>内置 <strong>Antigravity (agy)</strong>、<strong>Claude Code</strong>、<strong>Codex CLI</strong>、<strong>Kimi Code</strong> 以及标准 <strong>Bash Shell</strong> 五大环境。支持通过内置 LLM Gateway 统一配置多厂商模型并在新建会话时按需切换，也支持开启 Claude OAuth 官方直连模式或使用本机自有模型订阅（BYOK）。</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button type="button" class="faq-q" aria-expanded="false">手机和平板 / 折叠屏上体验如何？
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><div class="faq-a-inner"><p>非常顺手。界面针对手机竖屏与折叠屏大屏做了专项视口和安全区适配，支持 PWA「添加到主屏幕」全屏运行。内置手机端快捷辅助键盘（ESC、TAB、Shift+Tab、Ctrl+C、<code>/</code> 智能体指令、方向键）和语音输入，配合 Web Push 离线推送，出门在外也能随时审批与接力研发。</p></div></div>
         </div>
       </div>
     </section>
 
     <!-- ================= Final CTA ================= -->
     <section class="cta-final reveal">
-      <h2>启动您的控制面板</h2>
-      <p>立即登录专属控制中心，让 AI 智能体在后台为您高效编码。</p>
+      <h2>启动您的多设备控制中心</h2>
+      <p>唤醒云端沙箱或接入您的主力电脑，让 AI 智能体在后台 7×24 高效协作。</p>
       <a href="/login" class="btn btn-primary">
         <span class="console-btn-text">进入控制台</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
@@ -1126,14 +1327,15 @@
     <div class="footer-grid">
       <div>
         <h4><span class="pulse-dot" style="margin-right:8px;"></span>CCNOW</h4>
-        <p>一个以会话为中心的 AI 智能体控制中心。赋予终端后台持久化、可视化与多设备双向遥控能力，为您提供稳定的 AI 编程托管环境。</p>
+        <p>面向 AI 编程智能体的多设备控制平面。统一调度云端 Docker 沙箱与个人自有设备，融合双模 / OAR 会话、任务看板、代码审查与全端 PWA 体验。</p>
       </div>
       <div>
         <h5>// 快捷导航</h5>
         <ul>
-          <li><a href="#features">功能特性</a></li>
+          <li><a href="#architecture">统一架构</a></li>
+          <li><a href="#features">核心特性</a></li>
           <li><a href="#showcase">界面预览</a></li>
-          <li><a href="#installation">部署安装</a></li>
+          <li><a href="#installation">快速部署</a></li>
           <li><a href="#faq">常见问题</a></li>
         </ul>
       </div>
@@ -1148,7 +1350,7 @@
     </div>
     <div class="footer-bottom">
       <div>&copy; 2026 RayzPub · Under MIT License</div>
-      <div class="footer-status"><span class="pulse-dot" style="margin-right:7px;"></span>系统状态: 正常运行 // v2.0</div>
+      <div class="footer-status"><span class="pulse-dot" style="margin-right:7px;"></span>系统状态: 正常运行 // Multi-Device Control Plane</div>
     </div>
   </footer>
 
@@ -1171,6 +1373,8 @@
       const isLight = document.body.classList.contains('light-minimalist');
       if (themeLabel) themeLabel.textContent = isLight ? '浅色极简' : '赛博朋克';
       if (mobileThemeLink) mobileThemeLink.textContent = isLight ? '// 切换至赛博深色' : '// 切换至浅色极简';
+      const metaTheme = document.getElementById('pwaThemeColor');
+      if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f4f5f8' : '#141a29');
       if (themeIcon) {
         themeIcon.innerHTML = isLight
           ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
@@ -1277,7 +1481,7 @@
     /* ---------- Count-up stats ---------- */
     const animateCount = el => {
       const target = +el.dataset.count;
-      const prefix = el.dataset.prefix ? '<' : '';
+      const prefix = el.dataset.prefix || '';
       const suffix = el.dataset.suffix || '';
       const dur = 1300, t0 = performance.now();
       const step = now => {
