@@ -63,6 +63,53 @@ function checkNeedsBuild() {
   return false;
 }
 
+function checkAgentNeedsBuild() {
+  const agentOut = path.join(PROJECT_ROOT, 'client', 'ccnow-agent.js');
+  const agentSrc = path.join(PROJECT_ROOT, 'client', 'src');
+  if (!fs.existsSync(agentSrc)) return false;
+  if (!fs.existsSync(agentOut)) return true;
+
+  const outMtime = fs.statSync(agentOut).mtimeMs;
+  const agentInputs = [
+    agentSrc,
+    path.join(PROJECT_ROOT, 'client', 'oar-runtime.js'),
+    path.join(PROJECT_ROOT, 'services', 'agentChatService.js'),
+  ];
+  for (const src of agentInputs) {
+    if (fs.existsSync(src) && getMaxMtime(src) > outMtime) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function buildAgentBundle(esbuild, force = false) {
+  const agentEntry = path.join(PROJECT_ROOT, 'client', 'src', 'index.js');
+  if (!fs.existsSync(agentEntry)) return;
+  if (!force && !checkAgentNeedsBuild()) return;
+
+  const configSrc = fs.readFileSync(path.join(PROJECT_ROOT, 'client', 'src', 'config.js'), 'utf8');
+  const verMatch = configSrc.match(/CLIENT_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  const agentVersion = verMatch ? verMatch[1] : '1.7.0';
+
+  const outPath = path.join(PROJECT_ROOT, 'client', 'ccnow-agent.js');
+  await esbuild.build({
+    entryPoints: [agentEntry],
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    outfile: outPath,
+    external: ['node-pty', 'ws', '@botiverse/oar', '@botiverse/oar/*'],
+    banner: {
+      js: `#!/usr/bin/env node\n// ccnow-agent CLIENT_VERSION = '${agentVersion}'`
+    },
+  });
+  fs.chmodSync(outPath, 0o755);
+  const sizeKb = (fs.statSync(outPath).size / 1024).toFixed(1);
+  console.log(`🤖 Bundled client/src/index.js -> client/ccnow-agent.js (${sizeKb} KB, v${agentVersion})`);
+}
+
 async function performBuild(force = false) {
   // Check if esbuild is available
   let esbuild;
@@ -73,8 +120,11 @@ async function performBuild(force = false) {
     return false;
   }
 
-  if (!force && !checkNeedsBuild()) {
-    console.log('✨ dist assets are up-to-date. Skipping build.');
+  const frontendDirty = force || checkNeedsBuild();
+  const agentDirty = force || checkAgentNeedsBuild();
+
+  if (!frontendDirty && !agentDirty) {
+    console.log('✨ dist assets & ccnow-agent bundle are up-to-date. Skipping build.');
     return true;
   }
 
@@ -82,6 +132,15 @@ async function performBuild(force = false) {
   const startTime = Date.now();
 
   try {
+    if (agentDirty) {
+      await buildAgentBundle(esbuild, force);
+    }
+
+    if (!frontendDirty) {
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      console.log(`✨ Agent bundle completed successfully in ${duration}s!`);
+      return true;
+    }
     // 1. Clean dist directory
     if (fs.existsSync(distDir)) {
       fs.rmSync(distDir, { recursive: true, force: true });

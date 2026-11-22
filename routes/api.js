@@ -8,8 +8,7 @@ const multer = require('multer');
 
 const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED, IM_BOT_ENABLED } = require('../config');
 const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
-const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
-const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, syncAllUserKeysFiles, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc, chownToSudoUser } = require('../services/fileService');
+const { resolveWorkspacePath, safeResolve, getDefaultWorkspacePath, updateUserKeysFile, syncAllUserKeysFiles, ensureClaudeSettings, ensureCodexConfig } = require('../services/fileService');
 
 // Multer memory storage configuration for file upload (supports up to 20 files, 50MB each)
 const fileUpload = multer({
@@ -19,11 +18,9 @@ const fileUpload = multer({
     files: 20
   }
 });
-const { execCommand } = require('../services/gitService');
 const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
 const db = require('../services/dbService');
 const iconService = require('../services/iconService');
-const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid, getAgySessionIdFromPanePid } = require('../services/agentChatService');
 const llmGatewayService = require('../services/llmGatewayService');
 const projectService = require('../services/projectService');
 const deviceService = require('../services/deviceService');
@@ -32,6 +29,16 @@ const { requireDeviceOwnership } = require('../middlewares/deviceGuard');
 
 // Global middleware to guard device access across all API endpoints
 router.use(requireDeviceOwnership);
+
+const NO_ONLINE_DEVICE_MSG = '当前没有在线设备，请先在「设备管理」中启动云电脑或连接我的电脑';
+
+// Resolve target deviceId for unified compute routing (never executes locally on control plane)
+function resolveComputeDeviceId(req) {
+  const explicit = req.query.deviceId || (req.body && req.body.deviceId);
+  if (explicit && explicit !== 'cloud') return explicit;
+  const username = req.user ? req.user.username : (MULTI_USER_ENABLED ? null : 'admin');
+  return deviceService.resolveDefaultDeviceId(username);
+}
 
 // Shell escape utility for safe command interpolation
 const shellescape = (s) => {
@@ -543,122 +550,42 @@ router.get('/llm-models', requireAuth, (req, res) => {
   }
 });
 
-// API: Tmux Commands (Protected)
+// API: Tmux Commands (Protected — Unified Device Tunnel)
 // List sessions
 router.get('/sessions', requireAuth, (req, res) => {
-  const targetDeviceId = req.query.deviceId;
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    deviceService.getRemoteSessions(targetDeviceId).then((sessions) => {
-      const mapped = (sessions || []).map(s => {
-        const agentType = s.agentType || '';
-        const sessionMode = s.sessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
-        return {
-          name: s.name,
-          attached: Boolean(s.attached),
-          created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
-          path: s.path || '',
-          workspace: s.workspaceName || s.workspace || s.name,
-          workspaceName: s.workspaceName || s.workspace || '',
-          agentType,
-          agentModel: s.agentModel || '',
-          sessionMode,
-          isRemote: true,
-          deviceId: targetDeviceId
-        };
-      });
-      res.json(mapped);
-    }).catch(err => {
-      console.error('[API] Error getting remote sessions:', err);
-      res.json([]);
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.json([]);
+  deviceService.getRemoteSessions(targetDeviceId).then((sessions) => {
+    const mapped = (sessions || []).map(s => {
+      const agentType = s.agentType || '';
+      const sessionMode = s.sessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+      return {
+        name: s.name,
+        attached: Boolean(s.attached),
+        created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
+        path: s.path || '',
+        workspace: s.workspaceName || s.workspace || s.name,
+        workspaceName: s.workspaceName || s.workspace || '',
+        agentType,
+        agentModel: s.agentModel || '',
+        sessionMode,
+        isRemote: true,
+        deviceId: targetDeviceId
+      };
     });
-    return;
-  }
-
-  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}'], (err, stdout, stderr) => {
-    if (err) {
-      const errMsg = (stderr || '').toLowerCase();
-      const isNoSessions = err.code === 1 || 
-                           errMsg.includes('no server running') || 
-                           errMsg.includes('no sessions') || 
-                           errMsg.includes('no such file') || 
-                           errMsg.includes('connection refused') || 
-                           errMsg.includes('error connecting to') || 
-                           errMsg.includes('unknown user');
-      if (isNoSessions) {
-        return res.json([]);
-      }
-      return res.status(500).json({ error: 'Failed to list tmux sessions', details: stderr });
-    }
-    
-    const rawSessions = stdout.trim().split('\n').filter(Boolean);
-    const prefix = `u_${req.user.username}_`;
-
-    const sessions = [];
-    for (const line of rawSessions) {
-      const [fullName, attached, created, sessionPath, workspaceName, agentType, agentModel, rawSessionMode] = line.split('|');
-      const sessionMode = rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
-      
-      // If MULTI_USER_ENABLED is true, filter by prefix and strip it
-      if (MULTI_USER_ENABLED) {
-        if (!fullName.startsWith(prefix)) {
-          continue;
-        }
-        const shortName = fullName.substring(prefix.length);
-        sessions.push({
-          name: shortName,
-          attached: parseInt(attached, 10) > 0,
-          created: new Date(parseInt(created) * 1000).toLocaleString(),
-          path: sessionPath || '',
-          workspaceName: workspaceName || '',
-          agentType: agentType || '',
-          agentModel: agentModel || '',
-          sessionMode: sessionMode
-        });
-      } else {
-        sessions.push({
-          name: fullName,
-          attached: parseInt(attached, 10) > 0,
-          created: new Date(parseInt(created) * 1000).toLocaleString(),
-          path: sessionPath || '',
-          workspaceName: workspaceName || '',
-          agentType: agentType || '',
-          agentModel: agentModel || '',
-          sessionMode: sessionMode
-        });
-      }
-    }
-    res.json(sessions);
-  }, req.user.username);
+    res.json(mapped);
+  }).catch(err => {
+    console.error('[API] Error getting device sessions:', err);
+    res.json([]);
+  });
 });
 
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode, deviceId } = req.body;
+  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode } = req.body;
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
 
-  if (deviceId && deviceId !== 'cloud') {
-    const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (agent && agent !== 'default' ? agent : 'shell');
-    try {
-      const result = await deviceService.remoteTmuxNewSession(deviceId, {
-        sessionName: rawName,
-        workspace: workspacePath || '~',
-        workspaceName: workspaceName || '',
-        sessionMode: targetMode,
-        agentType: agent || 'default',
-        agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || modelName || '',
-        modelName: modelName || ''
-      });
-      if (result && result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      const createdName = result?.sessionName || rawName;
-      return res.json({ success: true, session: createdName, name: createdName });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-  
-  // Validate allowed agents
+  // Validate allowed agents uniformly across all devices
   const settings = db.getSettings();
   const allowedAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
   const reqAgent = agent || 'default';
@@ -666,445 +593,93 @@ router.post('/sessions', requireAuth, async (req, res) => {
     return res.status(403).json({ error: `智能体环境 '${reqAgent}' 已被禁用。` });
   }
 
-  // Determine initial session name, defaulting based on agent if missing
-  let rawName = (typeof name === 'string') ? name.trim() : '';
-  if (!rawName) {
-    rawName = reqAgent === 'default' ? 'shell' : reqAgent;
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) {
+    return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   }
 
-  if (!/^[a-zA-Z0-9_-]+$/.test(rawName)) {
-    return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
-  }
-
-  const username = req.user ? req.user.username : null;
-  const existingNames = await getUserSessionNames(username);
-  let finalName = getNextAvailableSessionName(rawName, existingNames);
-
-  let resolvedWorkspacePath = workspacePath;
-  if (workspaceName && !resolvedWorkspacePath) {
-    const workspaces = readWorkspaces(req.user.username);
-    const ws = workspaces.find(w => w.name.toLowerCase() === workspaceName.toLowerCase());
-    if (ws) {
-      resolvedWorkspacePath = ws.path;
-    }
-  }
-
-  if (!resolvedWorkspacePath) {
-    resolvedWorkspacePath = getDefaultWorkspacePath(req.user ? req.user.username : null);
-  }
-
-  // resolvedPath is the validated absolute path on disk for this session
-  let resolvedPath = null;
-  if (resolvedWorkspacePath) {
-    resolvedPath = resolveWorkspacePath(resolvedWorkspacePath, req.user.username);
-    if (!fs.existsSync(resolvedPath)) {
-      try {
-        fs.mkdirSync(resolvedPath, { recursive: true });
-      } catch (mkdirErr) {
-        return res.status(500).json({ error: 'Failed to create workspace directory', details: mkdirErr.message });
-      }
-    }
-    
-    // Inject local hooks for the target agent — use the already-resolved path
-    injectAgentHooks(resolvedPath, agent, (p) => resolveWorkspacePath(p, req.user.username));
-  }
-
-  // userHome: the $HOME directory set for the session shell.
-  // In multi-user mode each user gets user_data/[username]/home with
-  // read-only symlinks to agent config dirs from sysHome — so agents
-  // find their API keys without exposing config files in the workspace browser.
-  const userHome = getUserHomeDir(req.user ? req.user.username : null);
-  const sysHome = getHomeDir(); // always the system user's home (for finding binaries)
-  const binDir = path.resolve(PROJECT_ROOT, 'bin');
-  const nodeBinDir = path.dirname(process.execPath);
-
-  // Shell prefix: cd into workspace and set HOME so agents write config into the right place.
-  // In single-user mode HOME is already correct; in multi-user mode we point HOME at user sandbox.
-  // Use shellescape to prevent command injection via workspace path.
-  const workDir = resolvedPath || userHome;
-  ensureClaudeSettings(userHome);
-  if (workDir && workDir !== userHome) {
-    ensureClaudeSettings(workDir);
-  }
-  ensureCodexConfig(userHome);
-  ensureInputrc(userHome);
-  ensureBashrc(userHome);
-  ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
-  let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
-
-  const isClaudeOAuthGlobal = !!settings.claudeOAuthMode;
-  const isSessionClaudeOAuth = (modelProvider === 'oauth') || (isClaudeOAuthGlobal && (!modelProvider || modelProvider === 'default'));
-
-  // Inject system default fallback keys & LLM gateway dynamically, then source user's private .api_keys
-  const { getSystemDefaultKeys } = require('../services/fileService');
-  const defaultKeys = getSystemDefaultKeys();
-  const shellescapeVal = (val) => "'" + String(val).replace(/'/g, "'\\''") + "'";
-  
-  let fallbackExports = [];
-  const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
-  if (defaultCodexKey) {
-    fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(defaultCodexKey)}`);
-  }
-  if (defaultKeys.codexBaseUrl) {
-    fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
-    fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
-  }
-  if (defaultKeys.codexModel) {
-    fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
-    fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
-  }
-
-  if (isClaudeOAuthGlobal) {
-    fallbackExports.push(`unset ANTHROPIC_BASE_URL`);
-    fallbackExports.push(`unset ANTHROPIC_API_KEY`);
-    fallbackExports.push(`unset ANTHROPIC_AUTH_TOKEN`);
-    fallbackExports.push(`unset ANTHROPIC_MODEL`);
-  } else {
-    if (defaultKeys.claude) {
-      fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(defaultKeys.claude)}`);
-    }
-    if (defaultKeys.claudeBaseUrl) {
-      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(defaultKeys.claudeBaseUrl)}`);
-    }
-    if (defaultKeys.claudeModel) {
-      fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultKeys.claudeModel)}`);
-    }
-  }
-
-  // 127 LLM Gateway baseline injection (fallback for Claude & general shells)
+  const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (reqAgent !== 'default' ? reqAgent : 'shell');
   try {
-    const llmGatewayService = require('../services/llmGatewayService');
-    const gwConfig = llmGatewayService.loadConfig();
-    if (gwConfig && gwConfig.enabled && gwConfig.injectToTerminal) {
-      const { PORT } = require('../config');
-      const localPort = PORT || 3000;
-      const vKey = gwConfig.virtualKey || 'sk-deck-local';
-      const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
-      const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
-      const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
-
-      if (!isClaudeOAuthGlobal) {
-        fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl)}`);
-        fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
-        fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultAnthropicModel)}`);
-        fallbackExports.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
-      }
-
-      if (!defaultCodexKey) {
-        fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1')}`);
-        fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1')}`);
-        fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(vKey)}`);
-        fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultOpenAiModel)}`);
-        fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultOpenAiModel)}`);
-      }
+    const result = await deviceService.remoteTmuxNewSession(targetDeviceId, {
+      sessionName: rawName,
+      workspace: workspacePath || '~',
+      workspaceName: workspaceName || '',
+      sessionMode: targetMode,
+      agentType: reqAgent,
+      agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || modelName || '',
+      modelName: modelName || ''
+    });
+    if (result && result.error) {
+      return res.status(400).json({ error: result.error });
     }
-  } catch (gwErr) {}
-  
-  if (fallbackExports.length > 0) {
-    envPrefix += ` && ${fallbackExports.join(' && ')}`;
+    const createdName = result?.sessionName || rawName;
+    return res.json({
+      success: true,
+      session: createdName,
+      name: createdName,
+      originalName: rawName,
+      renamed: createdName !== rawName,
+      sessionMode: targetMode
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
-  envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
-
-  // Explicit per-session model / provider selection override (HIGHEST PRIORITY)
-  // When user selects a specific provider/model at session creation, this must override
-  // any static configuration from ~/.api_keys.
-  let sessionOverrides = [];
-  if (isSessionClaudeOAuth) {
-    sessionOverrides.push(`unset ANTHROPIC_BASE_URL`);
-    sessionOverrides.push(`unset ANTHROPIC_API_KEY`);
-    sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
-    sessionOverrides.push(`unset ANTHROPIC_MODEL`);
-  } else if (modelProvider && modelProvider !== 'default') {
-    const { PORT } = require('../config');
-    const localPort = PORT || 3000;
-    const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
-    let vKey = 'sk-deck-local';
-    let defaultAnthropicModel = 'glm-5.3-flash';
-    try {
-      const llmGatewayService = require('../services/llmGatewayService');
-      const gwConfig = llmGatewayService.loadConfig();
-      if (gwConfig && gwConfig.virtualKey) vKey = gwConfig.virtualKey;
-      if (gwConfig && gwConfig.defaults?.anthropicModel) defaultAnthropicModel = gwConfig.defaults.anthropicModel;
-    } catch (e) {}
-
-    if (agent === 'claude') {
-      const targetUrl = modelProvider === 'gateway_default' ? gwUrl : (gwUrl + '/v1/' + modelProvider);
-      sessionOverrides.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(targetUrl)}`);
-      sessionOverrides.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
-      sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
-      sessionOverrides.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
-      const targetModel = modelName || defaultAnthropicModel;
-      if (targetModel) {
-        sessionOverrides.push(`export ANTHROPIC_MODEL=${shellescapeVal(targetModel)}`);
-      }
-    } else if (agent === 'codex') {
-      sessionOverrides.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
-      sessionOverrides.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
-      sessionOverrides.push(`export OPENAI_API_KEY=${shellescapeVal(vKey)}`);
-      if (modelName) {
-        sessionOverrides.push(`export OPENAI_MODEL=${shellescapeVal(modelName)}`);
-        sessionOverrides.push(`export CODEX_MODEL=${shellescapeVal(modelName)}`);
-      }
-    }
-  }
-
-  if (sessionOverrides.length > 0) {
-    envPrefix += ` && ${sessionOverrides.join(' && ')}`;
-  }
-
-  const getAgentPath = (agentName) => {
-    const localPath = path.join(path.dirname(process.execPath), agentName);
-    if (fs.existsSync(localPath)) return localPath;
-    for (const p of [`${sysHome}/.local/bin/${agentName}`, `/usr/local/bin/${agentName}`, `/usr/bin/${agentName}`]) {
-      if (fs.existsSync(p)) return p;
-    }
-    return null;
-  };
-
-  let shellCmd = 'exec bash';
-  let agentSessionId = null;
-  if (targetMode === 'chat_only') {
-    shellCmd = `echo -e "\\033[1;36m[OAR Pure Chat Session]\\033[0m\\n此会话由 Open Agent Runtime 规范直接驱动（纯会话模式）。\\n所有消息收发与推理已由 OAR 接口接管，无需终端物理按键输入。\\n保持后台运行中..."; exec sleep infinity`;
-  } else if (agent === 'agy') {
-    const agyPath = getAgentPath('agy');
-    const finalAgy = agyPath || 'agy';
-    shellCmd = `${finalAgy} --dangerously-skip-permissions; exec bash`;
-  } else if (agent === 'claude') {
-    const claudePath = getAgentPath('claude');
-    agentSessionId = crypto.randomUUID();
-    const claudePreCmd = isSessionClaudeOAuth
-      ? `unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL`
-      : `unset ANTHROPIC_AUTH_TOKEN && export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`;
-    shellCmd = claudePath ? `${claudePreCmd} && ${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
-  } else if (agent === 'codex') {
-    const codexPath = getAgentPath('codex');
-    shellCmd = codexPath ? `${codexPath} -c check_for_update=false -c update_on_startup=false; exec bash` : 'exec bash';
-  } else if (agent === 'kimi') {
-    let kimiPath = null;
-    for (const p of [`${userHome}/.kimi-code/bin/kimi`, `${sysHome}/.kimi-code/bin/kimi`, '/usr/local/bin/kimi', '/usr/bin/kimi']) {
-      if (fs.existsSync(p)) { kimiPath = p; break; }
-    }
-    shellCmd = kimiPath ? `${kimiPath}; exec bash` : 'exec bash';
-  }
-
-  const runCreation = (sessionNameToCreate, retriesLeft = 3) => {
-    let physicalSession = sessionNameToCreate;
-    if (MULTI_USER_ENABLED) {
-      physicalSession = `u_${req.user.username}_${sessionNameToCreate}`;
-    }
-
-    const args = ['new-session', '-d', '-s', physicalSession];
-    if (resolvedPath) {
-      args.push('-c', resolvedPath);
-    }
-    args.push(`${envPrefix}; ${shellCmd}`);
-
-    execTmux(args, async (err, stdout, stderr) => {
-      if (err) {
-        if ((stderr || '').toLowerCase().includes('duplicate session') && retriesLeft > 0) {
-          const freshNames = await getUserSessionNames(username);
-          const nextAttemptName = getNextAvailableSessionName(sessionNameToCreate, freshNames);
-          return runCreation(nextAttemptName, retriesLeft - 1);
-        }
-        return res.status(500).json({ error: 'Failed to create session', details: stderr });
-      }
-
-      const optionsToSet = [
-        ['set-option', '-t', physicalSession, 'status', 'off'],
-        ['set-option', '-t', physicalSession, 'mouse', 'on'],
-        ['set-option', '-t', physicalSession, '@session_mode', targetMode]
-      ];
-      if (workspaceName) {
-        optionsToSet.push(['set-option', '-t', physicalSession, '@workspace_name', workspaceName]);
-      }
-      if (agent) {
-        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_type', agent]);
-      }
-      if (agentSessionId) {
-        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_session_id', agentSessionId]);
-      }
-      const finalModelTag = modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '');
-      if (finalModelTag) {
-        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_model', finalModelTag]);
-      }
-
-      let chain = Promise.resolve();
-      optionsToSet.forEach(optArgs => {
-        chain = chain.then(() => new Promise((resolve) => {
-          execTmux(optArgs, (optErr) => {
-            if (optErr) {
-              console.error(`Failed to set tmux option ${optArgs.join(' ')}:`, optErr);
-            }
-            resolve();
-          }, req.user.username);
-        }));
-      });
-
-      chain.then(async () => {
-        try {
-          const oarService = require('../services/oarService');
-          oarService.deleteOarSession(req.user ? req.user.username : null, sessionNameToCreate);
-        } catch (e) {}
-
-        if (targetMode === 'chat_only') {
-          try {
-            const oarService = require('../services/oarService');
-            await oarService.getOrCreateSession(req.user ? req.user.username : null, sessionNameToCreate, {
-              agentType: agent,
-              workspacePath: resolvedPath,
-              model: finalModelTag
-            });
-          } catch (e) {
-            console.error('[OAR] Error initializing pure chat session:', e);
-          }
-        }
-        res.json({
-          success: true,
-          name: sessionNameToCreate,
-          originalName: rawName,
-          renamed: sessionNameToCreate !== rawName,
-          sessionMode: targetMode
-        });
-      });
-    }, req.user.username);
-  };
-
-  runCreation(finalName);
 });
 
 // Kill session
 router.delete('/sessions/:name', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const targetDeviceId = req.query.deviceId;
-
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteTmuxKillSession(targetDeviceId, name);
-      if (result && result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json({ success: true });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+  try {
+    const result = await deviceService.remoteTmuxKillSession(targetDeviceId, name);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
-
-  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
-    return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
-  }
-  let physicalSession = name;
-  if (MULTI_USER_ENABLED) {
-    physicalSession = `u_${req.user.username}_${name}`;
-  }
-  execTmux(['kill-session', '-t', physicalSession], (err, stdout, stderr) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to kill session', details: stderr });
-    }
-    try {
-      const oarService = require('../services/oarService');
-      oarService.deleteOarSession(req.user ? req.user.username : null, name);
-    } catch (e) {}
-    res.json({ success: true });
-  }, req.user.username);
 });
 
-// Workspaces Endpoints
+// Workspaces Endpoints (Unified Device Tunnel)
 router.get('/workspaces', requireAuth, async (req, res) => {
-  const deviceId = req.query.deviceId;
-  if (deviceId && deviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteFsWorkspaces(deviceId);
-      if (result && result.workspaces && result.workspaces.length > 0) {
-        return res.json(result.workspaces);
-      }
-      return res.json([{ name: 'Remote Home (~)', path: '~', isDefault: true }]);
-    } catch (e) {
-      return res.json([{ name: 'Remote Home (~)', path: '~', isDefault: true }]);
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.json([]);
+  try {
+    const result = await deviceService.remoteFsWorkspaces(targetDeviceId);
+    if (result && result.workspaces && result.workspaces.length > 0) {
+      return res.json(result.workspaces);
     }
+    return res.json([{ name: 'Home (~)', path: '~', isDefault: true }]);
+  } catch (e) {
+    return res.json([{ name: 'Home (~)', path: '~', isDefault: true }]);
   }
-  res.json(readWorkspaces(req.user.username));
 });
 
 router.post('/workspaces', requireAuth, async (req, res) => {
-  const { name, path: wsPath, deviceId } = req.body;
-  const targetDeviceId = deviceId || req.query.deviceId;
-  if (!name) {
-    return res.status(400).json({ error: 'Workspace name is required.' });
+  const { name, path: wsPath } = req.body;
+  if (!name) return res.status(400).json({ error: 'Workspace name is required.' });
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+  try {
+    const result = await deviceService.remoteFsAddWorkspace(targetDeviceId, name, wsPath);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json({ success: true, workspace: result.workspace });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
-
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    const dev = deviceService.getDeviceById(targetDeviceId);
-    if (!dev || dev.userId !== req.user.username) {
-      return res.status(404).json({ error: 'Device not found or not owned by you' });
-    }
-    try {
-      const result = await deviceService.remoteFsAddWorkspace(targetDeviceId, name, wsPath);
-      if (result && result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json({ success: true, workspace: result.workspace });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
-  }
-
-  let resolvedPath;
-  if (MULTI_USER_ENABLED && req.user.username) {
-    // In multi-user mode, path is treated as a relative sub-directory name under the user's sandbox by default.
-    // If omitted, default to using the workspace name as the directory name.
-    const subDir = (wsPath && wsPath.trim()) ? wsPath.trim() : name.trim();
-    resolvedPath = resolveWorkspacePath(subDir, req.user.username);
-  } else {
-    if (!wsPath) {
-      return res.status(400).json({ error: 'Path is required.' });
-    }
-    resolvedPath = resolveWorkspacePath(wsPath, req.user.username);
-  }
-
-  if (!fs.existsSync(resolvedPath)) {
-    try {
-      fs.mkdirSync(resolvedPath, { recursive: true });
-    } catch (err) {
-      return res.status(500).json({ error: 'Failed to create workspace directory on disk', details: err.message });
-    }
-  }
-
-  const workspaces = readWorkspaces(req.user.username);
-  const exists = workspaces.find(w => w.name.toLowerCase() === name.toLowerCase() || resolveWorkspacePath(w.path, req.user.username) === resolvedPath);
-  if (exists) {
-    return res.status(400).json({ error: 'Workspace with this name or path already exists.' });
-  }
-
-  workspaces.push({ name, path: resolvedPath });
-  writeWorkspaces(workspaces, req.user.username);
-  res.json({ success: true, workspace: { name, path: resolvedPath } });
 });
 
 router.delete('/workspaces/:name', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const targetDeviceId = req.query.deviceId || (req.body && req.body.deviceId);
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    const dev = deviceService.getDeviceById(targetDeviceId);
-    if (!dev || dev.userId !== req.user.username) {
-      return res.status(404).json({ error: 'Device not found or not owned by you' });
-    }
-    try {
-      const result = await deviceService.remoteFsRemoveWorkspace(targetDeviceId, name);
-      if (result && result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json({ success: true });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+  try {
+    const result = await deviceService.remoteFsRemoveWorkspace(targetDeviceId, name);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
-  const workspaces = readWorkspaces(req.user.username);
-  const filtered = workspaces.filter(w => w.name.toLowerCase() !== name.toLowerCase());
-  if (filtered.length === workspaces.length) {
-    return res.status(404).json({ error: 'Workspace not found.' });
-  }
-  writeWorkspaces(filtered, req.user.username);
-  res.json({ success: true });
 });
 
 // API: Get workspace project progression data
@@ -1177,13 +752,19 @@ router.post('/workspaces/:name/project-tasks', requireAuth, (req, res) => {
 // API: Dispatch task / prompt directly to an agent session in this workspace
 router.post('/workspaces/:name/dispatch-task', requireAuth, async (req, res) => {
   try {
-    const { name } = req.params;
     const { sessionName, promptText, clearHistory } = req.body;
     if (!sessionName || !promptText) {
       return res.status(400).json({ error: 'Session name and promptText are required' });
     }
-    const result = await projectService.dispatchTask(name, sessionName, promptText, req.user.username, { clearHistory: !!clearHistory });
-    res.json(result);
+    const targetDeviceId = resolveComputeDeviceId(req);
+    if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+    const result = await deviceService.remoteTmuxSendKeys(targetDeviceId, {
+      sessionName,
+      text: promptText,
+      clearHistory: !!clearHistory
+    });
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to dispatch task' });
   }
@@ -1193,10 +774,10 @@ router.post('/workspaces/:name/dispatch-task', requireAuth, async (req, res) => 
 router.get('/task-board', requireAuth, async (req, res) => {
   try {
     const workspace = req.query.workspace || '';
-    const targetDeviceId = req.query.deviceId || 'cloud';
-    let remoteSessions = null;
+    const targetDeviceId = resolveComputeDeviceId(req);
+    let remoteSessions = [];
 
-    if (targetDeviceId && targetDeviceId !== 'cloud') {
+    if (targetDeviceId) {
       try {
         remoteSessions = await deviceService.getRemoteSessions(targetDeviceId);
       } catch (e) {
@@ -1206,7 +787,7 @@ router.get('/task-board', requireAuth, async (req, res) => {
 
     const board = await projectService.getGlobalTaskBoard(req.user.username, {
       workspace,
-      deviceId: targetDeviceId,
+      deviceId: targetDeviceId || 'none',
       remoteSessions
     });
     res.json(board);
@@ -1271,10 +852,15 @@ router.post('/task-board/dispatch', requireAuth, async (req, res) => {
     if (!sessionName || !promptText || !String(promptText).trim()) {
       return res.status(400).json({ error: 'sessionName and promptText are required' });
     }
-    const result = await projectService.dispatchTask('', sessionName, promptText, req.user.username, {
+    const targetDeviceId = resolveComputeDeviceId(req);
+    if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+    const result = await deviceService.remoteTmuxSendKeys(targetDeviceId, {
+      sessionName,
+      text: promptText,
       clearHistory: !!clearHistory
     });
-    res.json(result);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to dispatch to session' });
   }
@@ -1282,218 +868,62 @@ router.post('/task-board/dispatch', requireAuth, async (req, res) => {
 
 // List subdirectories only (for workspace directory picker)
 router.get('/directories', requireAuth, async (req, res) => {
-  const targetDeviceId = req.query.deviceId;
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteDirectories(targetDeviceId, req.query.path);
-      if (result && result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json({
-        currentPath: result.currentPath || req.query.path,
-        directories: result.directories || []
-      });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    const rawPath = req.query.path || '~';
-    const targetDir = resolveWorkspacePath(rawPath, req.user.username);
-    
-    if (!fs.existsSync(targetDir)) {
-      return res.status(404).json({ error: 'Directory not found' });
-    }
-    
-    const stat = fs.statSync(targetDir);
-    if (!stat.isDirectory()) {
-      return res.status(400).json({ error: 'Not a directory' });
-    }
-
-    const items = fs.readdirSync(targetDir, { withFileTypes: true });
-    
-    const result = items
-      .filter(item => {
-        if (!item.isDirectory()) return false;
-        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude' && item.name !== '.codex';
-      })
-      .map(item => {
-        const itemPath = path.join(targetDir, item.name);
-        return {
-          name: item.name,
-          path: itemPath
-        };
-      });
-      
-    result.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    
-    const baseLimit = (MULTI_USER_ENABLED && req.user.username !== 'admin') ? getUserWorkspaceRoot(req.user.username) : '/';
-    res.json({
-      currentPath: targetDir,
-      parentPath: targetDir === baseLimit ? null : path.dirname(targetDir),
-      directories: result
+    const result = await deviceService.remoteDirectories(targetDeviceId, req.query.path);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json({
+      currentPath: result.currentPath || req.query.path,
+      parentPath: result.currentPath && result.currentPath !== '/' ? path.dirname(result.currentPath) : null,
+      directories: result.directories || []
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
 // List files/folders in a path
 router.get('/files/list', requireAuth, async (req, res) => {
-  const deviceId = req.query.deviceId;
-  if (deviceId && deviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteFsList(deviceId, req.query.workspacePath, req.query.path);
-      if (result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json(result.items || []);
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    const workspacePath = req.query.workspacePath || '';
-    const relativePath = req.query.path || '';
-    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
-    const targetDir = safeResolve(workspacePath, relativePath, req.user.username);
-    
-    if (!fs.existsSync(targetDir)) {
-      return res.status(404).json({ error: 'Directory not found' });
-    }
-    
-    const stat = fs.statSync(targetDir);
-    if (!stat.isDirectory()) {
-      return res.status(400).json({ error: 'Not a directory' });
-    }
-
-    const items = fs.readdirSync(targetDir, { withFileTypes: true });
-    
-    const result = items
-      .filter(item => {
-        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude' && item.name !== '.codex';
-      })
-      .map(item => {
-        const itemPath = path.join(targetDir, item.name);
-        const relPath = path.relative(rootDir, itemPath);
-        let size = null;
-        try {
-          const itemStat = fs.statSync(itemPath);
-          size = itemStat.isFile() ? itemStat.size : null;
-        } catch (e) {
-          // ignore
-        }
-        return {
-          name: item.name,
-          path: relPath,
-          isDir: item.isDirectory(),
-          size
-        };
-      });
-      
-    result.sort((a, b) => {
-      if (a.isDir && !b.isDir) return -1;
-      if (!a.isDir && b.isDir) return 1;
-      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    });
-    
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const result = await deviceService.remoteFsList(targetDeviceId, req.query.workspacePath, req.query.path);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json(result.items || []);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
 // Read file contents
 router.get('/files/content', requireAuth, async (req, res) => {
-  const deviceId = req.query.deviceId;
-  if (deviceId && deviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteFsRead(deviceId, req.query.workspacePath, req.query.path);
-      if (result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json({
-        path: result.path || req.query.path,
-        content: result.content,
-        size: result.size
-      });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    const workspacePath = req.query.workspacePath || '';
-    const relativePath = req.query.path;
-    if (!relativePath) {
-      return res.status(400).json({ error: 'Path is required' });
-    }
-    const targetPath = safeResolve(workspacePath, relativePath, req.user.username);
-    
-    if (!fs.existsSync(targetPath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-    
-    const stat = fs.statSync(targetPath);
-    if (!stat.isFile()) {
-      return res.status(400).json({ error: 'Not a file' });
-    }
-    
-    if (stat.size > 2 * 1024 * 1024) {
-      return res.status(400).json({ error: 'File is too large (max 2MB for browser editing)' });
-    }
-    
-    const content = fs.readFileSync(targetPath, 'utf8');
-    res.json({
-      path: relativePath,
-      content,
-      size: stat.size
+    const result = await deviceService.remoteFsRead(targetDeviceId, req.query.workspacePath, req.query.path);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json({
+      path: result.path || req.query.path,
+      content: result.content,
+      size: result.size
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
 // Save file contents
 router.post('/files/save', requireAuth, async (req, res) => {
-  const { workspacePath, filePath, content, deviceId } = req.body;
-  if (deviceId && deviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteFsWrite(deviceId, workspacePath, filePath, content);
-      if (result.error) {
-        return res.status(400).json({ error: result.error });
-      }
-      return res.json({ success: true });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
+  const { workspacePath, filePath, content } = req.body;
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    if (!filePath) {
-      return res.status(400).json({ error: 'filePath is required' });
-    }
-    
-    const targetPath = safeResolve(workspacePath, filePath, req.user.username);
-    const parentDir = path.dirname(targetPath);
-    if (!fs.existsSync(parentDir)) {
-      return res.status(400).json({ error: 'Parent directory does not exist' });
-    }
-    
-    if (fs.existsSync(targetPath)) {
-      const stat = fs.statSync(targetPath);
-      if (!stat.isFile()) {
-        return res.status(400).json({ error: 'Target path is not a file' });
-      }
-    }
-    
-    fs.writeFileSync(targetPath, content || '', 'utf8');
-    chownToSudoUser(targetPath);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const result = await deviceService.remoteFsWrite(targetDeviceId, workspacePath, filePath, content);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -1501,91 +931,35 @@ router.post('/files/save', requireAuth, async (req, res) => {
 router.post('/files/upload', requireAuth, (req, res) => {
   fileUpload.array('files', 20)(req, res, async (err) => {
     if (err) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
-      }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({ error: '上传失败：单次最多同时上传 20 个文件' });
-      }
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
+      if (err.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ error: '上传失败：单次最多同时上传 20 个文件' });
       return res.status(400).json({ error: `上传失败: ${err.message}` });
     }
-
     try {
       const workspacePath = req.body.workspacePath || '';
-      const deviceId = req.body.deviceId || req.query.deviceId;
-
-      // Handle remote edge device file upload via device RPC tunnel
-      if (deviceId && deviceId !== 'cloud') {
-        if (!req.files || req.files.length === 0) {
-          return res.status(400).json({ error: '未选择任何待上传文件' });
-        }
-        const uploadedFiles = [];
-        for (const file of req.files) {
-          const originalName = file.originalname || 'uploaded_file';
-          const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim();
-          if (!cleanName || cleanName === '.' || cleanName === '..') {
-            continue;
-          }
-          const uploadRes = await deviceService.remoteUploadFile(
-            deviceId,
-            workspacePath,
-            cleanName,
-            file.buffer.toString('base64')
-          );
-          if (uploadRes && !uploadRes.error) {
-            uploadedFiles.push({
-              name: cleanName,
-              path: cleanName,
-              size: file.size
-            });
-          }
-        }
-        return res.json({
-          success: true,
-          message: `成功上传 ${uploadedFiles.length} 个文件至远程设备`,
-          files: uploadedFiles
-        });
-      }
-
-      const targetDirRel = req.body.targetDir || '';
-      const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
-      
-      const targetDir = safeResolve(workspacePath, targetDirRel, req.user.username);
-      if (!fs.existsSync(targetDir)) {
-        return res.status(404).json({ error: '目标目录不存在' });
-      }
-      const dirStat = fs.statSync(targetDir);
-      if (!dirStat.isDirectory()) {
-        return res.status(400).json({ error: '目标路径不是目录' });
-      }
-
+      const targetDeviceId = resolveComputeDeviceId(req);
+      if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: '未选择任何待上传文件' });
       }
-
+      const targetDirRel = req.body.targetDir || '';
       const uploadedFiles = [];
       for (const file of req.files) {
-        // Sanitize file name to prevent directory traversal
         const originalName = file.originalname || 'uploaded_file';
         const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim();
-        if (!cleanName || cleanName === '.' || cleanName === '..') {
-          continue;
+        if (!cleanName || cleanName === '.' || cleanName === '..') continue;
+        const relFile = targetDirRel ? path.join(targetDirRel, cleanName) : cleanName;
+        const uploadRes = await deviceService.remoteUploadFile(
+          targetDeviceId,
+          workspacePath,
+          relFile,
+          file.buffer.toString('base64')
+        );
+        if (uploadRes && !uploadRes.error) {
+          uploadedFiles.push({ name: cleanName, path: relFile, size: file.size });
         }
-
-        const relativeFilePath = path.join(targetDirRel, cleanName);
-        const destPath = safeResolve(workspacePath, relativeFilePath, req.user.username);
-
-        fs.writeFileSync(destPath, file.buffer);
-        chownToSudoUser(destPath);
-
-        uploadedFiles.push({
-          name: cleanName,
-          path: path.relative(rootDir, destPath),
-          size: file.size
-        });
       }
-
-      res.json({
+      return res.json({
         success: true,
         message: `成功上传 ${uploadedFiles.length} 个文件`,
         files: uploadedFiles
@@ -1756,161 +1130,32 @@ router.get(/^\/preview\/([^/]+)(?:\/(.*))?$/, requireAuth, (req, res) => {
 
 // Git status endpoint
 router.get('/git/status', requireAuth, async (req, res) => {
-  const targetDeviceId = req.query.deviceId;
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteGitStatus(targetDeviceId, req.query.workspacePath);
-      if (result && result.status) {
-        return res.json({ isGit: true, ...result.status });
-      }
-      return res.json({ isGit: false, files: [] });
-    } catch (e) {
-      return res.json({ isGit: false, files: [] });
-    }
-  }
-
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.json({ isGit: false, files: [] });
   try {
-    const workspacePath = req.query.workspacePath || '';
-    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
-    
-    if (!fs.existsSync(rootDir)) {
-      return res.status(404).json({ error: 'Workspace directory not found' });
-    }
-
-    execCommand('git', ['rev-parse', '--show-toplevel'], rootDir, (revErr, revStdout) => {
-      if (revErr || !revStdout || !revStdout.trim()) {
-        return res.json({ isGit: false, files: [] });
-      }
-      
-      const gitRoot = revStdout.trim();
-      
-      execCommand('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '-u', '--ignored', '--', '.'], rootDir, (err, stdout, stderr) => {
-        if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
-          return res.json({ isGit: false, files: [] });
-        }
-        if (err && err.code === 'ENOENT') {
-          return res.status(500).json({ error: 'Git is not installed on the system' });
-        }
-        
-        const files = [];
-        const lines = stdout.split('\n');
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const code = line.substring(0, 2);
-          let filePath = line.substring(3).trim();
-          
-          let renameFrom = null;
-          if (code.startsWith('R') || code.endsWith('R')) {
-            const parts = filePath.split(' -> ');
-            if (parts.length === 2) {
-              renameFrom = parts[0];
-              filePath = parts[1];
-            }
-          }
-          
-          if (filePath.startsWith('"') && filePath.endsWith('"')) {
-            filePath = filePath.slice(1, -1);
-          }
-          if (renameFrom && renameFrom.startsWith('"') && renameFrom.endsWith('"')) {
-            renameFrom = renameFrom.slice(1, -1);
-          }
-          
-          // Map filePath (which git reports relative to gitRoot) to be relative to workspace rootDir
-          const fullPath = path.resolve(gitRoot, filePath);
-          const relToWorkspace = path.relative(rootDir, fullPath);
-          
-          // If the file is outside rootDir, skip it
-          if (relToWorkspace.startsWith('..') || path.isAbsolute(relToWorkspace)) {
-            continue;
-          }
-          
-          let relRenameFrom = null;
-          if (renameFrom) {
-            const fullRenamePath = path.resolve(gitRoot, renameFrom);
-            relRenameFrom = path.relative(rootDir, fullRenamePath);
-          }
-          
-          files.push({
-            path: relToWorkspace,
-            status: code.trim(),
-            index: code[0],
-            worktree: code[1],
-            renameFrom: relRenameFrom
-          });
-        }
-        
-        res.json({ isGit: true, files });
+    const result = await deviceService.remoteGitStatus(targetDeviceId, req.query.workspacePath);
+    if (result && result.isGit) {
+      return res.json({
+        isGit: true,
+        branch: result.branch || '',
+        files: result.files || []
       });
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    }
+    return res.json({ isGit: false, files: [] });
+  } catch (e) {
+    return res.json({ isGit: false, files: [] });
   }
 });
 
 // Git diff endpoint
 router.get('/git/diff', requireAuth, async (req, res) => {
-  const targetDeviceId = req.query.deviceId;
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteGitDiff(targetDeviceId, req.query.workspacePath, req.query.path);
-      return res.json({ diff: result?.diff || '' });
-    } catch (e) {
-      return res.json({ diff: '' });
-    }
-  }
-
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.json({ diff: '' });
   try {
-    const workspacePath = req.query.workspacePath || '';
-    const filePath = req.query.path || '';
-    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
-    
-    if (!fs.existsSync(rootDir)) {
-      return res.status(404).json({ error: 'Workspace directory not found' });
-    }
-
-    execCommand('git', ['rev-parse', '--show-toplevel'], rootDir, (revErr, revStdout) => {
-      if (revErr || !revStdout || !revStdout.trim()) {
-        return res.status(400).json({ error: 'Not a git repository' });
-      }
-      
-      if (filePath) {
-        const targetPath = safeResolve(workspacePath, filePath, req.user.username);
-        const relPath = path.relative(rootDir, targetPath);
-        
-        execCommand('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '--', relPath], rootDir, (statusErr, statusStdout) => {
-          const isUntracked = statusStdout && statusStdout.trim().startsWith('??');
-          
-          if (isUntracked) {
-            execCommand('git', ['diff', '--no-index', '--', '/dev/null', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
-              res.json({ diff: diffStdout || '' });
-            });
-          } else {
-            execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', 'HEAD', '--', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
-              if (diffErr && diffStderr && diffStderr.includes("ambiguous argument 'HEAD'")) {
-                return execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', '--', relPath], rootDir, (e2, out2) => {
-                  res.json({ diff: out2 || '' });
-                });
-              }
-              res.json({ diff: diffStdout || '' });
-            });
-          }
-        });
-      } else {
-        execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', 'HEAD'], rootDir, (err, stdout, stderr) => {
-          if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
-            return res.status(400).json({ error: 'Not a git repository' });
-          }
-          if (err && stderr && stderr.includes("ambiguous argument 'HEAD'")) {
-            return execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative'], rootDir, (e2, out2) => {
-              res.json({ diff: out2 || '' });
-            });
-          }
-          res.json({ diff: stdout || '' });
-        });
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const result = await deviceService.remoteGitDiff(targetDeviceId, req.query.workspacePath, req.query.path);
+    return res.json({ diff: result?.diff || '' });
+  } catch (e) {
+    return res.json({ diff: '' });
   }
 });
 
@@ -2084,315 +1329,82 @@ router.get('/login-by-token', (req, res) => {
   res.redirect('/');
 });
 
-// API: Get structured chat history for a session (Agent Chat Mode)
+// API: Get structured chat history for a session (Unified Device Tunnel)
 router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const targetDeviceId = req.query.deviceId;
-
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    try {
-      const result = await deviceService.remoteChatHistory(targetDeviceId, name);
-      return res.json({
-        sessionName: name,
-        agentType: result?.agentType || '',
-        agentSessionId: result?.agentSessionId || null,
-        sessionMode: result?.sessionMode || 'hybrid',
-        supported: result?.supported !== false,
-        hasHistory: result?.hasHistory !== undefined ? result.hasHistory : (Array.isArray(result?.messages) && result.messages.length > 0),
-        pendingAction: result?.pendingAction || null,
-        isGenerating: Boolean(result?.isGenerating),
-        statusText: result?.statusText || (result?.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
-        activeModel: result?.activeModel || null,
-        usage: result?.usage || null,
-        contextUsage: result?.contextUsage || null,
-        oarCapabilities: result?.oarCapabilities || null,
-        lastUpdated: result?.lastUpdated || Date.now(),
-        messages: result?.messages || []
-      });
-    } catch (e) {
-      return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
-    }
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) {
+    return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
   }
-
-  const user = req.user ? req.user.username : null;
-  const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
-
-  // Query tmux metadata including pane_pid and session_mode
-  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}'], async (err, stdout) => {
-    if (err) {
-      return res.status(404).json({ error: 'Session not found', details: err.message });
-    }
-
-    const parts = (stdout || '').trim().split('|');
-    const sessionPath = parts[0] || null;
-    const workspaceName = parts[1] || '';
-    const agentType = parts[2] || '';
-    const agentSessionId = (parts[3] && parts[3].trim()) ? parts[3].trim() : null;
-    const panePid = (parts[4] && parts[4].trim()) ? parts[4].trim() : null;
-    const rawSessionMode = (parts[5] && parts[5].trim()) ? parts[5].trim() : '';
-    const sessionMode = rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
-
-    const userHome = getUserHomeDir(user);
-    const sysHome = getHomeDir();
-
-    // Determine target workspace path
-    const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
-
-    // 1. Pure Chat Mode (OAR Driven Engine)
-    if (sessionMode === 'chat_only') {
-      try {
-        const oarService = require('../services/oarService');
-        const oarSess = await oarService.getOrCreateSession(user, name, {
-          agentType: agentType || 'claude',
-          workspacePath: targetWorkspace
-        });
-        return res.json({
-          supported: true,
-          hasHistory: (oarSess.messages && oarSess.messages.length > 0),
-          sessionName: name,
-          agentType: oarSess.agentType || agentType || 'oar',
-          sessionMode: 'chat_only',
-          workspacePath: targetWorkspace,
-          messages: oarSess.messages || [],
-          pendingAction: null,
-          isGenerating: Boolean(oarSess.isGenerating),
-          statusText: oarSess.statusText || (oarSess.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
-          activeModel: oarSess.activeModel || oarSess.model || null,
-          usage: oarSess.usage || null,
-          contextUsage: oarSess.contextUsage || null,
-          oarCapabilities: oarSess.oarCapabilities || null,
-          lastUpdated: oarSess.lastUpdated || Date.now()
-        });
-      } catch (oarErr) {
-        console.error('[OAR] Error reading pure chat session:', oarErr);
-      }
-    }
-
-    // 2. Terminal Only Mode
-    if (sessionMode === 'terminal_only') {
-      return res.json({
-        supported: false,
-        hasHistory: false,
-        sessionName: name,
-        agentType: agentType || 'terminal',
-        sessionMode: 'terminal_only',
-        messages: []
-      });
-    }
-
-    // 3. Hybrid Mode (Tmux + Agent Shadow Inspection)
-    let effectiveSessionId = agentSessionId;
-    const isAgySession = (agentType === 'agy' || agentType === 'antigravity') || (name.toLowerCase().includes('agy'));
-    if (isAgySession && panePid) {
-      const liveAgyId = getAgySessionIdFromPanePid(panePid);
-      if (liveAgyId) {
-        if (effectiveSessionId && liveAgyId !== effectiveSessionId && physicalSession) {
-          execTmux(['set-option', '-t', physicalSession, '@agent_session_id', liveAgyId], () => {}, user);
-        }
-        effectiveSessionId = liveAgyId;
-      }
-    }
-
-    // Locate the matching .jsonl session file strictly
-    const sessionFileInfo = findAgentSessionFile(agentType, targetWorkspace, effectiveSessionId, panePid, userHome, sysHome);
-
-    if (sessionFileInfo && sessionFileInfo.sessionId && !agentSessionId && physicalSession) {
-      execTmux(['set-option', '-t', physicalSession, '@agent_session_id', sessionFileInfo.sessionId], () => {}, user);
-    }
-
-    const isAgy = (agentType === 'agy' || agentType === 'antigravity') ||
-                  (sessionFileInfo && sessionFileInfo.agentType === 'agy') ||
-                  (panePid && getAgySessionIdFromPanePid(panePid)) ||
-                  (name.toLowerCase().includes('agy'));
-
-    const isClaude = (agentType === 'claude') ||
-                     (sessionFileInfo && sessionFileInfo.agentType === 'claude') ||
-                     (panePid && getSessionIdFromPanePid(panePid));
-
-    const effectiveAgent = (sessionFileInfo && sessionFileInfo.agentType) || (isAgy ? 'agy' : (isClaude ? 'claude' : null));
-
-    // Check if Chat Mode is supported (Claude Code or Antigravity)
-    if (!effectiveAgent) {
-      return res.json({
-        supported: false,
-        hasHistory: false,
-        sessionName: name,
-        agentType: agentType || 'terminal',
-        messages: []
-      });
-    }
-
-    if (!sessionFileInfo || !sessionFileInfo.filePath) {
-      return res.json({
-        supported: true,
-        hasHistory: false,
-        sessionName: name,
-        agentType: effectiveAgent,
-        workspacePath: targetWorkspace,
-        messages: [],
-        pendingAction: null
-      });
-    }
-
-    try {
-      const parsed = await parseAgentChat(effectiveAgent, sessionFileInfo.filePath, 60);
-      
-      // Also inspect real-time pane buffer for terminal permission/question states
-      execTmux(['capture-pane', '-pt', physicalSession, '-S', '-25'], (capErr, capStdout) => {
-        const paneText = capStdout || '';
-
-        // If terminal is currently prompting for permission
-        if (paneText.includes('Do you want to proceed?') || paneText.includes('switch to auto mode') || paneText.includes('Allow this time')) {
-          if (!parsed.pendingAction || parsed.pendingAction.type !== 'ask_question') {
-            if (!parsed.pendingAction) {
-              parsed.pendingAction = {
-                type: 'permission',
-                toolName: 'Bash',
-                toolInput: {},
-                hint: '终端请求权限审批'
-              };
-            }
-          }
-        }
-
-        // If terminal has classic (y/n) prompt
-        if (!parsed.pendingAction && /\([yY]\/[nN]\)|\[[yY]\/[nN]\]/i.test(paneText)) {
-          parsed.pendingAction = {
-            type: 'yn',
-            hint: '等待确认操作'
-          };
-        }
-
-        // Enrich permission details
-        if (parsed.pendingAction && parsed.pendingAction.type === 'permission') {
-          parsed.pendingAction.canAutoMode = paneText.includes('switch to auto mode') || paneText.includes('3. Yes, and switch to auto mode');
-          parsed.pendingAction.canAlwaysAllow = paneText.includes('always allow');
-        }
-
-        return res.json({
-          supported: true,
-          hasHistory: (parsed.messages && parsed.messages.length > 0),
-          sessionName: name,
-          agentType: effectiveAgent,
-          sessionId: sessionFileInfo.sessionId,
-          workspacePath: targetWorkspace,
-          messages: parsed.messages,
-          pendingAction: parsed.pendingAction,
-          lastUpdated: parsed.lastUpdated
-        });
-      }, user);
-    } catch (parseErr) {
-      return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
-    }
-  }, user);
+  try {
+    const result = await deviceService.remoteChatHistory(targetDeviceId, name);
+    return res.json({
+      sessionName: name,
+      agentType: result?.agentType || '',
+      agentSessionId: result?.agentSessionId || null,
+      sessionMode: result?.sessionMode || 'hybrid',
+      supported: result?.supported !== false,
+      hasHistory: result?.hasHistory !== undefined ? result.hasHistory : (Array.isArray(result?.messages) && result.messages.length > 0),
+      pendingAction: result?.pendingAction || null,
+      isGenerating: Boolean(result?.isGenerating),
+      statusText: result?.statusText || (result?.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+      activeModel: result?.activeModel || null,
+      usage: result?.usage || null,
+      contextUsage: result?.contextUsage || null,
+      oarCapabilities: result?.oarCapabilities || null,
+      lastUpdated: result?.lastUpdated || Date.now(),
+      messages: result?.messages || []
+    });
+  } catch (e) {
+    return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
+  }
 });
 
-// API: Clear conversation context for a session (Agent Chat Mode / Pure Chat Mode)
+// API: Clear conversation context for a session
 router.post('/sessions/:name/clear-context', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const targetDeviceId = req.query.deviceId;
-
-  if (targetDeviceId && targetDeviceId !== 'cloud') {
-    try {
-      const deviceService = require('../services/deviceService');
-      if (typeof deviceService.sendDeviceRpc === 'function') {
-        await deviceService.sendDeviceRpc(targetDeviceId, 'agent:clear_context', { sessionName: name });
-      }
-    } catch (e) {}
-    return res.json({ success: true, message: 'Remote context cleared' });
-  }
-
-  const user = req.user ? req.user.username : null;
-  const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
-
-  // 1. If Pure Chat OAR session, clear session state and history
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    const oarService = require('../services/oarService');
-    if (typeof oarService.clearSession === 'function') {
-      await oarService.clearSession(user, name);
-    }
-  } catch (e) {
-    console.warn('[ClearContext] OAR clear error:', e.message);
-  }
-
-  // 2. Clear tmux metadata @agent_session_id so that subsequent chat-history requests never load stale files
-  execTmux(['set-option', '-u', '-t', physicalSession, '@agent_session_id'], () => {
-    // 3. Send /clear into the running agent pane in tmux to reset the CLI context and terminal buffer
-    execTmux(['send-keys', '-t', physicalSession, '/clear', 'C-m'], () => {
-      res.json({ success: true, message: 'Context cleared successfully' });
-    }, user);
-  }, user);
+    await deviceService.sendDeviceRpc(targetDeviceId, 'agent:clear_context', { sessionName: name });
+  } catch (e) {}
+  return res.json({ success: true, message: 'Context cleared' });
 });
 
-// API: Probe available OAR built-in runtimes and capabilities (Control Plane or Remote Device)
+// API: Probe available OAR built-in runtimes and capabilities
 router.get('/oar/runtimes', requireAuth, async (req, res) => {
-  const user = req.user ? req.user.username : null;
-  const targetDeviceId = req.query.deviceId;
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.json({ success: true, runtimes: [] });
   try {
-    if (targetDeviceId && targetDeviceId !== 'cloud') {
-      const result = await deviceService.remoteOarRuntimes(targetDeviceId);
-      if (result && result.error) return res.status(502).json({ error: result.error });
-      return res.json({ success: true, runtimes: result?.runtimes || [] });
-    }
-    const oarService = require('../services/oarService');
-    const runtimes = await oarService.listAvailableRuntimes(user);
-    res.json({ success: true, runtimes });
+    const result = await deviceService.remoteOarRuntimes(targetDeviceId);
+    if (result && result.error) return res.status(502).json({ error: result.error });
+    return res.json({ success: true, runtimes: result?.runtimes || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// API: Send user message to OAR Pure Chat Session (supports Control Plane & Remote Device separation)
+// API: Send user message to OAR Pure Chat Session
 router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
   const { name } = req.params;
   const { content, images } = req.body;
-  const user = req.user ? req.user.username : null;
-  const targetDeviceId = req.query.deviceId || req.body.deviceId;
-
   const hasText = Boolean(content && String(content).trim());
   const rawImages = Array.isArray(images) ? images : [];
   if (!hasText && rawImages.length === 0) {
     return res.status(400).json({ error: 'Message content or images required' });
   }
-
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    if (targetDeviceId && targetDeviceId !== 'cloud') {
-      const result = await deviceService.remoteOarMessage(targetDeviceId, name, {
-        content: content || '',
-        images: rawImages
-      });
-      if (result && result.error && !result.accepted) {
-        return res.status(502).json({ error: result.error });
-      }
-      return res.json({ success: true, ...result });
-    }
-
-    const oarService = require('../services/oarService');
-    const oarSess = await oarService.getOrCreateSession(user, name);
-    const workspaceRoot = oarSess.workspacePath || getDefaultWorkspacePath(user);
-
-    // Validate image paths strictly inside the session workspace via safeResolve
-    const validatedImages = [];
-    for (const img of rawImages) {
-      const candidate = typeof img === 'string' ? img : (img && (img.relativePath || img.path));
-      if (!candidate || typeof candidate !== 'string') continue;
-      try {
-        const rel = path.isAbsolute(candidate) ? path.relative(workspaceRoot, candidate) : candidate;
-        const resolved = safeResolve(workspaceRoot, rel);
-        if (resolved && fs.existsSync(resolved)) {
-          validatedImages.push({ path: resolved });
-        }
-      } catch (e) {
-        // Ignore out-of-workspace image paths
-      }
-    }
-
-    const reply = await oarService.sendUserMessage(user, name, content || '', null, {
-      images: validatedImages
+    const result = await deviceService.remoteOarMessage(targetDeviceId, name, {
+      content: content || '',
+      images: rawImages
     });
-    res.json({ success: true, message: reply });
+    if (result && result.error && !result.accepted) {
+      return res.status(502).json({ error: result.error });
+    }
+    return res.json({ success: true, ...result });
   } catch (err) {
-    console.error('[OAR] sendUserMessage error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2400,19 +1412,13 @@ router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
 // API: Trigger OAR native manual context compaction (/compact)
 router.post('/sessions/:name/oar-compact', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const user = req.user ? req.user.username : null;
-  const targetDeviceId = req.query.deviceId || req.body?.deviceId;
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    if (targetDeviceId && targetDeviceId !== 'cloud') {
-      const result = await deviceService.remoteOarCompact(targetDeviceId, name);
-      if (result && result.error) return res.status(502).json({ error: result.error });
-      return res.json({ success: true, ...result });
-    }
-    const oarService = require('../services/oarService');
-    const result = await oarService.compactSession(user, name);
-    res.json({ success: true, ...result });
+    const result = await deviceService.remoteOarCompact(targetDeviceId, name);
+    if (result && result.error) return res.status(502).json({ error: result.error });
+    return res.json({ success: true, ...result });
   } catch (err) {
-    console.error('[OAR] compactSession error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2420,159 +1426,65 @@ router.post('/sessions/:name/oar-compact', requireAuth, async (req, res) => {
 // API: Abort generation in OAR Pure Chat Session
 router.post('/sessions/:name/oar-abort', requireAuth, async (req, res) => {
   const { name } = req.params;
-  const user = req.user ? req.user.username : null;
-  const targetDeviceId = req.query.deviceId || req.body?.deviceId;
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
-    if (targetDeviceId && targetDeviceId !== 'cloud') {
-      const result = await deviceService.remoteOarAbort(targetDeviceId, name);
-      if (result && result.error) return res.status(502).json({ error: result.error });
-      return res.json({ success: true, aborted: Boolean(result?.aborted) });
-    }
-    const oarService = require('../services/oarService');
-    const aborted = await oarService.abortSession(user, name);
-    res.json({ success: true, aborted });
+    const result = await deviceService.remoteOarAbort(targetDeviceId, name);
+    if (result && result.error) return res.status(502).json({ error: result.error });
+    return res.json({ success: true, aborted: Boolean(result?.aborted) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Upload attachments for Chat Mode (saved in <workspace>/.deck/uploads to prevent agent outside-workspace permission prompts)
+// Upload attachments for Chat Mode
 router.post('/sessions/:session/chat-upload', requireAuth, (req, res) => {
   fileUpload.array('files', 10)(req, res, (err) => {
     if (err) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
-      }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({ error: '上传失败：单次最多上传 10 个文件' });
-      }
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
+      if (err.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ error: '上传失败：单次最多上传 10 个文件' });
       return res.status(400).json({ error: `上传失败: ${err.message}` });
     }
-
     const sessionName = req.params.session;
-    const user = req.user.username;
-    const targetDeviceId = req.query.deviceId || (req.body && req.body.deviceId);
-
-    if (targetDeviceId && targetDeviceId !== 'cloud') {
-      const dev = deviceService.getDeviceById(targetDeviceId);
-      if (!dev || dev.userId !== user) {
-        return res.status(404).json({ error: 'Device not found or not owned by you' });
-      }
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: '未选择任何待上传文件' });
-      }
-      const filesPayload = req.files.map(f => ({
-        originalName: f.originalname || 'upload',
-        mimeType: f.mimetype || 'application/octet-stream',
-        bufferBase64: f.buffer.toString('base64')
-      }));
-      deviceService.remoteChatUpload(targetDeviceId, sessionName, filesPayload).then(result => {
-        if (result && result.error) {
-          return res.status(400).json({ error: result.error });
-        }
-        return res.json({
-          success: true,
-          message: `成功保存 ${(result.files || []).length} 个文件至远程工作区临时目录`,
-          files: result.files || []
-        });
-      }).catch(uploadErr => {
-        return res.status(500).json({ error: uploadErr.message });
-      });
-      return;
+    const targetDeviceId = resolveComputeDeviceId(req);
+    if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: '未选择任何待上传文件' });
     }
-    const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
-    const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
-    const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
-
-    execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}'], (tmuxErr, stdout) => {
-      const parts = (stdout || '').trim().split('|');
-      const sessionPath = parts[0] || null;
-      const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
-
-      if (!targetWorkspace || !fs.existsSync(targetWorkspace)) {
-        return res.status(404).json({ error: '会话工作空间目录不存在' });
-      }
-
-      // Safe temporary uploads folder strictly within the workspace
-      const uploadDir = safeResolve(targetWorkspace, '.deck/uploads', user);
-      if (!fs.existsSync(uploadDir)) {
-        try {
-          fs.mkdirSync(uploadDir, { recursive: true });
-          chownToSudoUser(uploadDir);
-        } catch (mkErr) {
-          return res.status(500).json({ error: `创建上传目录失败: ${mkErr.message}` });
-        }
-      }
-
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: '未选择任何待上传文件' });
-      }
-
-      const uploadedFiles = [];
-      for (const file of req.files) {
-        const originalName = file.originalname || 'upload';
-        const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim() || 'upload';
-        const ext = path.extname(cleanName);
-        const base = path.basename(cleanName, ext);
-
-        // Append timestamp suffix to avoid collisions
-        const uniqueName = `${base}_${Date.now()}${ext}`;
-        const destPath = safeResolve(targetWorkspace, path.join('.deck/uploads', uniqueName), user);
-
-        try {
-          fs.writeFileSync(destPath, file.buffer);
-          chownToSudoUser(destPath);
-
-          const isImg = file.mimetype.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(uniqueName);
-
-          uploadedFiles.push({
-            name: uniqueName,
-            originalName: cleanName,
-            relativePath: `.deck/uploads/${uniqueName}`,
-            absolutePath: destPath,
-            size: file.size,
-            mimeType: file.mimetype,
-            isImage: isImg
-          });
-        } catch (writeErr) {
-          console.error('[ChatUpload] Failed to save file:', writeErr);
-        }
-      }
-
+    const filesPayload = req.files.map(f => ({
+      originalName: f.originalname || 'upload',
+      mimeType: f.mimetype || 'application/octet-stream',
+      bufferBase64: f.buffer.toString('base64')
+    }));
+    deviceService.remoteChatUpload(targetDeviceId, sessionName, filesPayload).then(result => {
+      if (result && result.error) return res.status(400).json({ error: result.error });
       return res.json({
         success: true,
-        message: `成功保存 ${uploadedFiles.length} 个文件至工作区临时目录`,
-        files: uploadedFiles
+        message: `成功保存 ${(result.files || []).length} 个文件至工作区临时目录`,
+        files: result.files || []
       });
-    }, user);
+    }).catch(uploadErr => {
+      return res.status(500).json({ error: uploadErr.message });
+    });
   });
 });
 
-// Serve uploaded chat attachments securely
-router.get('/sessions/:session/chat-attachments/:filename', requireAuth, (req, res) => {
+// Serve uploaded chat attachments securely via device RPC
+router.get('/sessions/:session/chat-attachments/:filename', requireAuth, async (req, res) => {
   const sessionName = req.params.session;
-  const user = req.user.username;
-  const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
-  const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
-  const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
   const filename = path.basename(req.params.filename);
-
-  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}'], (tmuxErr, stdout) => {
-    const parts = (stdout || '').trim().split('|');
-    const sessionPath = parts[0] || null;
-    const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
-
-    if (!targetWorkspace) {
-      return res.status(404).send('Workspace not found');
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(404).send('No online device');
+  try {
+    const result = await deviceService.remoteChatAttachment(targetDeviceId, sessionName, filename);
+    if (!result || result.error || !result.bufferBase64) {
+      return res.status(404).send(result?.error || 'Attachment not found');
     }
-
-    const filePath = safeResolve(targetWorkspace, path.join('.deck/uploads', filename), user);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).send('Attachment not found');
-    }
-
-    res.sendFile(filePath, { dotfiles: 'allow' });
-  }, user);
+    res.setHeader('Content-Type', result.mimeType || 'application/octet-stream');
+    res.send(Buffer.from(result.bufferBase64, 'base64'));
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
 });
 
 // ==========================================

@@ -276,7 +276,7 @@ async function ensureUserSandbox(username, options = {}) {
 
   const { safeUser, workspaceDir, sandboxHomeDir, credsFile } = prepareUserSandboxDirs(username);
   const containerName = getContainerName(safeUser);
-  const displayName = options.name || `Cloud Sandbox (${safeUser})`;
+  const displayName = options.name || `云电脑 (${safeUser})`;
 
   // Ensure managed device record in deviceService
   const managed = deviceService.ensureManagedDevice(username, {

@@ -1639,8 +1639,9 @@ convertSelectToCustom(document.getElementById('qrCodeUrlSelect'));
 
 // Initial Load Handler
 const isFirstLogin = !localStorage.getItem('lastWorkspacePath');
+const controlSocket = typeof io !== 'undefined' ? io() : null;
 
-loadWorkspaces().then(async () => {
+initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
   await loadLlmModels();
   await loadSessions();
   
@@ -1665,8 +1666,6 @@ loadWorkspaces().then(async () => {
   initVoiceInput();
   initQrCode();
   initShareModal();
-  const controlSocket = typeof io !== 'undefined' ? io() : null;
-  initDeviceManager(controlSocket);
   window.openHelpDocTab = openHelpDocTab;
   initHelpDocEvents();
   window.openProjectTab = openProjectTab;

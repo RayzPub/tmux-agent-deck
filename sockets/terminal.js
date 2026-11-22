@@ -1,13 +1,6 @@
-const pty = require('node-pty');
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
-const path = require('path');
-const { getRunUser, getTmuxCommandForUser, execTmux } = require('../services/tmuxService');
-const { getHomeDir, getUserWorkspaceRoot, getDefaultWorkspacePath, getUserHomeDir } = require('../services/fileService');
-const { JWT_SECRET, MULTI_USER_ENABLED, PROJECT_ROOT } = require('../config');
+const { JWT_SECRET, MULTI_USER_ENABLED } = require('../config');
 const deviceService = require('../services/deviceService');
-
-
 
 const initSocket = (io) => {
   // Socket.io Authentication Middleware
@@ -16,7 +9,7 @@ const initSocket = (io) => {
     if (!cookieHeader) {
       return next(new Error('Authentication error: No cookies found'));
     }
-    
+
     const cookies = {};
     cookieHeader.split(';').forEach(cookie => {
       const parts = cookie.split('=');
@@ -37,24 +30,20 @@ const initSocket = (io) => {
     }
   });
 
-  // Socket.io Terminal Connection
+  // Unified Device Tunnel Terminal Connection (all compute goes through /device-tunnel)
   io.on('connection', (socket) => {
     console.log('Client connected to terminal socket:', socket.id);
 
-    // Auto-join private user room for isolated push events and status broadcasts
     const activeUsername = socket.user?.username || (MULTI_USER_ENABLED ? null : 'admin');
     if (activeUsername) {
       socket.join(`user:${activeUsername}`);
     }
 
-    let ptyProcess = null;
-    let isReinitializing = false;
-    let lastCols = null;
-    let lastRows = null;
-
     socket.isFocused = false;
     socket.activeSession = null;
     socket.sessionName = null;
+    socket.remoteDeviceId = null;
+    socket.remoteTermId = null;
 
     socket.on('client-focus', ({ focused, activeSession }) => {
       socket.isFocused = focused;
@@ -63,291 +52,65 @@ const initSocket = (io) => {
 
     socket.on('init-terminal', ({ sessionName, cols, rows, deviceId }) => {
       socket.sessionName = sessionName;
-      if (ptyProcess) {
-        console.log('Cleaning up existing PTY before re-init for socket:', socket.id);
-        isReinitializing = true;
-        try {
-          ptyProcess.kill();
-        } catch (err) {
-          console.error('Error killing existing PTY:', err);
-        }
-        ptyProcess = null;
-        lastCols = null;
-        lastRows = null;
+
+      // Close previous remote terminal stream if re-initializing on the same socket
+      if (socket.remoteDeviceId && socket.remoteTermId) {
+        deviceService.closeRemoteTerminal(socket.remoteDeviceId, socket.remoteTermId);
+        socket.remoteDeviceId = null;
+        socket.remoteTermId = null;
       }
 
-      // If targeting a remote edge device (e.g. Mac/Linux workstation)
-      if (deviceId && deviceId !== 'cloud') {
-        const username = socket.user?.username || (MULTI_USER_ENABLED ? null : 'admin');
-        const device = deviceService.getDeviceById(deviceId);
-        if (!device || (username && device.userId !== username)) {
-          console.warn(`[Security Alert] Access denied: User "${username}" attempted unauthorized terminal access to device "${deviceId}" (owned by "${device?.userId}")`);
-          socket.emit('terminal-output', '\r\n\x1b[31;1mError: Device not found or not owned by you.\x1b[0m\r\n');
-          return;
-        }
+      const username = socket.user?.username || (MULTI_USER_ENABLED ? null : 'admin');
+      const targetDeviceId = (deviceId && deviceId !== 'cloud')
+        ? deviceId
+        : deviceService.resolveDefaultDeviceId(username);
 
-        socket.remoteDeviceId = deviceId;
-        socket.remoteTermId = socket.id;
-        console.log(`[Terminal] Routing terminal socket ${socket.id} to remote edge device: ${deviceId} (Session: ${sessionName})`);
-
-        const initRes = deviceService.initRemoteTerminal(deviceId, socket, socket.id, sessionName, cols || 80, rows || 24);
-        if (!initRes || !initRes.success) {
-          socket.emit('terminal-output', `\r\n\x1b[31;1mError connecting to remote device: ${initRes?.error || 'Device offline'}\x1b[0m\r\n`);
-        }
+      if (!targetDeviceId) {
+        socket.emit('terminal-output', '\r\n\x1b[33;1m当前没有在线设备，请先在「设备管理」中启动云电脑或连接我的电脑。\x1b[0m\r\n');
         return;
       }
 
-      // Clear any remote device tracking on cloud fallback
-      socket.remoteDeviceId = null;
-      socket.remoteTermId = null;
-
-      if (!sessionName || !/^[a-zA-Z0-9_-]+$/.test(sessionName)) {
-        console.error('Invalid sessionName requested for terminal:', sessionName);
-        socket.emit('terminal-output', '\r\n\x1b[31;1mError: Invalid session name.\x1b[0m\r\n');
+      const device = deviceService.getDeviceById(targetDeviceId);
+      if (!device || (username && device.userId !== username)) {
+        console.warn(`[Security Alert] Access denied: User "${username}" attempted unauthorized terminal access to device "${targetDeviceId}"`);
+        socket.emit('terminal-output', '\r\n\x1b[31;1mError: Device not found or not owned by you.\x1b[0m\r\n');
         return;
       }
 
-      let physicalSession = sessionName;
-      if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
-        physicalSession = `u_${socket.user.username}_${sessionName}`;
-      }
+      socket.remoteDeviceId = targetDeviceId;
+      socket.remoteTermId = socket.id;
+      console.log(`[Terminal] Routing socket ${socket.id} -> device ${targetDeviceId} (Session: ${sessionName})`);
 
-      console.log(`Spawning pty for tmux session: ${physicalSession} (${cols}x${rows})`);
-
-      const runUser = getRunUser();
-      // Attach only to existing sessions; never use `new-session -A` which silently resurrects killed sessions
-      const tmuxArgs = ['attach-session', '-t', physicalSession];
-
-      const { cmd: shell, args } = getTmuxCommandForUser(socket.user ? socket.user.username : null, tmuxArgs);
-      const workspacePath = getDefaultWorkspacePath(socket.user ? socket.user.username : null);
-      const userHome = getUserHomeDir(socket.user ? socket.user.username : null);
-
-      const ptyEnv = {
-        ...process.env,
-        TERM: 'xterm-256color',
-        HOME: userHome,
-        USER: runUser || process.env.USER || require('os').userInfo().username,
-        SKIP_SUDO_HINT: '1'
-      };
-
-      const db = require('../services/dbService');
-      const globalSettings = db.getSettings();
-      const claudeOAuthMode = !!globalSettings.claudeOAuthMode;
-
-      // 1. LLM Gateway auto-injection (Platform baseline fallback)
-      try {
-        const llmGatewayService = require('../services/llmGatewayService');
-        const gwConfig = llmGatewayService.loadConfig();
-        if (gwConfig.enabled && gwConfig.injectToTerminal) {
-          const { PORT } = require('../config');
-          const localPort = PORT || 3000;
-          const vKey = gwConfig.virtualKey || 'sk-deck-local';
-          const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
-
-          if (claudeOAuthMode) {
-            delete ptyEnv.ANTHROPIC_BASE_URL;
-            delete ptyEnv.ANTHROPIC_API_KEY;
-            delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
-            delete ptyEnv.ANTHROPIC_MODEL;
-          } else {
-            ptyEnv.ANTHROPIC_BASE_URL = gwUrl;
-            ptyEnv.ANTHROPIC_API_KEY = vKey;
-            delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
-            ptyEnv.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
-            const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
-            ptyEnv.ANTHROPIC_MODEL = defaultAnthropicModel;
-          }
-
-          ptyEnv.OPENAI_BASE_URL = `${gwUrl}/v1`;
-          ptyEnv.OPENAI_API_BASE = `${gwUrl}/v1`;
-          ptyEnv.OPENAI_API_KEY = vKey;
-          const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
-          ptyEnv.OPENAI_MODEL = defaultOpenAiModel;
-          ptyEnv.CODEX_MODEL = defaultOpenAiModel;
-        }
-      } catch (gwErr) {
-        console.warn('⚠️ Failed to inject LLM Gateway env:', gwErr.message);
-      }
-
-      // 2. User-specific / Custom Keys (Higher Priority - Overrides Gateway)
-      {
-        const users = db.getUsers();
-        const activeUsername = (socket.user && socket.user.username) ? socket.user.username.toLowerCase() : 'admin';
-        const userObj = users[activeUsername];
-        const keys = userObj ? (userObj.apiKeys || {}) : {};
-
-        // Load system defaults as fallback
-        const { getSystemDefaultKeys } = require('../services/fileService');
-        const defaultKeys = getSystemDefaultKeys();
-        const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
-
-        // Claude / Anthropic
-        if (keys.claude) {
-          // User explicitly configured custom Claude Key
-          ptyEnv.ANTHROPIC_API_KEY = keys.claude;
-          delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
-          if (keys.claudeBaseUrl) {
-            ptyEnv.ANTHROPIC_BASE_URL = keys.claudeBaseUrl;
-          } else {
-            // Unset gateway's localhost URL so Claude can connect directly to official Anthropic API
-            delete ptyEnv.ANTHROPIC_BASE_URL;
-          }
-          if (keys.claudeModel) {
-            ptyEnv.ANTHROPIC_MODEL = keys.claudeModel;
-          }
-        } else if (claudeOAuthMode) {
-          // OAuth direct mode: ensure no base URL or API key is injected
-          delete ptyEnv.ANTHROPIC_BASE_URL;
-          delete ptyEnv.ANTHROPIC_API_KEY;
-          delete ptyEnv.ANTHROPIC_AUTH_TOKEN;
-          delete ptyEnv.ANTHROPIC_MODEL;
-        } else {
-          if (!ptyEnv.ANTHROPIC_API_KEY && defaultKeys.claude) {
-            ptyEnv.ANTHROPIC_API_KEY = defaultKeys.claude;
-            if (defaultKeys.claudeBaseUrl) ptyEnv.ANTHROPIC_BASE_URL = defaultKeys.claudeBaseUrl;
-          }
-          if (keys.claudeModel) {
-            ptyEnv.ANTHROPIC_MODEL = keys.claudeModel;
-          } else if (!ptyEnv.ANTHROPIC_MODEL && defaultKeys.claudeModel) {
-            ptyEnv.ANTHROPIC_MODEL = defaultKeys.claudeModel;
-          }
-        }
-
-        // Codex / OpenAI
-        if (keys.codex) {
-          // User explicitly configured custom OpenAI/Codex Key
-          ptyEnv.OPENAI_API_KEY = keys.codex;
-          if (keys.codexBaseUrl) {
-            ptyEnv.OPENAI_BASE_URL = keys.codexBaseUrl;
-            ptyEnv.OPENAI_API_BASE = keys.codexBaseUrl;
-          } else {
-            // Unset gateway's localhost URL so OpenAI can connect directly
-            delete ptyEnv.OPENAI_BASE_URL;
-            delete ptyEnv.OPENAI_API_BASE;
-          }
-        } else if (!ptyEnv.OPENAI_API_KEY && defaultCodexKey) {
-          ptyEnv.OPENAI_API_KEY = defaultCodexKey;
-          if (defaultKeys.codexBaseUrl) {
-            ptyEnv.OPENAI_BASE_URL = defaultKeys.codexBaseUrl;
-            ptyEnv.OPENAI_API_BASE = defaultKeys.codexBaseUrl;
-          }
-        }
-
-        if (keys.codexModel || defaultKeys.codexModel) {
-          const codexModel = keys.codexModel || defaultKeys.codexModel;
-          ptyEnv.OPENAI_MODEL = codexModel;
-          ptyEnv.CODEX_MODEL = codexModel;
-        }
-
-        // Kimi / Moonshot
-        const kimiKey = keys.kimi || defaultKeys.kimi;
-        if (kimiKey) {
-          ptyEnv.KIMI_API_KEY = kimiKey;
-          ptyEnv.MOONSHOT_API_KEY = kimiKey;
-        }
-        const kimiBaseUrl = keys.kimiBaseUrl || defaultKeys.kimiBaseUrl;
-        if (kimiBaseUrl) {
-          ptyEnv.KIMI_BASE_URL = kimiBaseUrl;
-          ptyEnv.MOONSHOT_BASE_URL = kimiBaseUrl;
-        }
-        const kimiModel = keys.kimiModel || defaultKeys.kimiModel;
-        if (kimiModel) ptyEnv.KIMI_MODEL = kimiModel;
-      }
-
-      lastCols = cols || 80;
-      lastRows = rows || 24;
-
-      try {
-        ptyProcess = pty.spawn(shell, args, {
-          name: 'xterm-256color',
-          cols: lastCols,
-          rows: lastRows,
-          cwd: workspacePath,
-          env: ptyEnv
-        });
-
-        ptyProcess.onData((data) => {
-          socket.emit('terminal-output', data);
-        });
-
-        ptyProcess.onExit(({ exitCode, signal }) => {
-          if (isReinitializing) {
-            isReinitializing = false;
-            return;
-          }
-          console.log(`PTY process exited with code ${exitCode}, signal ${signal}`);
-          socket.emit('terminal-exit');
-          ptyProcess = null;
-          lastCols = null;
-          lastRows = null;
-        });
-      } catch (err) {
-        console.error('Error spawning PTY:', err);
-        socket.emit('terminal-output', `\r\n\x1b[31;1mError spawning terminal process: ${err.message}\x1b[0m\r\n`);
+      const initRes = deviceService.initRemoteTerminal(targetDeviceId, socket, socket.id, sessionName, cols || 80, rows || 24);
+      if (!initRes || !initRes.success) {
+        socket.emit('terminal-output', `\r\n\x1b[31;1mError connecting to device: ${initRes?.error || 'Device offline'}\x1b[0m\r\n`);
       }
     });
 
-    const cancelTmuxCopyMode = (callback) => {
-      if (socket.sessionName) {
-        let physicalSession = socket.sessionName;
-        if (MULTI_USER_ENABLED && socket.user && socket.user.username) {
-          physicalSession = `u_${socket.user.username}_${socket.sessionName}`;
-        }
-        execTmux(['copy-mode', '-q', '-t', physicalSession], (err) => {
-          if (typeof callback === 'function') callback(!err);
-        }, socket.user ? socket.user.username : null);
+    socket.on('exit-copy-mode', (callback) => {
+      if (socket.remoteDeviceId && socket.sessionName) {
+        deviceService.remoteTmuxSendKeys(socket.remoteDeviceId, {
+          sessionName: socket.sessionName,
+          exitCopyMode: true
+        }).then((res) => {
+          if (typeof callback === 'function') callback(Boolean(res && res.success));
+        }).catch(() => {
+          if (typeof callback === 'function') callback(false);
+        });
       } else if (typeof callback === 'function') {
         callback(false);
       }
-    };
-
-    socket.on('exit-copy-mode', (callback) => {
-      cancelTmuxCopyMode(callback);
     });
 
-    socket.on('terminal-input', (data, opts) => {
-      // Forward keystroke to remote edge device if connected to one
+    socket.on('terminal-input', (data) => {
       if (socket.remoteDeviceId && socket.remoteTermId) {
         deviceService.sendRemoteTerminalInput(socket.remoteDeviceId, socket.remoteTermId, data);
-        return;
-      }
-
-      if (!ptyProcess) return;
-
-      const needsExitCopyMode = Boolean(
-        (opts && opts.exitCopyMode) ||
-        (typeof data === 'string' && (data.includes('\r') || data.includes('\n')))
-      );
-
-      if (needsExitCopyMode && socket.sessionName) {
-        cancelTmuxCopyMode(() => {
-          if (ptyProcess) {
-            ptyProcess.write(data);
-          }
-        });
-      } else {
-        ptyProcess.write(data);
       }
     });
 
     socket.on('resize', ({ cols, rows }) => {
-      // Forward resize to remote edge device if connected to one
       if (socket.remoteDeviceId && socket.remoteTermId && cols > 0 && rows > 0) {
         deviceService.sendRemoteTerminalResize(socket.remoteDeviceId, socket.remoteTermId, cols, rows);
-        return;
-      }
-
-      if (ptyProcess && cols > 0 && rows > 0) {
-        if (cols === lastCols && rows === lastRows) {
-          return;
-        }
-        lastCols = cols;
-        lastRows = rows;
-        try {
-          ptyProcess.resize(cols, rows);
-        } catch (err) {
-          console.error('Error resizing PTY:', err);
-        }
       }
     });
 
@@ -358,16 +121,6 @@ const initSocket = (io) => {
         socket.remoteDeviceId = null;
         socket.remoteTermId = null;
       }
-      if (ptyProcess) {
-        try {
-          ptyProcess.kill();
-        } catch (err) {
-          console.error('Error killing PTY process:', err);
-        }
-        ptyProcess = null;
-      }
-      lastCols = null;
-      lastRows = null;
     });
   });
 };

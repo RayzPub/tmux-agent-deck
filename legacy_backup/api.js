@@ -1,0 +1,2794 @@
+const express = require('express');
+const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const multer = require('multer');
+
+const { PASSWORD, JWT_SECRET, useHttps, PROJECT_ROOT, MULTI_USER_ENABLED, IM_BOT_ENABLED } = require('../config');
+const { requireAuth, requireAdmin, verifyToken } = require('../middlewares/auth');
+const { execTmux, injectAgentHooks, getRunUser, getNextAvailableSessionName, getUserSessionNames } = require('../services/tmuxService');
+const { resolveWorkspacePath, readWorkspaces, writeWorkspaces, safeResolve, getHomeDir, getUserWorkspaceRoot, getUserHomeDir, getDefaultWorkspacePath, updateUserKeysFile, syncAllUserKeysFiles, ensureClaudeSettings, ensureCodexConfig, ensureClaudeTrust, ensureInputrc, ensureBashrc, chownToSudoUser } = require('../services/fileService');
+
+// Multer memory storage configuration for file upload (supports up to 20 files, 50MB each)
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024,
+    files: 20
+  }
+});
+const { execCommand } = require('../services/gitService');
+const { getPublicKey, registerSubscription, unregisterSubscription, sendPushToAll } = require('../services/pushService');
+const db = require('../services/dbService');
+const iconService = require('../services/iconService');
+const { findAgentSessionFile, parseAgentChat, findClaudeSessionFile, parseClaudeJsonl, getSessionIdFromPanePid, getAgySessionIdFromPanePid } = require('../services/agentChatService');
+const llmGatewayService = require('../services/llmGatewayService');
+const projectService = require('../services/projectService');
+const deviceService = require('../services/deviceService');
+const containerService = require('../services/containerService');
+const { requireDeviceOwnership } = require('../middlewares/deviceGuard');
+
+// Global middleware to guard device access across all API endpoints
+router.use(requireDeviceOwnership);
+
+// Shell escape utility for safe command interpolation
+const shellescape = (s) => {
+  if (s == null) return "''";
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+};
+
+
+// API: Login
+router.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  // Single-user mode compatibility
+  if (!MULTI_USER_ENABLED) {
+    if (password === PASSWORD) {
+      const token = jwt.sign({ username: 'admin', role: 'admin', isMultiUser: false }, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: req.secure || useHttps,
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+      return res.json({ success: true });
+    }
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+
+  // Multi-user login
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  const users = db.getUsers();
+  const user = users[username.toLowerCase()];
+  if (!user || !db.verifyPassword(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  const token = jwt.sign({ username: user.username, role: user.role, isMultiUser: true }, JWT_SECRET, { expiresIn: '7d' });
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: req.secure || useHttps,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+  res.json({ success: true });
+});
+
+// API: Logout
+router.post('/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ success: true });
+});
+
+// API: Check Auth status
+router.get('/auth-status', (req, res) => {
+  const decoded = verifyToken(req);
+
+  // Not authenticated
+  if (!decoded) {
+    return res.json({
+      authenticated: false,
+      multiUserEnabled: MULTI_USER_ENABLED,
+      username: null,
+      role: null
+    });
+  }
+
+  // Multi-user mode: only accept tokens with username and role
+  if (MULTI_USER_ENABLED) {
+    if (!decoded.username || !decoded.role || !decoded.isMultiUser) {
+      res.clearCookie('token');
+      return res.json({
+        authenticated: false,
+        multiUserEnabled: MULTI_USER_ENABLED,
+        username: null,
+        role: null
+      });
+    }
+  }
+
+  // Valid token
+  res.json({
+    authenticated: true,
+    multiUserEnabled: MULTI_USER_ENABLED,
+    imBotEnabled: IM_BOT_ENABLED,
+    username: decoded.username || 'admin',
+    role: decoded.role || 'admin'
+  });
+});
+
+// API: Register with invite code
+router.post('/auth/register', (req, res) => {
+  if (!MULTI_USER_ENABLED) {
+    return res.status(400).json({ error: 'Registration is not enabled in single-user mode' });
+  }
+
+  const { code, username, password } = req.body;
+  if (!code || !username || !password) {
+    return res.status(400).json({ error: 'Code, username and password are required' });
+  }
+
+  if (!/^[a-zA-Z0-9_-]{3,15}$/.test(username)) {
+    return res.status(400).json({ error: 'Invalid username. Use 3-15 alphanumeric characters.' });
+  }
+
+  const result = db.registerUserWithInviteCode({ code, username, password });
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json({ success: true, message: 'Account registered successfully!' });
+});
+
+// API: Get invite codes (Admin only)
+router.get('/admin/invite-codes', requireAdmin, (req, res) => {
+  res.json(db.getCodes());
+});
+
+// API: Generate new invite code (Admin only)
+router.post('/admin/invite-codes', requireAdmin, (req, res) => {
+  const { note } = req.body;
+  const codes = db.getCodes();
+  
+  // Generate random 8-character code
+  const code = 'INV-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
+  
+  const newInvite = {
+    code,
+    createdBy: req.user.username,
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    usedBy: null,
+    usedAt: null,
+    note: note || ''
+  };
+
+  codes.push(newInvite);
+  db.saveCodes(codes);
+  res.json({ success: true, invite: newInvite });
+});
+
+// API: Delete invite code (Admin only)
+router.delete('/admin/invite-codes/:code', requireAdmin, (req, res) => {
+  const { code } = req.params;
+  let codes = db.getCodes();
+  const filtered = codes.filter(c => c.code !== code);
+  if (filtered.length === codes.length) {
+    return res.status(404).json({ error: 'Invite code not found' });
+  }
+  db.saveCodes(filtered);
+  res.json({ success: true });
+});
+
+// API: Get global settings (Authenticated users)
+router.get('/settings', requireAuth, (req, res) => {
+  res.json(db.getSettings());
+});
+
+// Helper to mask sensitive keys
+const maskKey = (key) => {
+  if (!key) return '';
+  if (key.length <= 8) return '••••••••';
+  return key.substring(0, 6) + '••••••••';
+};
+
+// API: Get user API keys (Authenticated users)
+router.get('/user/keys', requireAuth, (req, res) => {
+  const users = db.getUsers();
+  const usernameKey = (req.user && req.user.username ? req.user.username : 'admin').toLowerCase();
+  const userObj = users[usernameKey] || (!MULTI_USER_ENABLED ? {} : null);
+  if (!userObj) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  const keys = userObj.apiKeys || {};
+  res.json({
+    agy: maskKey(keys.agy),
+    claude: maskKey(keys.claude),
+    codex: maskKey(keys.codex),
+    kimi: maskKey(keys.kimi),
+    claudeBaseUrl: keys.claudeBaseUrl || '',
+    codexBaseUrl: keys.codexBaseUrl || '',
+    kimiBaseUrl: keys.kimiBaseUrl || '',
+    claudeModel: keys.claudeModel || '',
+    codexModel: keys.codexModel || '',
+    kimiModel: keys.kimiModel || ''
+  });
+});
+
+// API: Update user API keys (Authenticated users)
+router.post('/user/keys', requireAuth, (req, res) => {
+  const { agy, claude, codex, kimi, claudeBaseUrl, codexBaseUrl, kimiBaseUrl, claudeModel, codexModel, kimiModel } = req.body;
+  const users = db.getUsers();
+  const usernameKey = (req.user && req.user.username ? req.user.username : 'admin').toLowerCase();
+  if (!users[usernameKey] && !MULTI_USER_ENABLED) {
+    users[usernameKey] = {
+      username: req.user.username || 'admin',
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+      apiKeys: {}
+    };
+  }
+  const userObj = users[usernameKey];
+  if (!userObj) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  if (!userObj.apiKeys) {
+    userObj.apiKeys = {};
+  }
+  
+  const updateKey = (existing, incoming) => {
+    if (incoming === undefined) return existing;
+    if (incoming === '') return ''; // Delete/clear key
+    if (incoming.includes('•')) return existing; // Masked value, do not overwrite
+    return incoming.trim();
+  };
+
+  const updateUrl = (existing, incoming) => {
+    if (incoming === undefined) return existing;
+    return incoming.trim();
+  };
+
+  userObj.apiKeys.agy = updateKey(userObj.apiKeys.agy, agy);
+  userObj.apiKeys.claude = updateKey(userObj.apiKeys.claude, claude);
+  userObj.apiKeys.codex = updateKey(userObj.apiKeys.codex, codex);
+  userObj.apiKeys.kimi = updateKey(userObj.apiKeys.kimi, kimi);
+  userObj.apiKeys.claudeBaseUrl = updateUrl(userObj.apiKeys.claudeBaseUrl, claudeBaseUrl);
+  userObj.apiKeys.codexBaseUrl = updateUrl(userObj.apiKeys.codexBaseUrl, codexBaseUrl);
+  userObj.apiKeys.kimiBaseUrl = updateUrl(userObj.apiKeys.kimiBaseUrl, kimiBaseUrl);
+  userObj.apiKeys.claudeModel = updateUrl(userObj.apiKeys.claudeModel, claudeModel);
+  userObj.apiKeys.codexModel = updateUrl(userObj.apiKeys.codexModel, codexModel);
+  userObj.apiKeys.kimiModel = updateUrl(userObj.apiKeys.kimiModel, kimiModel);
+
+  db.saveUsers(users);
+
+  // Write keys to the user's private .api_keys configuration file in their home directory
+  updateUserKeysFile(req.user.username, userObj.apiKeys);
+
+  res.json({ success: true });
+});
+
+// API: Get app icon themes (Authenticated users)
+router.get('/app-icons', requireAuth, (req, res) => {
+  const themes = iconService.getThemes();
+  const activeTheme = iconService.getActiveTheme();
+  res.json({
+    themes,
+    activeTheme
+  });
+});
+
+// API: Get admin settings (Admin only)
+router.get('/admin/settings', requireAdmin, (req, res) => {
+  res.json(db.getSettings());
+});
+
+// API: Update admin settings (Admin only)
+router.post('/admin/settings', requireAdmin, (req, res) => {
+  const { enabledAgents, appIcon, claudeOAuthMode } = req.body;
+  const current = db.getSettings();
+
+  if (enabledAgents !== undefined) {
+    if (!Array.isArray(enabledAgents)) {
+      return res.status(400).json({ error: 'enabledAgents must be an array' });
+    }
+    current.enabledAgents = enabledAgents;
+  }
+
+  if (claudeOAuthMode !== undefined) {
+    current.claudeOAuthMode = !!claudeOAuthMode;
+  }
+
+  if (appIcon !== undefined) {
+    if (typeof appIcon !== 'string') {
+      return res.status(400).json({ error: 'appIcon must be a string' });
+    }
+    try {
+      iconService.setActiveTheme(appIcon);
+      current.appIcon = appIcon;
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  } else {
+    db.saveSettings(current);
+  }
+
+  if (claudeOAuthMode !== undefined) {
+    syncAllUserKeysFiles();
+  }
+
+  res.json({ success: true, settings: current });
+});
+
+// API: Get LLM Gateway status & config (Admin only)
+router.get('/admin/llm-gateway', requireAdmin, (req, res) => {
+  res.json(llmGatewayService.getGatewayStatus());
+});
+
+// API: Get Raw LLM Gateway configuration JSON (Admin only)
+router.get('/admin/llm-gateway/raw', requireAdmin, (req, res) => {
+  try {
+    const config = llmGatewayService.loadConfig();
+    res.json({ success: true, config, raw: JSON.stringify(config, null, 2) });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load LLM gateway config: ' + err.message });
+  }
+});
+
+// API: Save Raw LLM Gateway configuration JSON (Admin only)
+router.post('/admin/llm-gateway/raw', requireAdmin, (req, res) => {
+  try {
+    let newConfig = req.body.config;
+    if (typeof req.body.raw === 'string') {
+      try {
+        newConfig = JSON.parse(req.body.raw);
+      } catch (parseErr) {
+        return res.status(400).json({ error: 'JSON 语法错误: ' + parseErr.message });
+      }
+    }
+    if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) {
+      return res.status(400).json({ error: '配置必须是一个有效的 JSON 对象' });
+    }
+    const ok = llmGatewayService.saveConfig(newConfig);
+    if (!ok) {
+      return res.status(500).json({ error: '保存配置文件失败' });
+    }
+    res.json({ success: true, message: 'LLM 网关配置已保存并生效', config: newConfig });
+  } catch (err) {
+    res.status(500).json({ error: '保存失败: ' + err.message });
+  }
+});
+
+// API: Update LLM Gateway config (Admin only)
+router.post('/admin/llm-gateway', requireAdmin, (req, res) => {
+  const { enabled, allowExternalAccess, virtualKey, allowLocalhostWithoutKey, injectToTerminal, providers } = req.body;
+  const current = llmGatewayService.loadConfig();
+
+  if (enabled !== undefined) current.enabled = !!enabled;
+  if (allowExternalAccess !== undefined) current.allowExternalAccess = !!allowExternalAccess;
+  if (virtualKey !== undefined) current.virtualKey = String(virtualKey).trim();
+  if (allowLocalhostWithoutKey !== undefined) current.allowLocalhostWithoutKey = !!allowLocalhostWithoutKey;
+  if (injectToTerminal !== undefined) current.injectToTerminal = !!injectToTerminal;
+
+  if (providers && typeof providers === 'object') {
+    for (const [pName, pConfig] of Object.entries(providers)) {
+      if (!current.providers[pName]) {
+        current.providers[pName] = { enabled: true, baseUrl: '', keys: [] };
+      }
+      if (pConfig.enabled !== undefined) current.providers[pName].enabled = !!pConfig.enabled;
+      if (pConfig.baseUrl !== undefined) current.providers[pName].baseUrl = String(pConfig.baseUrl).trim();
+      if (Array.isArray(pConfig.keys)) {
+        current.providers[pName].keys = pConfig.keys.map(k => String(k).trim()).filter(Boolean);
+      }
+    }
+  }
+
+  const ok = llmGatewayService.saveConfig(current);
+  if (!ok) {
+    return res.status(500).json({ error: 'Failed to save LLM gateway configuration' });
+  }
+
+  res.json({ success: true, status: llmGatewayService.getGatewayStatus() });
+});
+
+// API: Test LLM Gateway Provider (Admin only)
+router.post('/admin/llm-gateway/test', requireAdmin, async (req, res) => {
+  const { provider } = req.body;
+  if (!provider) {
+    return res.status(400).json({ error: 'Provider name required (anthropic, openai, gemini)' });
+  }
+
+  const config = llmGatewayService.loadConfig();
+  const key = llmGatewayService.getNextKey(provider, config);
+  if (!key) {
+    return res.status(400).json({ error: `No available API keys found for provider '${provider}'` });
+  }
+
+  const pConfig = config.providers[provider] || {};
+  const isAnthropic = !!(pConfig.endpoints?.anthropic || provider === 'anthropic' || provider === 'kimi');
+  const baseUrl = (pConfig.endpoints?.anthropic || pConfig.endpoints?.openai || pConfig.baseUrl || '').trim();
+
+  try {
+    if (isAnthropic) {
+      const endpoint = (pConfig.endpoints?.anthropic || baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
+      const testRes = await fetch(`${endpoint}/v1/messages`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: pConfig.models?.anthropic?.[0] || 'glm-5.3-flash',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'hi' }]
+        })
+      });
+      return res.json({
+        ok: testRes.ok,
+        status: testRes.status,
+        statusText: testRes.statusText,
+        maskedKey: llmGatewayService.maskKey(key)
+      });
+    } else {
+      const endpoint = (pConfig.endpoints?.openai || baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+      const testRes = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: pConfig.models?.openai?.[0] || 'glm-5.3-flash',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'hi' }]
+        })
+      });
+      return res.json({
+        ok: testRes.ok,
+        status: testRes.status,
+        statusText: testRes.statusText,
+        maskedKey: llmGatewayService.maskKey(key)
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message, maskedKey: llmGatewayService.maskKey(key) });
+  }
+});
+
+// Get dynamically available models (flat: provider + model) from LLM Gateway configuration
+router.get('/llm-models', requireAuth, (req, res) => {
+  try {
+    const llmGatewayService = require('../services/llmGatewayService');
+    const config = llmGatewayService.loadConfig();
+    const providers = config.providers || {};
+    const globalSettings = db.getSettings();
+    const claudeOAuthMode = !!globalSettings.claudeOAuthMode;
+
+    const buildFlatList = (protocol) => {
+      const defaultModel = protocol === 'anthropic'
+        ? (config.defaults?.anthropicModel || 'glm-5.3-flash')
+        : (config.defaults?.openaiModel || 'glm-5.3-flash');
+
+      const defaultGatewayItem = {
+        id: 'default',
+        provider: (protocol === 'anthropic' && claudeOAuthMode) ? 'gateway_default' : 'default',
+        providerName: '网关默认',
+        model: defaultModel,
+        modelName: `默认 (${defaultModel})`,
+        displayName: `网关默认 · ${defaultModel}`,
+        desc: '跟随系统全局网关默认'
+      };
+
+      const oauthItem = {
+        id: 'oauth',
+        provider: 'oauth',
+        providerName: 'Anthropic 官方',
+        model: '',
+        modelName: 'OAuth 官方直连',
+        displayName: 'Anthropic · OAuth 直连',
+        desc: '使用 Claude OAuth 登录态，不注入 Base URL'
+      };
+
+      const list = protocol === 'anthropic'
+        ? (claudeOAuthMode ? [oauthItem, defaultGatewayItem] : [defaultGatewayItem, oauthItem])
+        : [defaultGatewayItem];
+
+      for (const [pId, prov] of Object.entries(providers)) {
+        if (!prov || !prov.enabled) continue;
+        const models = (prov.models && prov.models[protocol]) || [];
+        const provName = prov.name || pId;
+
+        for (const m of models) {
+          if (!m || typeof m !== 'string') continue;
+          const clean = m.trim();
+          if (clean.includes('*')) continue;
+
+          let modelTitle = clean;
+          let desc = '支持模型';
+          if (clean === 'k3-256k') {
+            modelTitle = 'Kimi K3 (256k)';
+            desc = '超长上下文 (256k) 深度推理';
+          } else if (clean === 'glm-5.3-flash') {
+            modelTitle = 'GLM-5.3-Flash';
+            desc = '高并发低延迟响应';
+          } else if (clean === 'glm-5') {
+            modelTitle = 'GLM-5';
+            desc = '旗舰级大模型代码生成';
+          }
+
+          list.push({
+            id: `${pId}_${clean}`,
+            provider: pId,
+            providerName: provName,
+            model: clean,
+            modelName: modelTitle,
+            displayName: `${provName} · ${modelTitle}`,
+            desc
+          });
+        }
+      }
+      return list;
+    };
+
+    res.json({
+      claude: buildFlatList('anthropic'),
+      codex: buildFlatList('openai')
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get models: ' + err.message });
+  }
+});
+
+// API: Tmux Commands (Protected)
+// List sessions
+router.get('/sessions', requireAuth, (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    deviceService.getRemoteSessions(targetDeviceId).then((sessions) => {
+      const mapped = (sessions || []).map(s => {
+        const agentType = s.agentType || '';
+        const sessionMode = s.sessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+        return {
+          name: s.name,
+          attached: Boolean(s.attached),
+          created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
+          path: s.path || '',
+          workspace: s.workspaceName || s.workspace || s.name,
+          workspaceName: s.workspaceName || s.workspace || '',
+          agentType,
+          agentModel: s.agentModel || '',
+          sessionMode,
+          isRemote: true,
+          deviceId: targetDeviceId
+        };
+      });
+      res.json(mapped);
+    }).catch(err => {
+      console.error('[API] Error getting remote sessions:', err);
+      res.json([]);
+    });
+    return;
+  }
+
+  execTmux(['list-sessions', '-F', '#{session_name}|#{session_attached}|#{session_created}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}'], (err, stdout, stderr) => {
+    if (err) {
+      const errMsg = (stderr || '').toLowerCase();
+      const isNoSessions = err.code === 1 || 
+                           errMsg.includes('no server running') || 
+                           errMsg.includes('no sessions') || 
+                           errMsg.includes('no such file') || 
+                           errMsg.includes('connection refused') || 
+                           errMsg.includes('error connecting to') || 
+                           errMsg.includes('unknown user');
+      if (isNoSessions) {
+        return res.json([]);
+      }
+      return res.status(500).json({ error: 'Failed to list tmux sessions', details: stderr });
+    }
+    
+    const rawSessions = stdout.trim().split('\n').filter(Boolean);
+    const prefix = `u_${req.user.username}_`;
+
+    const sessions = [];
+    for (const line of rawSessions) {
+      const [fullName, attached, created, sessionPath, workspaceName, agentType, agentModel, rawSessionMode] = line.split('|');
+      const sessionMode = rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+      
+      // If MULTI_USER_ENABLED is true, filter by prefix and strip it
+      if (MULTI_USER_ENABLED) {
+        if (!fullName.startsWith(prefix)) {
+          continue;
+        }
+        const shortName = fullName.substring(prefix.length);
+        sessions.push({
+          name: shortName,
+          attached: parseInt(attached, 10) > 0,
+          created: new Date(parseInt(created) * 1000).toLocaleString(),
+          path: sessionPath || '',
+          workspaceName: workspaceName || '',
+          agentType: agentType || '',
+          agentModel: agentModel || '',
+          sessionMode: sessionMode
+        });
+      } else {
+        sessions.push({
+          name: fullName,
+          attached: parseInt(attached, 10) > 0,
+          created: new Date(parseInt(created) * 1000).toLocaleString(),
+          path: sessionPath || '',
+          workspaceName: workspaceName || '',
+          agentType: agentType || '',
+          agentModel: agentModel || '',
+          sessionMode: sessionMode
+        });
+      }
+    }
+    res.json(sessions);
+  }, req.user.username);
+});
+
+// Create session
+router.post('/sessions', requireAuth, async (req, res) => {
+  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode, deviceId } = req.body;
+  const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
+
+  if (deviceId && deviceId !== 'cloud') {
+    const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (agent && agent !== 'default' ? agent : 'shell');
+    try {
+      const result = await deviceService.remoteTmuxNewSession(deviceId, {
+        sessionName: rawName,
+        workspace: workspacePath || '~',
+        workspaceName: workspaceName || '',
+        sessionMode: targetMode,
+        agentType: agent || 'default',
+        agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || modelName || '',
+        modelName: modelName || ''
+      });
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      const createdName = result?.sessionName || rawName;
+      return res.json({ success: true, session: createdName, name: createdName });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+  
+  // Validate allowed agents
+  const settings = db.getSettings();
+  const allowedAgents = settings.enabledAgents || ['default', 'agy', 'claude', 'codex', 'kimi'];
+  const reqAgent = agent || 'default';
+  if (!allowedAgents.includes(reqAgent)) {
+    return res.status(403).json({ error: `智能体环境 '${reqAgent}' 已被禁用。` });
+  }
+
+  // Determine initial session name, defaulting based on agent if missing
+  let rawName = (typeof name === 'string') ? name.trim() : '';
+  if (!rawName) {
+    rawName = reqAgent === 'default' ? 'shell' : reqAgent;
+  }
+
+  if (!/^[a-zA-Z0-9_-]+$/.test(rawName)) {
+    return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
+  }
+
+  const username = req.user ? req.user.username : null;
+  const existingNames = await getUserSessionNames(username);
+  let finalName = getNextAvailableSessionName(rawName, existingNames);
+
+  let resolvedWorkspacePath = workspacePath;
+  if (workspaceName && !resolvedWorkspacePath) {
+    const workspaces = readWorkspaces(req.user.username);
+    const ws = workspaces.find(w => w.name.toLowerCase() === workspaceName.toLowerCase());
+    if (ws) {
+      resolvedWorkspacePath = ws.path;
+    }
+  }
+
+  if (!resolvedWorkspacePath) {
+    resolvedWorkspacePath = getDefaultWorkspacePath(req.user ? req.user.username : null);
+  }
+
+  // resolvedPath is the validated absolute path on disk for this session
+  let resolvedPath = null;
+  if (resolvedWorkspacePath) {
+    resolvedPath = resolveWorkspacePath(resolvedWorkspacePath, req.user.username);
+    if (!fs.existsSync(resolvedPath)) {
+      try {
+        fs.mkdirSync(resolvedPath, { recursive: true });
+      } catch (mkdirErr) {
+        return res.status(500).json({ error: 'Failed to create workspace directory', details: mkdirErr.message });
+      }
+    }
+    
+    // Inject local hooks for the target agent — use the already-resolved path
+    injectAgentHooks(resolvedPath, agent, (p) => resolveWorkspacePath(p, req.user.username));
+  }
+
+  // userHome: the $HOME directory set for the session shell.
+  // In multi-user mode each user gets user_data/[username]/home with
+  // read-only symlinks to agent config dirs from sysHome — so agents
+  // find their API keys without exposing config files in the workspace browser.
+  const userHome = getUserHomeDir(req.user ? req.user.username : null);
+  const sysHome = getHomeDir(); // always the system user's home (for finding binaries)
+  const binDir = path.resolve(PROJECT_ROOT, 'bin');
+  const nodeBinDir = path.dirname(process.execPath);
+
+  // Shell prefix: cd into workspace and set HOME so agents write config into the right place.
+  // In single-user mode HOME is already correct; in multi-user mode we point HOME at user sandbox.
+  // Use shellescape to prevent command injection via workspace path.
+  const workDir = resolvedPath || userHome;
+  ensureClaudeSettings(userHome);
+  if (workDir && workDir !== userHome) {
+    ensureClaudeSettings(workDir);
+  }
+  ensureCodexConfig(userHome);
+  ensureInputrc(userHome);
+  ensureBashrc(userHome);
+  ensureClaudeTrust([workDir, userHome, PROJECT_ROOT], userHome);
+  let envPrefix = `cd ${shellescape(workDir)} && export HOME=${shellescape(userHome)} && export PATH=${shellescape(binDir)}:${shellescape(nodeBinDir)}:$PATH`;
+
+  const isClaudeOAuthGlobal = !!settings.claudeOAuthMode;
+  const isSessionClaudeOAuth = (modelProvider === 'oauth') || (isClaudeOAuthGlobal && (!modelProvider || modelProvider === 'default'));
+
+  // Inject system default fallback keys & LLM gateway dynamically, then source user's private .api_keys
+  const { getSystemDefaultKeys } = require('../services/fileService');
+  const defaultKeys = getSystemDefaultKeys();
+  const shellescapeVal = (val) => "'" + String(val).replace(/'/g, "'\\''") + "'";
+  
+  let fallbackExports = [];
+  const defaultCodexKey = defaultKeys.codex || defaultKeys.claude;
+  if (defaultCodexKey) {
+    fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(defaultCodexKey)}`);
+  }
+  if (defaultKeys.codexBaseUrl) {
+    fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
+    fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(defaultKeys.codexBaseUrl)}`);
+  }
+  if (defaultKeys.codexModel) {
+    fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+    fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultKeys.codexModel)}`);
+  }
+
+  if (isClaudeOAuthGlobal) {
+    fallbackExports.push(`unset ANTHROPIC_BASE_URL`);
+    fallbackExports.push(`unset ANTHROPIC_API_KEY`);
+    fallbackExports.push(`unset ANTHROPIC_AUTH_TOKEN`);
+    fallbackExports.push(`unset ANTHROPIC_MODEL`);
+  } else {
+    if (defaultKeys.claude) {
+      fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(defaultKeys.claude)}`);
+    }
+    if (defaultKeys.claudeBaseUrl) {
+      fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(defaultKeys.claudeBaseUrl)}`);
+    }
+    if (defaultKeys.claudeModel) {
+      fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultKeys.claudeModel)}`);
+    }
+  }
+
+  // 127 LLM Gateway baseline injection (fallback for Claude & general shells)
+  try {
+    const llmGatewayService = require('../services/llmGatewayService');
+    const gwConfig = llmGatewayService.loadConfig();
+    if (gwConfig && gwConfig.enabled && gwConfig.injectToTerminal) {
+      const { PORT } = require('../config');
+      const localPort = PORT || 3000;
+      const vKey = gwConfig.virtualKey || 'sk-deck-local';
+      const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
+      const defaultAnthropicModel = gwConfig.defaults?.anthropicModel || 'glm-5.3-flash';
+      const defaultOpenAiModel = gwConfig.defaults?.openaiModel || 'glm-5.3-flash';
+
+      if (!isClaudeOAuthGlobal) {
+        fallbackExports.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(gwUrl)}`);
+        fallbackExports.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
+        fallbackExports.push(`export ANTHROPIC_MODEL=${shellescapeVal(defaultAnthropicModel)}`);
+        fallbackExports.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
+      }
+
+      if (!defaultCodexKey) {
+        fallbackExports.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1')}`);
+        fallbackExports.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1')}`);
+        fallbackExports.push(`export OPENAI_API_KEY=${shellescapeVal(vKey)}`);
+        fallbackExports.push(`export OPENAI_MODEL=${shellescapeVal(defaultOpenAiModel)}`);
+        fallbackExports.push(`export CODEX_MODEL=${shellescapeVal(defaultOpenAiModel)}`);
+      }
+    }
+  } catch (gwErr) {}
+  
+  if (fallbackExports.length > 0) {
+    envPrefix += ` && ${fallbackExports.join(' && ')}`;
+  }
+  envPrefix += ` && [ -f ${shellescape(userHome)}/.api_keys ] && . ${shellescape(userHome)}/.api_keys || true`;
+
+  // Explicit per-session model / provider selection override (HIGHEST PRIORITY)
+  // When user selects a specific provider/model at session creation, this must override
+  // any static configuration from ~/.api_keys.
+  let sessionOverrides = [];
+  if (isSessionClaudeOAuth) {
+    sessionOverrides.push(`unset ANTHROPIC_BASE_URL`);
+    sessionOverrides.push(`unset ANTHROPIC_API_KEY`);
+    sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
+    sessionOverrides.push(`unset ANTHROPIC_MODEL`);
+  } else if (modelProvider && modelProvider !== 'default') {
+    const { PORT } = require('../config');
+    const localPort = PORT || 3000;
+    const gwUrl = (localPort === 80 || localPort === '80') ? 'http://127.0.0.1' : `http://127.0.0.1:${localPort}`;
+    let vKey = 'sk-deck-local';
+    let defaultAnthropicModel = 'glm-5.3-flash';
+    try {
+      const llmGatewayService = require('../services/llmGatewayService');
+      const gwConfig = llmGatewayService.loadConfig();
+      if (gwConfig && gwConfig.virtualKey) vKey = gwConfig.virtualKey;
+      if (gwConfig && gwConfig.defaults?.anthropicModel) defaultAnthropicModel = gwConfig.defaults.anthropicModel;
+    } catch (e) {}
+
+    if (agent === 'claude') {
+      const targetUrl = modelProvider === 'gateway_default' ? gwUrl : (gwUrl + '/v1/' + modelProvider);
+      sessionOverrides.push(`export ANTHROPIC_BASE_URL=${shellescapeVal(targetUrl)}`);
+      sessionOverrides.push(`export ANTHROPIC_API_KEY=${shellescapeVal(vKey)}`);
+      sessionOverrides.push(`unset ANTHROPIC_AUTH_TOKEN`);
+      sessionOverrides.push(`export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`);
+      const targetModel = modelName || defaultAnthropicModel;
+      if (targetModel) {
+        sessionOverrides.push(`export ANTHROPIC_MODEL=${shellescapeVal(targetModel)}`);
+      }
+    } else if (agent === 'codex') {
+      sessionOverrides.push(`export OPENAI_BASE_URL=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      sessionOverrides.push(`export OPENAI_API_BASE=${shellescapeVal(gwUrl + '/v1/' + modelProvider)}`);
+      sessionOverrides.push(`export OPENAI_API_KEY=${shellescapeVal(vKey)}`);
+      if (modelName) {
+        sessionOverrides.push(`export OPENAI_MODEL=${shellescapeVal(modelName)}`);
+        sessionOverrides.push(`export CODEX_MODEL=${shellescapeVal(modelName)}`);
+      }
+    }
+  }
+
+  if (sessionOverrides.length > 0) {
+    envPrefix += ` && ${sessionOverrides.join(' && ')}`;
+  }
+
+  const getAgentPath = (agentName) => {
+    const localPath = path.join(path.dirname(process.execPath), agentName);
+    if (fs.existsSync(localPath)) return localPath;
+    for (const p of [`${sysHome}/.local/bin/${agentName}`, `/usr/local/bin/${agentName}`, `/usr/bin/${agentName}`]) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  };
+
+  let shellCmd = 'exec bash';
+  let agentSessionId = null;
+  if (targetMode === 'chat_only') {
+    shellCmd = `echo -e "\\033[1;36m[OAR Pure Chat Session]\\033[0m\\n此会话由 Open Agent Runtime 规范直接驱动（纯会话模式）。\\n所有消息收发与推理已由 OAR 接口接管，无需终端物理按键输入。\\n保持后台运行中..."; exec sleep infinity`;
+  } else if (agent === 'agy') {
+    const agyPath = getAgentPath('agy');
+    const finalAgy = agyPath || 'agy';
+    shellCmd = `${finalAgy} --dangerously-skip-permissions; exec bash`;
+  } else if (agent === 'claude') {
+    const claudePath = getAgentPath('claude');
+    agentSessionId = crypto.randomUUID();
+    const claudePreCmd = isSessionClaudeOAuth
+      ? `unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL`
+      : `unset ANTHROPIC_AUTH_TOKEN && export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`;
+    shellCmd = claudePath ? `${claudePreCmd} && ${claudePath} --session-id ${agentSessionId} --permission-mode auto; exec bash` : 'exec bash';
+  } else if (agent === 'codex') {
+    const codexPath = getAgentPath('codex');
+    shellCmd = codexPath ? `${codexPath} -c check_for_update=false -c update_on_startup=false; exec bash` : 'exec bash';
+  } else if (agent === 'kimi') {
+    let kimiPath = null;
+    for (const p of [`${userHome}/.kimi-code/bin/kimi`, `${sysHome}/.kimi-code/bin/kimi`, '/usr/local/bin/kimi', '/usr/bin/kimi']) {
+      if (fs.existsSync(p)) { kimiPath = p; break; }
+    }
+    shellCmd = kimiPath ? `${kimiPath}; exec bash` : 'exec bash';
+  }
+
+  const runCreation = (sessionNameToCreate, retriesLeft = 3) => {
+    let physicalSession = sessionNameToCreate;
+    if (MULTI_USER_ENABLED) {
+      physicalSession = `u_${req.user.username}_${sessionNameToCreate}`;
+    }
+
+    const args = ['new-session', '-d', '-s', physicalSession];
+    if (resolvedPath) {
+      args.push('-c', resolvedPath);
+    }
+    args.push(`${envPrefix}; ${shellCmd}`);
+
+    execTmux(args, async (err, stdout, stderr) => {
+      if (err) {
+        if ((stderr || '').toLowerCase().includes('duplicate session') && retriesLeft > 0) {
+          const freshNames = await getUserSessionNames(username);
+          const nextAttemptName = getNextAvailableSessionName(sessionNameToCreate, freshNames);
+          return runCreation(nextAttemptName, retriesLeft - 1);
+        }
+        return res.status(500).json({ error: 'Failed to create session', details: stderr });
+      }
+
+      const optionsToSet = [
+        ['set-option', '-t', physicalSession, 'status', 'off'],
+        ['set-option', '-t', physicalSession, 'mouse', 'on'],
+        ['set-option', '-t', physicalSession, '@session_mode', targetMode]
+      ];
+      if (workspaceName) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@workspace_name', workspaceName]);
+      }
+      if (agent) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_type', agent]);
+      }
+      if (agentSessionId) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_session_id', agentSessionId]);
+      }
+      const finalModelTag = modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '');
+      if (finalModelTag) {
+        optionsToSet.push(['set-option', '-t', physicalSession, '@agent_model', finalModelTag]);
+      }
+
+      let chain = Promise.resolve();
+      optionsToSet.forEach(optArgs => {
+        chain = chain.then(() => new Promise((resolve) => {
+          execTmux(optArgs, (optErr) => {
+            if (optErr) {
+              console.error(`Failed to set tmux option ${optArgs.join(' ')}:`, optErr);
+            }
+            resolve();
+          }, req.user.username);
+        }));
+      });
+
+      chain.then(async () => {
+        try {
+          const oarService = require('../services/oarService');
+          oarService.deleteOarSession(req.user ? req.user.username : null, sessionNameToCreate);
+        } catch (e) {}
+
+        if (targetMode === 'chat_only') {
+          try {
+            const oarService = require('../services/oarService');
+            await oarService.getOrCreateSession(req.user ? req.user.username : null, sessionNameToCreate, {
+              agentType: agent,
+              workspacePath: resolvedPath,
+              model: finalModelTag
+            });
+          } catch (e) {
+            console.error('[OAR] Error initializing pure chat session:', e);
+          }
+        }
+        res.json({
+          success: true,
+          name: sessionNameToCreate,
+          originalName: rawName,
+          renamed: sessionNameToCreate !== rawName,
+          sessionMode: targetMode
+        });
+      });
+    }, req.user.username);
+  };
+
+  runCreation(finalName);
+});
+
+// Kill session
+router.delete('/sessions/:name', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const targetDeviceId = req.query.deviceId;
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteTmuxKillSession(targetDeviceId, name);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+    return res.status(400).json({ error: 'Invalid session name. Use alphanumeric characters, underscores, or dashes.' });
+  }
+  let physicalSession = name;
+  if (MULTI_USER_ENABLED) {
+    physicalSession = `u_${req.user.username}_${name}`;
+  }
+  execTmux(['kill-session', '-t', physicalSession], (err, stdout, stderr) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to kill session', details: stderr });
+    }
+    try {
+      const oarService = require('../services/oarService');
+      oarService.deleteOarSession(req.user ? req.user.username : null, name);
+    } catch (e) {}
+    res.json({ success: true });
+  }, req.user.username);
+});
+
+// Workspaces Endpoints
+router.get('/workspaces', requireAuth, async (req, res) => {
+  const deviceId = req.query.deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsWorkspaces(deviceId);
+      if (result && result.workspaces && result.workspaces.length > 0) {
+        return res.json(result.workspaces);
+      }
+      return res.json([{ name: 'Remote Home (~)', path: '~', isDefault: true }]);
+    } catch (e) {
+      return res.json([{ name: 'Remote Home (~)', path: '~', isDefault: true }]);
+    }
+  }
+  res.json(readWorkspaces(req.user.username));
+});
+
+router.post('/workspaces', requireAuth, async (req, res) => {
+  const { name, path: wsPath, deviceId } = req.body;
+  const targetDeviceId = deviceId || req.query.deviceId;
+  if (!name) {
+    return res.status(400).json({ error: 'Workspace name is required.' });
+  }
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    const dev = deviceService.getDeviceById(targetDeviceId);
+    if (!dev || dev.userId !== req.user.username) {
+      return res.status(404).json({ error: 'Device not found or not owned by you' });
+    }
+    try {
+      const result = await deviceService.remoteFsAddWorkspace(targetDeviceId, name, wsPath);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true, workspace: result.workspace });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  let resolvedPath;
+  if (MULTI_USER_ENABLED && req.user.username) {
+    // In multi-user mode, path is treated as a relative sub-directory name under the user's sandbox by default.
+    // If omitted, default to using the workspace name as the directory name.
+    const subDir = (wsPath && wsPath.trim()) ? wsPath.trim() : name.trim();
+    resolvedPath = resolveWorkspacePath(subDir, req.user.username);
+  } else {
+    if (!wsPath) {
+      return res.status(400).json({ error: 'Path is required.' });
+    }
+    resolvedPath = resolveWorkspacePath(wsPath, req.user.username);
+  }
+
+  if (!fs.existsSync(resolvedPath)) {
+    try {
+      fs.mkdirSync(resolvedPath, { recursive: true });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to create workspace directory on disk', details: err.message });
+    }
+  }
+
+  const workspaces = readWorkspaces(req.user.username);
+  const exists = workspaces.find(w => w.name.toLowerCase() === name.toLowerCase() || resolveWorkspacePath(w.path, req.user.username) === resolvedPath);
+  if (exists) {
+    return res.status(400).json({ error: 'Workspace with this name or path already exists.' });
+  }
+
+  workspaces.push({ name, path: resolvedPath });
+  writeWorkspaces(workspaces, req.user.username);
+  res.json({ success: true, workspace: { name, path: resolvedPath } });
+});
+
+router.delete('/workspaces/:name', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const targetDeviceId = req.query.deviceId || (req.body && req.body.deviceId);
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    const dev = deviceService.getDeviceById(targetDeviceId);
+    if (!dev || dev.userId !== req.user.username) {
+      return res.status(404).json({ error: 'Device not found or not owned by you' });
+    }
+    try {
+      const result = await deviceService.remoteFsRemoveWorkspace(targetDeviceId, name);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+  const workspaces = readWorkspaces(req.user.username);
+  const filtered = workspaces.filter(w => w.name.toLowerCase() !== name.toLowerCase());
+  if (filtered.length === workspaces.length) {
+    return res.status(404).json({ error: 'Workspace not found.' });
+  }
+  writeWorkspaces(filtered, req.user.username);
+  res.json({ success: true });
+});
+
+// API: Get workspace project progression data
+router.get('/workspaces/:name/project-progress', requireAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    const progress = await projectService.getProjectProgress(name, req.user.username);
+    res.json(progress);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch project progress' });
+  }
+});
+
+// API: Update workspace project mission
+router.post('/workspaces/:name/project-mission', requireAuth, (req, res) => {
+  try {
+    const { name } = req.params;
+    const { mission, clearTasks } = req.body;
+    const workspaces = readWorkspaces(req.user.username);
+    const matchedWs = workspaces.find(w => 
+      (w.name && w.name.toLowerCase() === name.toLowerCase()) ||
+      (w.path && (w.path === name || resolveWorkspacePath(w.path, req.user.username) === path.resolve(name)))
+    );
+    let wsPath;
+    if (matchedWs) {
+      wsPath = resolveWorkspacePath(matchedWs.path, req.user.username);
+    } else {
+      const candidate = resolveWorkspacePath(name, req.user.username);
+      if (candidate && fs.existsSync(candidate)) {
+        wsPath = candidate;
+      } else {
+        return res.status(404).json({ error: `Workspace "${name}" not found` });
+      }
+    }
+    const updated = projectService.writeProjectMetadata(wsPath, mission, { clearTasks: !!clearTasks });
+    res.json({ success: true, mission: updated.mission, updatedAt: updated.updatedAt, tasksCleared: !!clearTasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update project mission' });
+  }
+});
+
+// API: Update workspace project tasks list (Roadmap / Kanban)
+router.post('/workspaces/:name/project-tasks', requireAuth, (req, res) => {
+  try {
+    const { name } = req.params;
+    const { tasks, mission } = req.body;
+    const workspaces = readWorkspaces(req.user.username);
+    const matchedWs = workspaces.find(w => 
+      (w.name && w.name.toLowerCase() === name.toLowerCase()) ||
+      (w.path && (w.path === name || resolveWorkspacePath(w.path, req.user.username) === path.resolve(name)))
+    );
+    let wsPath;
+    if (matchedWs) {
+      wsPath = resolveWorkspacePath(matchedWs.path, req.user.username);
+    } else {
+      const candidate = resolveWorkspacePath(name, req.user.username);
+      if (candidate && fs.existsSync(candidate)) {
+        wsPath = candidate;
+      } else {
+        return res.status(404).json({ error: `Workspace "${name}" not found` });
+      }
+    }
+    const updated = projectService.writeProjectTasks(wsPath, tasks, mission !== undefined ? mission : null);
+    res.json({ success: true, tasks: updated.tasks, mission: updated.mission, updatedAt: updated.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update project tasks' });
+  }
+});
+
+// API: Dispatch task / prompt directly to an agent session in this workspace
+router.post('/workspaces/:name/dispatch-task', requireAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { sessionName, promptText, clearHistory } = req.body;
+    if (!sessionName || !promptText) {
+      return res.status(400).json({ error: 'Session name and promptText are required' });
+    }
+    const result = await projectService.dispatchTask(name, sessionName, promptText, req.user.username, { clearHistory: !!clearHistory });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to dispatch task' });
+  }
+});
+
+// API: Global / Filtered Task Board (Session-as-Task Kanban View)
+router.get('/task-board', requireAuth, async (req, res) => {
+  try {
+    const workspace = req.query.workspace || '';
+    const targetDeviceId = req.query.deviceId || 'cloud';
+    let remoteSessions = null;
+
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      try {
+        remoteSessions = await deviceService.getRemoteSessions(targetDeviceId);
+      } catch (e) {
+        remoteSessions = [];
+      }
+    }
+
+    const board = await projectService.getGlobalTaskBoard(req.user.username, {
+      workspace,
+      deviceId: targetDeviceId,
+      remoteSessions
+    });
+    res.json(board);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to load task board' });
+  }
+});
+
+// API: Create or update a backlog Todo card on the Task Board
+router.post('/task-board/todos', requireAuth, (req, res) => {
+  try {
+    const { id, title, description, workspaceName, workspacePath, agentType, priority } = req.body || {};
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: '任务标题不能为空' });
+    }
+    const result = projectService.upsertTodoItem(req.user.username, {
+      id,
+      title: String(title).trim(),
+      description: String(description || '').trim(),
+      workspaceName: String(workspaceName || '').trim(),
+      workspacePath: String(workspacePath || '').trim(),
+      agentType: String(agentType || 'agy').trim(),
+      priority: ['high', 'medium', 'low'].includes(priority) ? priority : 'medium'
+    });
+    res.json({ success: true, todo: result.todo, todos: result.todos });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to save todo item' });
+  }
+});
+
+// API: Delete a backlog Todo card
+router.delete('/task-board/todos/:id', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    const todos = projectService.deleteTodoItem(req.user.username, id);
+    res.json({ success: true, todos });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to delete todo item' });
+  }
+});
+
+// API: Update custom metadata (e.g. customTitle) for a session card
+router.post('/task-board/card-meta', requireAuth, (req, res) => {
+  try {
+    const { sessionName, customTitle } = req.body || {};
+    if (!sessionName || !String(sessionName).trim()) {
+      return res.status(400).json({ error: 'sessionName is required' });
+    }
+    const meta = projectService.updateCardMeta(req.user.username, String(sessionName).trim(), {
+      customTitle: customTitle !== undefined ? String(customTitle).trim() : undefined
+    });
+    res.json({ success: true, meta });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update card metadata' });
+  }
+});
+
+// API: Quick dispatch instruction directly to a session card
+router.post('/task-board/dispatch', requireAuth, async (req, res) => {
+  try {
+    const { sessionName, promptText, clearHistory } = req.body || {};
+    if (!sessionName || !promptText || !String(promptText).trim()) {
+      return res.status(400).json({ error: 'sessionName and promptText are required' });
+    }
+    const result = await projectService.dispatchTask('', sessionName, promptText, req.user.username, {
+      clearHistory: !!clearHistory
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to dispatch to session' });
+  }
+});
+
+// List subdirectories only (for workspace directory picker)
+router.get('/directories', requireAuth, async (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteDirectories(targetDeviceId, req.query.path);
+      if (result && result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({
+        currentPath: result.currentPath || req.query.path,
+        directories: result.directories || []
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  try {
+    const rawPath = req.query.path || '~';
+    const targetDir = resolveWorkspacePath(rawPath, req.user.username);
+    
+    if (!fs.existsSync(targetDir)) {
+      return res.status(404).json({ error: 'Directory not found' });
+    }
+    
+    const stat = fs.statSync(targetDir);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Not a directory' });
+    }
+
+    const items = fs.readdirSync(targetDir, { withFileTypes: true });
+    
+    const result = items
+      .filter(item => {
+        if (!item.isDirectory()) return false;
+        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude' && item.name !== '.codex';
+      })
+      .map(item => {
+        const itemPath = path.join(targetDir, item.name);
+        return {
+          name: item.name,
+          path: itemPath
+        };
+      });
+      
+    result.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    
+    const baseLimit = (MULTI_USER_ENABLED && req.user.username !== 'admin') ? getUserWorkspaceRoot(req.user.username) : '/';
+    res.json({
+      currentPath: targetDir,
+      parentPath: targetDir === baseLimit ? null : path.dirname(targetDir),
+      directories: result
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List files/folders in a path
+router.get('/files/list', requireAuth, async (req, res) => {
+  const deviceId = req.query.deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsList(deviceId, req.query.workspacePath, req.query.path);
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json(result.items || []);
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  try {
+    const workspacePath = req.query.workspacePath || '';
+    const relativePath = req.query.path || '';
+    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
+    const targetDir = safeResolve(workspacePath, relativePath, req.user.username);
+    
+    if (!fs.existsSync(targetDir)) {
+      return res.status(404).json({ error: 'Directory not found' });
+    }
+    
+    const stat = fs.statSync(targetDir);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Not a directory' });
+    }
+
+    const items = fs.readdirSync(targetDir, { withFileTypes: true });
+    
+    const result = items
+      .filter(item => {
+        return item.name !== '.git' && item.name !== 'node_modules' && item.name !== '.claude' && item.name !== '.codex';
+      })
+      .map(item => {
+        const itemPath = path.join(targetDir, item.name);
+        const relPath = path.relative(rootDir, itemPath);
+        let size = null;
+        try {
+          const itemStat = fs.statSync(itemPath);
+          size = itemStat.isFile() ? itemStat.size : null;
+        } catch (e) {
+          // ignore
+        }
+        return {
+          name: item.name,
+          path: relPath,
+          isDir: item.isDirectory(),
+          size
+        };
+      });
+      
+    result.sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Read file contents
+router.get('/files/content', requireAuth, async (req, res) => {
+  const deviceId = req.query.deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsRead(deviceId, req.query.workspacePath, req.query.path);
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({
+        path: result.path || req.query.path,
+        content: result.content,
+        size: result.size
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  try {
+    const workspacePath = req.query.workspacePath || '';
+    const relativePath = req.query.path;
+    if (!relativePath) {
+      return res.status(400).json({ error: 'Path is required' });
+    }
+    const targetPath = safeResolve(workspacePath, relativePath, req.user.username);
+    
+    if (!fs.existsSync(targetPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    const stat = fs.statSync(targetPath);
+    if (!stat.isFile()) {
+      return res.status(400).json({ error: 'Not a file' });
+    }
+    
+    if (stat.size > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: 'File is too large (max 2MB for browser editing)' });
+    }
+    
+    const content = fs.readFileSync(targetPath, 'utf8');
+    res.json({
+      path: relativePath,
+      content,
+      size: stat.size
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save file contents
+router.post('/files/save', requireAuth, async (req, res) => {
+  const { workspacePath, filePath, content, deviceId } = req.body;
+  if (deviceId && deviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteFsWrite(deviceId, workspacePath, filePath, content);
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  try {
+    if (!filePath) {
+      return res.status(400).json({ error: 'filePath is required' });
+    }
+    
+    const targetPath = safeResolve(workspacePath, filePath, req.user.username);
+    const parentDir = path.dirname(targetPath);
+    if (!fs.existsSync(parentDir)) {
+      return res.status(400).json({ error: 'Parent directory does not exist' });
+    }
+    
+    if (fs.existsSync(targetPath)) {
+      const stat = fs.statSync(targetPath);
+      if (!stat.isFile()) {
+        return res.status(400).json({ error: 'Target path is not a file' });
+      }
+    }
+    
+    fs.writeFileSync(targetPath, content || '', 'utf8');
+    chownToSudoUser(targetPath);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload files (supports images, markdown, text, code, etc.)
+router.post('/files/upload', requireAuth, (req, res) => {
+  fileUpload.array('files', 20)(req, res, async (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: '上传失败：单次最多同时上传 20 个文件' });
+      }
+      return res.status(400).json({ error: `上传失败: ${err.message}` });
+    }
+
+    try {
+      const workspacePath = req.body.workspacePath || '';
+      const deviceId = req.body.deviceId || req.query.deviceId;
+
+      // Handle remote edge device file upload via device RPC tunnel
+      if (deviceId && deviceId !== 'cloud') {
+        if (!req.files || req.files.length === 0) {
+          return res.status(400).json({ error: '未选择任何待上传文件' });
+        }
+        const uploadedFiles = [];
+        for (const file of req.files) {
+          const originalName = file.originalname || 'uploaded_file';
+          const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim();
+          if (!cleanName || cleanName === '.' || cleanName === '..') {
+            continue;
+          }
+          const uploadRes = await deviceService.remoteUploadFile(
+            deviceId,
+            workspacePath,
+            cleanName,
+            file.buffer.toString('base64')
+          );
+          if (uploadRes && !uploadRes.error) {
+            uploadedFiles.push({
+              name: cleanName,
+              path: cleanName,
+              size: file.size
+            });
+          }
+        }
+        return res.json({
+          success: true,
+          message: `成功上传 ${uploadedFiles.length} 个文件至远程设备`,
+          files: uploadedFiles
+        });
+      }
+
+      const targetDirRel = req.body.targetDir || '';
+      const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
+      
+      const targetDir = safeResolve(workspacePath, targetDirRel, req.user.username);
+      if (!fs.existsSync(targetDir)) {
+        return res.status(404).json({ error: '目标目录不存在' });
+      }
+      const dirStat = fs.statSync(targetDir);
+      if (!dirStat.isDirectory()) {
+        return res.status(400).json({ error: '目标路径不是目录' });
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: '未选择任何待上传文件' });
+      }
+
+      const uploadedFiles = [];
+      for (const file of req.files) {
+        // Sanitize file name to prevent directory traversal
+        const originalName = file.originalname || 'uploaded_file';
+        const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim();
+        if (!cleanName || cleanName === '.' || cleanName === '..') {
+          continue;
+        }
+
+        const relativeFilePath = path.join(targetDirRel, cleanName);
+        const destPath = safeResolve(workspacePath, relativeFilePath, req.user.username);
+
+        fs.writeFileSync(destPath, file.buffer);
+        chownToSudoUser(destPath);
+
+        uploadedFiles.push({
+          name: cleanName,
+          path: path.relative(rootDir, destPath),
+          size: file.size
+        });
+      }
+
+      res.json({
+        success: true,
+        message: `成功上传 ${uploadedFiles.length} 个文件`,
+        files: uploadedFiles
+      });
+    } catch (uploadErr) {
+      console.error('[API] File upload error:', uploadErr);
+      res.status(500).json({ error: uploadErr.message });
+    }
+  });
+});
+
+// Store temporary share links in memory
+// Format: token => { workspacePath, relFileName, expiresAt, createdBy }
+const tempShareLinks = new Map();
+
+// Helper to clean up expired links periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, share] of tempShareLinks.entries()) {
+    if (now > share.expiresAt) {
+      tempShareLinks.delete(token);
+    }
+  }
+}, 5 * 60 * 1000); // Clean every 5 minutes
+
+// API: Create a secure, temporary share link for an HTML preview (requires authentication)
+router.post('/share/create', requireAuth, (req, res) => {
+  try {
+    const { workspacePath, filePath, durationHours } = req.body;
+    
+    if (!filePath || !workspacePath) {
+      return res.status(400).json({ error: 'filePath 和 workspacePath 不能为空' });
+    }
+
+    const duration = parseFloat(durationHours);
+    if (isNaN(duration) || duration < 0.1 || duration > 168) {
+      return res.status(400).json({ error: '无效的分享时长，范围必须在 0.1 到 168 小时之间' });
+    }
+
+    // Security: Validate file path and ownership before creating the link
+    const absolutePath = safeResolve(workspacePath, filePath, req.user.username);
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
+      return res.status(400).json({ error: '文件不存在，无法生成分享链接' });
+    }
+
+    // DoS Prevention: Check limit of active sharing links in memory
+    if (tempShareLinks.size >= 500) {
+      // Proactive prune
+      const now = Date.now();
+      for (const [t, s] of tempShareLinks.entries()) {
+        if (now > s.expiresAt) tempShareLinks.delete(t);
+      }
+      if (tempShareLinks.size >= 500) {
+        return res.status(429).json({ error: '系统当前分享链接数量过多，请稍后再试' });
+      }
+    }
+
+    // Generate high-entropy secure token (64-char hex)
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = Date.now() + duration * 60 * 60 * 1000;
+
+    tempShareLinks.set(token, {
+      workspacePath,
+      relFileName: filePath,
+      expiresAt,
+      createdBy: req.user.username
+    });
+
+    const filename = path.basename(filePath);
+    res.json({
+      success: true,
+      token,
+      expiresAt,
+      filename,
+      sharePath: `/api/public-preview/${token}/${encodeURIComponent(filename)}`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Route: Public preview of HTML files and their sub-resources (No authentication required)
+// Security features:
+// - Verifies token validity and expiration.
+// - Restricts access strictly to files in the parent directory of the shared HTML file.
+// - Sanitizes paths defensively.
+// - Disables caching for the shared dynamic page content.
+router.get(/^\/public-preview\/([^/]+)(?:\/(.*))?$/, (req, res) => {
+  try {
+    const token = req.params[0];
+    let subPath = req.params[1] || '';
+    
+    try { subPath = decodeURIComponent(subPath); } catch (e) { /* already decoded */ }
+
+    const share = tempShareLinks.get(token);
+    if (!share) {
+      return res.status(404).send('分享页面不存在或已失效。');
+    }
+
+    if (Date.now() > share.expiresAt) {
+      tempShareLinks.delete(token); // Prune immediately on access
+      return res.status(410).send('分享链接已过期。');
+    }
+
+    const relParentDir = path.dirname(share.relFileName);
+    const targetRelPath = subPath ? path.join(relParentDir, subPath) : share.relFileName;
+
+    // Security check: Ensure requested subPath does not traverse out of the shared HTML's directory
+    const relDiff = path.relative(relParentDir, targetRelPath);
+    const isSubPathSafe = relDiff === '' || (!relDiff.startsWith('..') && !path.isAbsolute(relDiff));
+    if (!isSubPathSafe) {
+      return res.status(403).send('无权访问此共享范围之外的路径。');
+    }
+
+    // Resolve the path on disk using standard safeResolve validation rules
+    let targetPath = safeResolve(share.workspacePath, targetRelPath, share.createdBy);
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
+      targetPath = path.join(targetPath, 'index.html');
+    }
+
+    if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+      return res.status(404).send('文件不存在。');
+    }
+
+    // Security: Set headers to disable downstream/CDN caching to ensure immediate revocation on expiry
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    res.sendFile(targetPath);
+  } catch (err) {
+    res.status(400).send(`发生错误: ${err.message}`);
+  }
+});
+
+// Serve workspace files for the HTML preview iframe.
+// The URL path mirrors the on-disk relative path, so relative references
+// (images, CSS, JS) inside a previewed HTML file resolve naturally.
+// :token is base64url(workspacePath), or '~' for the default workspace.
+// Regex route for Express 5 compatibility (string wildcards changed semantics).
+router.get(/^\/preview\/([^/]+)(?:\/(.*))?$/, requireAuth, (req, res) => {
+  try {
+    const token = req.params[0];
+    let relPath = req.params[1] || '';
+    // Decode defensively: Express versions differ on whether regex captures
+    // arrive decoded. decodeURIComponent is a no-op for plain names and throws
+    // on a bare '%', in which case the value was already decoded.
+    try { relPath = decodeURIComponent(relPath); } catch (e) { /* already decoded */ }
+
+    let workspacePath = '';
+    if (token !== '~') {
+      const b64 = token.replace(/-/g, '+').replace(/_/g, '/');
+      workspacePath = Buffer.from(b64, 'base64').toString('utf8');
+    }
+
+    let targetPath = safeResolve(workspacePath, relPath, req.user.username);
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
+      targetPath = path.join(targetPath, 'index.html');
+    }
+    if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    res.sendFile(targetPath);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Git status endpoint
+router.get('/git/status', requireAuth, async (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteGitStatus(targetDeviceId, req.query.workspacePath);
+      if (result && result.status) {
+        return res.json({ isGit: true, ...result.status });
+      }
+      return res.json({ isGit: false, files: [] });
+    } catch (e) {
+      return res.json({ isGit: false, files: [] });
+    }
+  }
+
+  try {
+    const workspacePath = req.query.workspacePath || '';
+    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
+    
+    if (!fs.existsSync(rootDir)) {
+      return res.status(404).json({ error: 'Workspace directory not found' });
+    }
+
+    execCommand('git', ['rev-parse', '--show-toplevel'], rootDir, (revErr, revStdout) => {
+      if (revErr || !revStdout || !revStdout.trim()) {
+        return res.json({ isGit: false, files: [] });
+      }
+      
+      const gitRoot = revStdout.trim();
+      
+      execCommand('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '-u', '--ignored', '--', '.'], rootDir, (err, stdout, stderr) => {
+        if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
+          return res.json({ isGit: false, files: [] });
+        }
+        if (err && err.code === 'ENOENT') {
+          return res.status(500).json({ error: 'Git is not installed on the system' });
+        }
+        
+        const files = [];
+        const lines = stdout.split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const code = line.substring(0, 2);
+          let filePath = line.substring(3).trim();
+          
+          let renameFrom = null;
+          if (code.startsWith('R') || code.endsWith('R')) {
+            const parts = filePath.split(' -> ');
+            if (parts.length === 2) {
+              renameFrom = parts[0];
+              filePath = parts[1];
+            }
+          }
+          
+          if (filePath.startsWith('"') && filePath.endsWith('"')) {
+            filePath = filePath.slice(1, -1);
+          }
+          if (renameFrom && renameFrom.startsWith('"') && renameFrom.endsWith('"')) {
+            renameFrom = renameFrom.slice(1, -1);
+          }
+          
+          // Map filePath (which git reports relative to gitRoot) to be relative to workspace rootDir
+          const fullPath = path.resolve(gitRoot, filePath);
+          const relToWorkspace = path.relative(rootDir, fullPath);
+          
+          // If the file is outside rootDir, skip it
+          if (relToWorkspace.startsWith('..') || path.isAbsolute(relToWorkspace)) {
+            continue;
+          }
+          
+          let relRenameFrom = null;
+          if (renameFrom) {
+            const fullRenamePath = path.resolve(gitRoot, renameFrom);
+            relRenameFrom = path.relative(rootDir, fullRenamePath);
+          }
+          
+          files.push({
+            path: relToWorkspace,
+            status: code.trim(),
+            index: code[0],
+            worktree: code[1],
+            renameFrom: relRenameFrom
+          });
+        }
+        
+        res.json({ isGit: true, files });
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Git diff endpoint
+router.get('/git/diff', requireAuth, async (req, res) => {
+  const targetDeviceId = req.query.deviceId;
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteGitDiff(targetDeviceId, req.query.workspacePath, req.query.path);
+      return res.json({ diff: result?.diff || '' });
+    } catch (e) {
+      return res.json({ diff: '' });
+    }
+  }
+
+  try {
+    const workspacePath = req.query.workspacePath || '';
+    const filePath = req.query.path || '';
+    const rootDir = workspacePath ? resolveWorkspacePath(workspacePath, req.user.username) : getDefaultWorkspacePath(req.user ? req.user.username : null);
+    
+    if (!fs.existsSync(rootDir)) {
+      return res.status(404).json({ error: 'Workspace directory not found' });
+    }
+
+    execCommand('git', ['rev-parse', '--show-toplevel'], rootDir, (revErr, revStdout) => {
+      if (revErr || !revStdout || !revStdout.trim()) {
+        return res.status(400).json({ error: 'Not a git repository' });
+      }
+      
+      if (filePath) {
+        const targetPath = safeResolve(workspacePath, filePath, req.user.username);
+        const relPath = path.relative(rootDir, targetPath);
+        
+        execCommand('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '--', relPath], rootDir, (statusErr, statusStdout) => {
+          const isUntracked = statusStdout && statusStdout.trim().startsWith('??');
+          
+          if (isUntracked) {
+            execCommand('git', ['diff', '--no-index', '--', '/dev/null', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
+              res.json({ diff: diffStdout || '' });
+            });
+          } else {
+            execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', 'HEAD', '--', relPath], rootDir, (diffErr, diffStdout, diffStderr) => {
+              if (diffErr && diffStderr && diffStderr.includes("ambiguous argument 'HEAD'")) {
+                return execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', '--', relPath], rootDir, (e2, out2) => {
+                  res.json({ diff: out2 || '' });
+                });
+              }
+              res.json({ diff: diffStdout || '' });
+            });
+          }
+        });
+      } else {
+        execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative', 'HEAD'], rootDir, (err, stdout, stderr) => {
+          if (err && (stderr.includes('not a git repository') || (err.message && err.message.includes('exit 128')))) {
+            return res.status(400).json({ error: 'Not a git repository' });
+          }
+          if (err && stderr && stderr.includes("ambiguous argument 'HEAD'")) {
+            return execCommand('git', ['-c', 'core.quotePath=false', 'diff', '--relative'], rootDir, (e2, out2) => {
+              res.json({ diff: out2 || '' });
+            });
+          }
+          res.json({ diff: stdout || '' });
+        });
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Express API endpoints for Web Push
+router.get('/push/key', requireAuth, (req, res) => {
+  res.json({ publicKey: getPublicKey() });
+});
+
+router.post('/push/register', requireAuth, (req, res) => {
+  const subscription = req.body;
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ error: 'Invalid subscription object' });
+  }
+  registerSubscription(subscription, req.user.username);
+  res.json({ success: true });
+});
+
+router.post('/push/unregister', requireAuth, (req, res) => {
+  const subscription = req.body;
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ error: 'Invalid subscription' });
+  }
+  unregisterSubscription(subscription, req.user.username);
+  res.json({ success: true });
+});
+
+router.post('/push/trigger', (req, res) => {
+  let isAuthorized = false;
+  
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const apiToken = authHeader.substring(7);
+    if (apiToken === PASSWORD) {
+      isAuthorized = true;
+    } else {
+      try {
+        jwt.verify(apiToken, JWT_SECRET);
+        isAuthorized = true;
+      } catch (err) {
+        // Token invalid
+      }
+    }
+  }
+  
+  const remoteAddress = req.socket.remoteAddress;
+  if (remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1') {
+    isAuthorized = true;
+  }
+  
+  if (!isAuthorized) {
+    const decoded = verifyToken(req);
+    if (decoded) {
+      isAuthorized = true;
+    }
+  }
+  
+  if (!isAuthorized) {
+    return res.status(401).json({ error: 'Unauthorized. Provide a valid Bearer token or trigger locally.' });
+  }
+
+  const { title, body, url, session } = req.body;
+  if (!title || !body) {
+    return res.status(400).json({ error: 'Title and body are required' });
+  }
+  
+  let targetSession = session;
+  if (!targetSession && url) {
+    const match = url.match(/[?&]session=([^&]+)/);
+    if (match) targetSession = match[1];
+  }
+  
+  let username = null;
+  const decoded = verifyToken(req);
+  if (decoded) {
+    username = decoded.username;
+  }
+
+  const io = req.app.get('io');
+  sendPushToAll(io, { title, body, url: url || '/', session: targetSession }, username);
+  res.json({ success: true });
+});
+
+// Store temporary scan-to-login tokens
+const tempLoginTokens = new Map();
+
+// API: Get server network IPs for mobile scanning
+router.get('/system/network-ips', requireAuth, (req, res) => {
+  try {
+    const os = require('os');
+    const networkInterfaces = os.networkInterfaces();
+    const ips = [];
+    for (const interfaceName of Object.keys(networkInterfaces)) {
+      for (const intf of networkInterfaces[interfaceName]) {
+        // Only return IPv4 and skip internal loopback addresses
+        if (intf.family === 'IPv4' && !intf.internal) {
+          ips.push({
+            name: interfaceName,
+            address: intf.address
+          });
+        }
+      }
+    }
+    res.json({ success: true, ips });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve network interfaces', details: err.message });
+  }
+});
+
+// API: Generate short-lived temp token for mobile login
+router.post('/system/temp-login-token', requireAuth, (req, res) => {
+  try {
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(24).toString('hex');
+    const expiresIn = 60; // 60 seconds
+    const expiresAt = Date.now() + expiresIn * 1000;
+    
+    // Store in map with user info for multi-user mode
+    tempLoginTokens.set(token, {
+      expiresAt,
+      username: req.user.username,
+      role: req.user.role
+    });
+    
+    // Periodically clean up expired tokens to prevent leak
+    if (tempLoginTokens.size > 100) {
+      const now = Date.now();
+      for (const [key, value] of tempLoginTokens.entries()) {
+        if (now > value.expiresAt) {
+          tempLoginTokens.delete(key);
+        }
+      }
+    }
+    
+    res.json({ success: true, token, expiresIn });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate login token', details: err.message });
+  }
+});
+
+// API: Login using short-lived temp token (No Auth required for this endpoint)
+router.get('/login-by-token', (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.redirect('/login?error=scan_invalid');
+  }
+
+  const tokenData = tempLoginTokens.get(token);
+  if (!tokenData) {
+    return res.redirect('/login?error=scan_invalid');
+  }
+
+  // Delete immediately (one-time use)
+  tempLoginTokens.delete(token);
+
+  if (Date.now() > tokenData.expiresAt) {
+    return res.redirect('/login?error=scan_expired');
+  }
+
+  // Generate standard JWT cookie with user context
+  const jwtPayload = MULTI_USER_ENABLED
+    ? { username: tokenData.username, role: tokenData.role, isMultiUser: true }
+    : { username: 'admin', role: 'admin', isMultiUser: false };
+  const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: '7d' });
+  res.cookie('token', jwtToken, {
+    httpOnly: true,
+    secure: req.secure || useHttps,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+
+  // Redirect to main deck
+  res.redirect('/');
+});
+
+// API: Get structured chat history for a session (Agent Chat Mode)
+router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const targetDeviceId = req.query.deviceId;
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const result = await deviceService.remoteChatHistory(targetDeviceId, name);
+      return res.json({
+        sessionName: name,
+        agentType: result?.agentType || '',
+        agentSessionId: result?.agentSessionId || null,
+        sessionMode: result?.sessionMode || 'hybrid',
+        supported: result?.supported !== false,
+        hasHistory: result?.hasHistory !== undefined ? result.hasHistory : (Array.isArray(result?.messages) && result.messages.length > 0),
+        pendingAction: result?.pendingAction || null,
+        isGenerating: Boolean(result?.isGenerating),
+        statusText: result?.statusText || (result?.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+        activeModel: result?.activeModel || null,
+        usage: result?.usage || null,
+        contextUsage: result?.contextUsage || null,
+        oarCapabilities: result?.oarCapabilities || null,
+        lastUpdated: result?.lastUpdated || Date.now(),
+        messages: result?.messages || []
+      });
+    } catch (e) {
+      return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
+    }
+  }
+
+  const user = req.user ? req.user.username : null;
+  const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
+
+  // Query tmux metadata including pane_pid and session_mode
+  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}'], async (err, stdout) => {
+    if (err) {
+      return res.status(404).json({ error: 'Session not found', details: err.message });
+    }
+
+    const parts = (stdout || '').trim().split('|');
+    const sessionPath = parts[0] || null;
+    const workspaceName = parts[1] || '';
+    const agentType = parts[2] || '';
+    const agentSessionId = (parts[3] && parts[3].trim()) ? parts[3].trim() : null;
+    const panePid = (parts[4] && parts[4].trim()) ? parts[4].trim() : null;
+    const rawSessionMode = (parts[5] && parts[5].trim()) ? parts[5].trim() : '';
+    const sessionMode = rawSessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+
+    const userHome = getUserHomeDir(user);
+    const sysHome = getHomeDir();
+
+    // Determine target workspace path
+    const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
+
+    // 1. Pure Chat Mode (OAR Driven Engine)
+    if (sessionMode === 'chat_only') {
+      try {
+        const oarService = require('../services/oarService');
+        const oarSess = await oarService.getOrCreateSession(user, name, {
+          agentType: agentType || 'claude',
+          workspacePath: targetWorkspace
+        });
+        return res.json({
+          supported: true,
+          hasHistory: (oarSess.messages && oarSess.messages.length > 0),
+          sessionName: name,
+          agentType: oarSess.agentType || agentType || 'oar',
+          sessionMode: 'chat_only',
+          workspacePath: targetWorkspace,
+          messages: oarSess.messages || [],
+          pendingAction: null,
+          isGenerating: Boolean(oarSess.isGenerating),
+          statusText: oarSess.statusText || (oarSess.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+          activeModel: oarSess.activeModel || oarSess.model || null,
+          usage: oarSess.usage || null,
+          contextUsage: oarSess.contextUsage || null,
+          oarCapabilities: oarSess.oarCapabilities || null,
+          lastUpdated: oarSess.lastUpdated || Date.now()
+        });
+      } catch (oarErr) {
+        console.error('[OAR] Error reading pure chat session:', oarErr);
+      }
+    }
+
+    // 2. Terminal Only Mode
+    if (sessionMode === 'terminal_only') {
+      return res.json({
+        supported: false,
+        hasHistory: false,
+        sessionName: name,
+        agentType: agentType || 'terminal',
+        sessionMode: 'terminal_only',
+        messages: []
+      });
+    }
+
+    // 3. Hybrid Mode (Tmux + Agent Shadow Inspection)
+    let effectiveSessionId = agentSessionId;
+    const isAgySession = (agentType === 'agy' || agentType === 'antigravity') || (name.toLowerCase().includes('agy'));
+    if (isAgySession && panePid) {
+      const liveAgyId = getAgySessionIdFromPanePid(panePid);
+      if (liveAgyId) {
+        if (effectiveSessionId && liveAgyId !== effectiveSessionId && physicalSession) {
+          execTmux(['set-option', '-t', physicalSession, '@agent_session_id', liveAgyId], () => {}, user);
+        }
+        effectiveSessionId = liveAgyId;
+      }
+    }
+
+    // Locate the matching .jsonl session file strictly
+    const sessionFileInfo = findAgentSessionFile(agentType, targetWorkspace, effectiveSessionId, panePid, userHome, sysHome);
+
+    if (sessionFileInfo && sessionFileInfo.sessionId && !agentSessionId && physicalSession) {
+      execTmux(['set-option', '-t', physicalSession, '@agent_session_id', sessionFileInfo.sessionId], () => {}, user);
+    }
+
+    const isAgy = (agentType === 'agy' || agentType === 'antigravity') ||
+                  (sessionFileInfo && sessionFileInfo.agentType === 'agy') ||
+                  (panePid && getAgySessionIdFromPanePid(panePid)) ||
+                  (name.toLowerCase().includes('agy'));
+
+    const isClaude = (agentType === 'claude') ||
+                     (sessionFileInfo && sessionFileInfo.agentType === 'claude') ||
+                     (panePid && getSessionIdFromPanePid(panePid));
+
+    const effectiveAgent = (sessionFileInfo && sessionFileInfo.agentType) || (isAgy ? 'agy' : (isClaude ? 'claude' : null));
+
+    // Check if Chat Mode is supported (Claude Code or Antigravity)
+    if (!effectiveAgent) {
+      return res.json({
+        supported: false,
+        hasHistory: false,
+        sessionName: name,
+        agentType: agentType || 'terminal',
+        messages: []
+      });
+    }
+
+    if (!sessionFileInfo || !sessionFileInfo.filePath) {
+      return res.json({
+        supported: true,
+        hasHistory: false,
+        sessionName: name,
+        agentType: effectiveAgent,
+        workspacePath: targetWorkspace,
+        messages: [],
+        pendingAction: null
+      });
+    }
+
+    try {
+      const parsed = await parseAgentChat(effectiveAgent, sessionFileInfo.filePath, 60);
+      
+      // Also inspect real-time pane buffer for terminal permission/question states
+      execTmux(['capture-pane', '-pt', physicalSession, '-S', '-25'], (capErr, capStdout) => {
+        const paneText = capStdout || '';
+
+        // If terminal is currently prompting for permission
+        if (paneText.includes('Do you want to proceed?') || paneText.includes('switch to auto mode') || paneText.includes('Allow this time')) {
+          if (!parsed.pendingAction || parsed.pendingAction.type !== 'ask_question') {
+            if (!parsed.pendingAction) {
+              parsed.pendingAction = {
+                type: 'permission',
+                toolName: 'Bash',
+                toolInput: {},
+                hint: '终端请求权限审批'
+              };
+            }
+          }
+        }
+
+        // If terminal has classic (y/n) prompt
+        if (!parsed.pendingAction && /\([yY]\/[nN]\)|\[[yY]\/[nN]\]/i.test(paneText)) {
+          parsed.pendingAction = {
+            type: 'yn',
+            hint: '等待确认操作'
+          };
+        }
+
+        // Enrich permission details
+        if (parsed.pendingAction && parsed.pendingAction.type === 'permission') {
+          parsed.pendingAction.canAutoMode = paneText.includes('switch to auto mode') || paneText.includes('3. Yes, and switch to auto mode');
+          parsed.pendingAction.canAlwaysAllow = paneText.includes('always allow');
+        }
+
+        return res.json({
+          supported: true,
+          hasHistory: (parsed.messages && parsed.messages.length > 0),
+          sessionName: name,
+          agentType: effectiveAgent,
+          sessionId: sessionFileInfo.sessionId,
+          workspacePath: targetWorkspace,
+          messages: parsed.messages,
+          pendingAction: parsed.pendingAction,
+          lastUpdated: parsed.lastUpdated
+        });
+      }, user);
+    } catch (parseErr) {
+      return res.status(500).json({ error: 'Failed to parse chat history', details: parseErr.message });
+    }
+  }, user);
+});
+
+// API: Clear conversation context for a session (Agent Chat Mode / Pure Chat Mode)
+router.post('/sessions/:name/clear-context', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const targetDeviceId = req.query.deviceId;
+
+  if (targetDeviceId && targetDeviceId !== 'cloud') {
+    try {
+      const deviceService = require('../services/deviceService');
+      if (typeof deviceService.sendDeviceRpc === 'function') {
+        await deviceService.sendDeviceRpc(targetDeviceId, 'agent:clear_context', { sessionName: name });
+      }
+    } catch (e) {}
+    return res.json({ success: true, message: 'Remote context cleared' });
+  }
+
+  const user = req.user ? req.user.username : null;
+  const physicalSession = (MULTI_USER_ENABLED && user) ? `u_${user}_${name}` : name;
+
+  // 1. If Pure Chat OAR session, clear session state and history
+  try {
+    const oarService = require('../services/oarService');
+    if (typeof oarService.clearSession === 'function') {
+      await oarService.clearSession(user, name);
+    }
+  } catch (e) {
+    console.warn('[ClearContext] OAR clear error:', e.message);
+  }
+
+  // 2. Clear tmux metadata @agent_session_id so that subsequent chat-history requests never load stale files
+  execTmux(['set-option', '-u', '-t', physicalSession, '@agent_session_id'], () => {
+    // 3. Send /clear into the running agent pane in tmux to reset the CLI context and terminal buffer
+    execTmux(['send-keys', '-t', physicalSession, '/clear', 'C-m'], () => {
+      res.json({ success: true, message: 'Context cleared successfully' });
+    }, user);
+  }, user);
+});
+
+// API: Probe available OAR built-in runtimes and capabilities (Control Plane or Remote Device)
+router.get('/oar/runtimes', requireAuth, async (req, res) => {
+  const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId;
+  try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarRuntimes(targetDeviceId);
+      if (result && result.error) return res.status(502).json({ error: result.error });
+      return res.json({ success: true, runtimes: result?.runtimes || [] });
+    }
+    const oarService = require('../services/oarService');
+    const runtimes = await oarService.listAvailableRuntimes(user);
+    res.json({ success: true, runtimes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Send user message to OAR Pure Chat Session (supports Control Plane & Remote Device separation)
+router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const { content, images } = req.body;
+  const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId || req.body.deviceId;
+
+  const hasText = Boolean(content && String(content).trim());
+  const rawImages = Array.isArray(images) ? images : [];
+  if (!hasText && rawImages.length === 0) {
+    return res.status(400).json({ error: 'Message content or images required' });
+  }
+
+  try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarMessage(targetDeviceId, name, {
+        content: content || '',
+        images: rawImages
+      });
+      if (result && result.error && !result.accepted) {
+        return res.status(502).json({ error: result.error });
+      }
+      return res.json({ success: true, ...result });
+    }
+
+    const oarService = require('../services/oarService');
+    const oarSess = await oarService.getOrCreateSession(user, name);
+    const workspaceRoot = oarSess.workspacePath || getDefaultWorkspacePath(user);
+
+    // Validate image paths strictly inside the session workspace via safeResolve
+    const validatedImages = [];
+    for (const img of rawImages) {
+      const candidate = typeof img === 'string' ? img : (img && (img.relativePath || img.path));
+      if (!candidate || typeof candidate !== 'string') continue;
+      try {
+        const rel = path.isAbsolute(candidate) ? path.relative(workspaceRoot, candidate) : candidate;
+        const resolved = safeResolve(workspaceRoot, rel);
+        if (resolved && fs.existsSync(resolved)) {
+          validatedImages.push({ path: resolved });
+        }
+      } catch (e) {
+        // Ignore out-of-workspace image paths
+      }
+    }
+
+    const reply = await oarService.sendUserMessage(user, name, content || '', null, {
+      images: validatedImages
+    });
+    res.json({ success: true, message: reply });
+  } catch (err) {
+    console.error('[OAR] sendUserMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Trigger OAR native manual context compaction (/compact)
+router.post('/sessions/:name/oar-compact', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId || req.body?.deviceId;
+  try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarCompact(targetDeviceId, name);
+      if (result && result.error) return res.status(502).json({ error: result.error });
+      return res.json({ success: true, ...result });
+    }
+    const oarService = require('../services/oarService');
+    const result = await oarService.compactSession(user, name);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[OAR] compactSession error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Abort generation in OAR Pure Chat Session
+router.post('/sessions/:name/oar-abort', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const user = req.user ? req.user.username : null;
+  const targetDeviceId = req.query.deviceId || req.body?.deviceId;
+  try {
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const result = await deviceService.remoteOarAbort(targetDeviceId, name);
+      if (result && result.error) return res.status(502).json({ error: result.error });
+      return res.json({ success: true, aborted: Boolean(result?.aborted) });
+    }
+    const oarService = require('../services/oarService');
+    const aborted = await oarService.abortSession(user, name);
+    res.json({ success: true, aborted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload attachments for Chat Mode (saved in <workspace>/.deck/uploads to prevent agent outside-workspace permission prompts)
+router.post('/sessions/:session/chat-upload', requireAuth, (req, res) => {
+  fileUpload.array('files', 10)(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: '上传失败：单个文件不能超过 50MB' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: '上传失败：单次最多上传 10 个文件' });
+      }
+      return res.status(400).json({ error: `上传失败: ${err.message}` });
+    }
+
+    const sessionName = req.params.session;
+    const user = req.user.username;
+    const targetDeviceId = req.query.deviceId || (req.body && req.body.deviceId);
+
+    if (targetDeviceId && targetDeviceId !== 'cloud') {
+      const dev = deviceService.getDeviceById(targetDeviceId);
+      if (!dev || dev.userId !== user) {
+        return res.status(404).json({ error: 'Device not found or not owned by you' });
+      }
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: '未选择任何待上传文件' });
+      }
+      const filesPayload = req.files.map(f => ({
+        originalName: f.originalname || 'upload',
+        mimeType: f.mimetype || 'application/octet-stream',
+        bufferBase64: f.buffer.toString('base64')
+      }));
+      deviceService.remoteChatUpload(targetDeviceId, sessionName, filesPayload).then(result => {
+        if (result && result.error) {
+          return res.status(400).json({ error: result.error });
+        }
+        return res.json({
+          success: true,
+          message: `成功保存 ${(result.files || []).length} 个文件至远程工作区临时目录`,
+          files: result.files || []
+        });
+      }).catch(uploadErr => {
+        return res.status(500).json({ error: uploadErr.message });
+      });
+      return;
+    }
+    const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
+    const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
+    const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
+
+    execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}'], (tmuxErr, stdout) => {
+      const parts = (stdout || '').trim().split('|');
+      const sessionPath = parts[0] || null;
+      const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
+
+      if (!targetWorkspace || !fs.existsSync(targetWorkspace)) {
+        return res.status(404).json({ error: '会话工作空间目录不存在' });
+      }
+
+      // Safe temporary uploads folder strictly within the workspace
+      const uploadDir = safeResolve(targetWorkspace, '.deck/uploads', user);
+      if (!fs.existsSync(uploadDir)) {
+        try {
+          fs.mkdirSync(uploadDir, { recursive: true });
+          chownToSudoUser(uploadDir);
+        } catch (mkErr) {
+          return res.status(500).json({ error: `创建上传目录失败: ${mkErr.message}` });
+        }
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: '未选择任何待上传文件' });
+      }
+
+      const uploadedFiles = [];
+      for (const file of req.files) {
+        const originalName = file.originalname || 'upload';
+        const cleanName = path.basename(originalName).replace(/[\x00-\x1f\x80-\x9f]/g, '').trim() || 'upload';
+        const ext = path.extname(cleanName);
+        const base = path.basename(cleanName, ext);
+
+        // Append timestamp suffix to avoid collisions
+        const uniqueName = `${base}_${Date.now()}${ext}`;
+        const destPath = safeResolve(targetWorkspace, path.join('.deck/uploads', uniqueName), user);
+
+        try {
+          fs.writeFileSync(destPath, file.buffer);
+          chownToSudoUser(destPath);
+
+          const isImg = file.mimetype.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(uniqueName);
+
+          uploadedFiles.push({
+            name: uniqueName,
+            originalName: cleanName,
+            relativePath: `.deck/uploads/${uniqueName}`,
+            absolutePath: destPath,
+            size: file.size,
+            mimeType: file.mimetype,
+            isImage: isImg
+          });
+        } catch (writeErr) {
+          console.error('[ChatUpload] Failed to save file:', writeErr);
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: `成功保存 ${uploadedFiles.length} 个文件至工作区临时目录`,
+        files: uploadedFiles
+      });
+    }, user);
+  });
+});
+
+// Serve uploaded chat attachments securely
+router.get('/sessions/:session/chat-attachments/:filename', requireAuth, (req, res) => {
+  const sessionName = req.params.session;
+  const user = req.user.username;
+  const prefix = MULTI_USER_ENABLED ? `u_${user}_` : '';
+  const name = sessionName.startsWith(prefix) ? sessionName.substring(prefix.length) : sessionName;
+  const physicalSession = MULTI_USER_ENABLED ? `${prefix}${name}` : name;
+  const filename = path.basename(req.params.filename);
+
+  execTmux(['display-message', '-p', '-t', physicalSession, '#{session_path}|#{@workspace_name}'], (tmuxErr, stdout) => {
+    const parts = (stdout || '').trim().split('|');
+    const sessionPath = parts[0] || null;
+    const targetWorkspace = sessionPath || getDefaultWorkspacePath(user);
+
+    if (!targetWorkspace) {
+      return res.status(404).send('Workspace not found');
+    }
+
+    const filePath = safeResolve(targetWorkspace, path.join('.deck/uploads', filename), user);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('Attachment not found');
+    }
+
+    res.sendFile(filePath, { dotfiles: 'allow' });
+  }, user);
+});
+
+// ==========================================
+// Multi-Device Agent Remote Control APIs
+// ==========================================
+
+// API: Generate a one-time pair token and startup command for adding a local device
+router.post('/devices/pair-token', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const pairData = deviceService.createPairToken(user);
+  const host = process.env.DOMAIN_NAME || req.get('host');
+  const protocol = req.protocol;
+  const serverUrl = `${protocol}://${host}`;
+
+  const command = `curl -fsSL ${serverUrl}/agent.js | node - connect --server ${serverUrl} --token ${pairData.token}`;
+
+  res.json({
+    success: true,
+    token: pairData.token,
+    expireAt: pairData.expireAt,
+    ttlSeconds: pairData.ttlSeconds,
+    serverUrl,
+    command
+  });
+});
+
+// API: List all devices bound to the current logged-in user
+router.get('/devices', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const devices = deviceService.getUserDevices(user);
+  res.json({
+    success: true,
+    devices
+  });
+});
+
+// API: Unbind / Remove a device
+router.delete('/devices/:deviceId', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const existing = deviceService.getDeviceById(deviceId);
+  if (!existing || existing.userId !== user) {
+    return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+  }
+  if (existing.deviceKind === 'host-admin' && req.query.force !== 'true') {
+    return res.status(400).json({
+      success: false,
+      error: 'Host Admin device is protected from accidental unbinding. Pass ?force=true to remove.'
+    });
+  }
+  const removed = deviceService.removeDevice(user, deviceId);
+  if (!removed) {
+    return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+  }
+  res.json({ success: true, message: 'Device successfully removed' });
+});
+
+// API: Dispatch Agent task / prompt to a remote device
+router.post('/devices/:deviceId/agent/chat', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const { sessionId, prompt, agentType, workDir } = req.body;
+
+  if (!prompt || !prompt.trim()) {
+    return res.status(400).json({ success: false, error: 'Prompt cannot be empty' });
+  }
+
+  const sId = sessionId || `remote_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const result = deviceService.dispatchAgentChat(deviceId, user, {
+    sessionId: sId,
+    prompt,
+    agentType,
+    workDir
+  });
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    sessionId: sId,
+    message: 'Task successfully dispatched to remote device'
+  });
+});
+
+// API: Interrupt Agent task on a remote device
+router.post('/devices/:deviceId/agent/interrupt', requireAuth, (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const { sessionId } = req.body;
+
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+
+  const result = deviceService.dispatchAgentInterrupt(deviceId, user, { sessionId });
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({ success: true, message: 'Interrupt signal dispatched' });
+});
+
+// API: Trigger remote agent update / self-reload on edge device
+router.post('/devices/:deviceId/update', requireAuth, async (req, res) => {
+  const user = req.user.username;
+  const { deviceId } = req.params;
+  const device = deviceService.getDeviceById(deviceId);
+  if (!device || device.userId !== user) {
+    return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+  }
+
+  const host = process.env.DOMAIN_NAME || req.get('host');
+  const protocol = req.protocol;
+  const serverUrl = `${protocol}://${host}`;
+
+  try {
+    const result = await deviceService.remoteSystemUpdate(deviceId, serverUrl);
+    if (result && result.error) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Helper for forwarding authenticated remote device RPCs
+function registerDeviceRpcRoute(method, routePath, rpcHandler) {
+  router[method](routePath, requireAuth, async (req, res) => {
+    const user = req.user.username;
+    const { deviceId } = req.params;
+    const device = deviceService.getDeviceById(deviceId);
+    if (!device || device.userId !== user) {
+      return res.status(404).json({ success: false, error: 'Device not found or not owned by you' });
+    }
+    try {
+      const result = await rpcHandler(deviceId, req);
+      if (result && result.error) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+}
+
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/create-file', (id, req) =>
+  deviceService.remoteFsCreateFile(id, req.body.workspacePath, req.body.filePath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/create-dir', (id, req) =>
+  deviceService.remoteFsCreateDir(id, req.body.workspacePath, req.body.dirPath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/delete', (id, req) =>
+  deviceService.remoteFsDelete(id, req.body.workspacePath, req.body.targetPath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/fs/rename', (id, req) =>
+  deviceService.remoteFsRename(id, req.body.workspacePath, req.body.oldPath, req.body.newPath));
+
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/stage', (id, req) =>
+  deviceService.remoteGitStage(id, req.body.workspacePath, req.body.files));
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/unstage', (id, req) =>
+  deviceService.remoteGitUnstage(id, req.body.workspacePath, req.body.files));
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/commit', (id, req) =>
+  deviceService.remoteGitCommit(id, req.body.workspacePath, req.body.message));
+registerDeviceRpcRoute('get', '/devices/:deviceId/git/branches', (id, req) =>
+  deviceService.remoteGitBranches(id, req.query.workspacePath));
+registerDeviceRpcRoute('post', '/devices/:deviceId/git/checkout', (id, req) =>
+  deviceService.remoteGitCheckout(id, req.body.workspacePath, req.body.branch));
+
+// ==========================================
+// Docker Sandbox Isolation Lifecycle APIs
+// ==========================================
+
+// API: Get current user's Docker sandbox status
+router.get('/sandbox/status', requireAuth, async (req, res) => {
+  try {
+    const status = await containerService.getSandboxStatus(req.user.username);
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Provision or wake current user's isolated Docker sandbox container
+router.post('/sandbox/start', requireAuth, async (req, res) => {
+  try {
+    const result = await containerService.ensureUserSandbox(req.user.username, {
+      name: req.body?.name
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Sleep / stop current user's Docker sandbox container to free host RAM
+router.post('/sandbox/stop', requireAuth, async (req, res) => {
+  try {
+    const result = await containerService.stopUserSandbox(req.user.username);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Admin overview of all managed Docker sandboxes
+router.get('/admin/sandboxes', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Admin privileges required' });
+  }
+  try {
+    const result = await containerService.listSandboxes();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+module.exports = router;

@@ -814,7 +814,33 @@ function updateDeviceInfo(deviceId, info = {}) {
   }
 }
 
+/**
+ * Pick the best online deviceId for a user (used when a request omits deviceId or passes legacy 'cloud')
+ */
+function resolveDefaultDeviceId(username) {
+  const devices = getUserDevices(username || 'admin');
+  if (!devices || devices.length === 0) return null;
+  const onlineHost = devices.find(d => d.deviceKind === 'host-admin' && d.isOnline);
+  if (onlineHost) return onlineHost.deviceId;
+  const onlineSandbox = devices.find(d => d.deviceKind === 'docker-sandbox' && d.isOnline);
+  if (onlineSandbox) return onlineSandbox.deviceId;
+  const onlineAny = devices.find(d => d.isOnline);
+  if (onlineAny) return onlineAny.deviceId;
+  return null;
+}
+
+function remoteTmuxSendKeys(deviceId, opts = {}) {
+  return sendDeviceRpc(deviceId, 'tmux:send_keys', opts);
+}
+
+function remoteChatAttachment(deviceId, sessionName, filename) {
+  return sendDeviceRpc(deviceId, 'agent:chat_attachment', { sessionName, filename }, 20000);
+}
+
 module.exports = {
+  resolveDefaultDeviceId,
+  remoteTmuxSendKeys,
+  remoteChatAttachment,
   createPairToken,
   verifyAndConsumePairToken,
   registerDevice,

@@ -27,11 +27,42 @@ export async function fetchDevices() {
 }
 
 /**
- * Switch active operating device
- * @param {string} deviceId - 'cloud' or 'dev_xxxx'
+ * Pick the best default device from the user's device list.
+ * Prefers saved lastDeviceId (if online), then online host-admin -> online docker-sandbox -> online external -> any device.
  */
-export function switchToDevice(deviceId) {
+function pickDefaultDevice(devices) {
+  if (!Array.isArray(devices) || devices.length === 0) return 'cloud';
+  try {
+    const saved = localStorage.getItem('lastDeviceId');
+    if (saved && saved !== 'cloud') {
+      const found = devices.find(d => d.deviceId === saved);
+      if (found && found.isOnline) return found.deviceId;
+    }
+  } catch (_) {}
+
+  const onlineHost = devices.find(d => d.deviceKind === 'host-admin' && d.isOnline);
+  if (onlineHost) return onlineHost.deviceId;
+  const onlineSandbox = devices.find(d => d.deviceKind === 'docker-sandbox' && d.isOnline);
+  if (onlineSandbox) return onlineSandbox.deviceId;
+  const onlineAny = devices.find(d => d.isOnline);
+  if (onlineAny) return onlineAny.deviceId;
+  const anyHost = devices.find(d => d.deviceKind === 'host-admin');
+  if (anyHost) return anyHost.deviceId;
+  const anySandbox = devices.find(d => d.deviceKind === 'docker-sandbox');
+  if (anySandbox) return anySandbox.deviceId;
+  return devices[0].deviceId;
+}
+
+/**
+ * Switch active operating device
+ * @param {string} deviceId - 'dev_xxxx' (or 'cloud' fallback if no devices exist)
+ * @param {object} [options] - { silent?: boolean }
+ */
+export function switchToDevice(deviceId, options = {}) {
   state.currentDeviceId = deviceId;
+  if (deviceId && deviceId !== 'cloud') {
+    try { localStorage.setItem('lastDeviceId', deviceId); } catch (_) {}
+  }
 
   const currentIcon = document.getElementById('deviceCurrentIcon');
   const currentName = document.getElementById('deviceCurrentName');
@@ -41,22 +72,21 @@ export function switchToDevice(deviceId) {
   if (dropdown) dropdown.classList.add('hidden');
 
   if (deviceId === 'cloud') {
-    // 1. Switch back to Cloud Host
     if (currentIcon) currentIcon.setAttribute('data-lucide', 'cloud');
-    if (currentName) currentName.textContent = '云端主机';
+    if (currentName) currentName.textContent = '未连接设备';
     if (currentDot) {
-      currentDot.className = 'device-switcher-dot online';
-      currentDot.title = '在线';
+      currentDot.className = 'device-switcher-dot offline';
+      currentDot.title = '请先启动云电脑或连接我的电脑';
     }
-    console.log('[DeviceManager] Context switched to Cloud Server Host');
   } else {
-    // 2. Switch to Remote Edge Device
     const device = state.remoteDevices.find(d => d.deviceId === deviceId);
-    const devName = device?.name || device?.hostname || '远程设备';
+    const devName = device?.name || device?.hostname || '我的电脑';
     const isOnline = !!device?.isOnline;
 
     let osIcon = 'laptop';
-    if (device?.platform === 'darwin') osIcon = 'apple';
+    if (device?.deviceKind === 'host-admin') osIcon = 'server';
+    else if (device?.deviceKind === 'docker-sandbox') osIcon = 'box';
+    else if (device?.platform === 'darwin') osIcon = 'apple';
     else if (device?.platform === 'linux') osIcon = 'terminal';
 
     if (currentIcon) currentIcon.setAttribute('data-lucide', osIcon);
@@ -65,19 +95,23 @@ export function switchToDevice(deviceId) {
       currentDot.className = `device-switcher-dot ${isOnline ? 'online' : 'offline'}`;
       currentDot.title = isOnline ? '在线' : '离线';
     }
-    console.log(`[DeviceManager] Context switched to Remote Device: ${devName} (${deviceId})`);
+    console.log(`[DeviceManager] Context switched to Device: ${devName} (${deviceId})`);
   }
 
   // Update top-right system dropdown banner
   const dropdownBanner = document.getElementById('deckDropdownDeviceBanner');
   const dropdownDevName = document.getElementById('deckDropdownDeviceName');
+  const dropdownDevBadge = document.getElementById('deckDropdownDeviceBadge');
   if (dropdownBanner) {
     if (deviceId === 'cloud') {
       dropdownBanner.classList.add('hidden');
     } else {
       const dev = state.remoteDevices.find(d => d.deviceId === deviceId);
       if (dropdownDevName) {
-        dropdownDevName.textContent = dev?.name || dev?.hostname || '边缘设备';
+        dropdownDevName.textContent = dev?.name || dev?.hostname || '我的电脑';
+      }
+      if (dropdownDevBadge) {
+        dropdownDevBadge.textContent = getDeviceKindLabel(dev?.deviceKind);
       }
       dropdownBanner.classList.remove('hidden');
     }
@@ -85,6 +119,8 @@ export function switchToDevice(deviceId) {
 
   if (window.lucide) window.lucide.createIcons();
   updateSwitcherDropdownItems();
+
+  if (options.silent) return;
 
   // Reset current session tracking to avoid session collision between nodes
   state.currentSession = null;
@@ -104,6 +140,19 @@ export function switchToDevice(deviceId) {
   }
 }
 
+function getDeviceKindLabel(kind) {
+  if (kind === 'host-admin') return '主服务器';
+  if (kind === 'docker-sandbox') return '云电脑';
+  return '我的电脑';
+}
+
+function getPlatformLabel(platform) {
+  if (platform === 'darwin') return 'macOS';
+  if (platform === 'win32') return 'Windows';
+  if (platform === 'linux') return 'Linux';
+  return platform || '未知系统';
+}
+
 /**
  * Render items in Top-Left Device Switcher dropdown
  */
@@ -113,25 +162,24 @@ export function updateSwitcherDropdownItems() {
 
   const currentId = state.currentDeviceId || 'cloud';
 
-  let html = `
-    <div class="device-dropdown-item ${currentId === 'cloud' ? 'active' : ''}" data-device-id="cloud">
-      <div class="device-dropdown-item-left">
-        <i data-lucide="cloud"></i>
-        <span class="device-dropdown-item-name">云端主机 (Cloud Host)</span>
+  let html = '';
+  if (state.remoteDevices.length === 0) {
+    html = `
+      <div class="device-dropdown-empty" style="padding: 10px 12px; font-size: 12px; color: var(--text-muted); text-align: center;">
+        暂无可用设备，请点击下方启动云电脑或连接我的电脑
       </div>
-      <span class="device-switcher-dot online" title="在线"></span>
-    </div>
-  `;
+    `;
+  }
 
   for (const d of state.remoteDevices) {
     let osIcon = 'laptop';
     let kindBadge = '';
     if (d.deviceKind === 'host-admin') {
       osIcon = 'server';
-      kindBadge = '<span class="device-kind-pill host-admin">Host</span>';
+      kindBadge = '<span class="device-kind-pill host-admin">主服务器</span>';
     } else if (d.deviceKind === 'docker-sandbox') {
       osIcon = 'box';
-      kindBadge = '<span class="device-kind-pill docker-sandbox">Sandbox</span>';
+      kindBadge = '<span class="device-kind-pill docker-sandbox">云电脑</span>';
     } else if (d.platform === 'darwin') {
       osIcon = 'apple';
     } else if (d.platform === 'linux') {
@@ -179,7 +227,7 @@ export async function loadDeviceList() {
       container.innerHTML = `
         <div class="device-empty-state">
           <i data-lucide="cpu" style="width: 28px; height: 28px; margin-bottom: 8px; opacity: 0.5;"></i>
-          <span>暂无绑定的本地设备。请在下方运行命令添加设备。</span>
+          <span>暂未连接电脑，可在下方运行命令快速接入。</span>
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
@@ -188,14 +236,12 @@ export async function loadDeviceList() {
 
     container.innerHTML = devices.map(d => {
       const kind = d.deviceKind || 'external';
+      const kindLabel = getDeviceKindLabel(kind);
       let osIcon = 'monitor';
-      let kindLabel = 'External';
       if (kind === 'host-admin') {
         osIcon = 'server';
-        kindLabel = 'Host Admin';
       } else if (kind === 'docker-sandbox') {
         osIcon = 'box';
-        kindLabel = 'Docker Sandbox';
       } else if (d.platform === 'darwin') {
         osIcon = 'apple';
       } else if (d.platform === 'linux') {
@@ -204,23 +250,20 @@ export async function loadDeviceList() {
         osIcon = 'laptop';
       }
 
-      const agentsText = Array.isArray(d.agentTypes) && d.agentTypes.length > 0 
-        ? d.agentTypes.join(', ') 
-        : 'Agent 就绪';
-
       const statusClass = d.isOnline ? 'online' : 'offline';
       const statusLabel = d.isOnline ? '在线' : '离线';
       const isCurrent = (state.currentDeviceId || 'cloud') === d.deviceId;
       const clientVersion = d.clientVersion || '1.0.0';
       const isProtected = kind === 'host-admin' || kind === 'docker-sandbox';
       const providerHint = kind === 'docker-sandbox'
-        ? '云端 LLM Proxy (虚拟 Key)'
+        ? '云端模型'
         : kind === 'host-admin'
-          ? '宿主机 LLM Proxy (127.0.0.1)'
-          : '设备本地模型配置 (Local Provider)';
+          ? '服务端模型'
+          : '本机模型';
+      const metaText = `${getPlatformLabel(d.platform)} · ${providerHint}`;
 
       return `
-        <div class="device-card" data-device-id="${d.deviceId}">
+        <div class="device-card" data-device-id="${d.deviceId}" title="Agent v${escapeHtml(clientVersion)}">
           <div class="device-info-col">
             <div class="device-icon-box">
               <i data-lucide="${osIcon}"></i>
@@ -230,20 +273,17 @@ export async function loadDeviceList() {
                 <span class="device-name">${escapeHtml(d.name || d.hostname)}</span>
                 <span class="device-kind-pill ${kind}">${kindLabel}</span>
                 <span class="device-status-pill ${statusClass}">${statusLabel}</span>
-                <span class="device-version-pill" title="ccnow-agent 客户端版本">v${escapeHtml(clientVersion)}</span>
               </div>
-              <div class="device-meta-sub">
-                ${escapeHtml(d.hostname)} (${d.platform} ${d.arch || ''}) · ${agentsText} · ${providerHint}
-              </div>
+              <div class="device-meta-sub">${escapeHtml(metaText)}</div>
             </div>
           </div>
           <div class="device-action-col">
             ${isCurrent 
-              ? `<button class="device-btn-active" disabled title="当前控制台绑定的设备"><i data-lucide="check"></i><span>操作中</span></button>` 
-              : `<button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换控制台到此设备"><i data-lucide="external-link"></i><span>切换设备</span></button>`
+              ? `<button class="device-btn-active" disabled title="当前正在使用此设备"><i data-lucide="check"></i><span>当前</span></button>` 
+              : `<button class="device-btn-primary switch-device-btn" data-device-id="${d.deviceId}" title="切换到此设备"><i data-lucide="external-link"></i><span>切换</span></button>`
             }
             ${d.isOnline && kind === 'external'
-              ? `<button class="device-btn-secondary update-device-btn" data-device-id="${d.deviceId}" title="远程通知此设备 Agent 执行升级并热重启"><i data-lucide="refresh-cw"></i><span>升级</span></button>` 
+              ? `<button class="device-btn-secondary update-device-btn" data-device-id="${d.deviceId}" title="升级客户端 (当前 v${escapeHtml(clientVersion)})"><i data-lucide="refresh-cw"></i><span>升级</span></button>` 
               : ''
             }
             ${!isProtected
@@ -323,7 +363,7 @@ export async function refreshPairToken() {
   const expireEl = document.getElementById('devicePairExpireText');
   if (!cmdEl) return;
 
-  cmdEl.textContent = '正在生成一次性安全凭证...';
+  cmdEl.textContent = '正在生成命令...';
 
   try {
     const res = await fetch('/api/devices/pair-token', { method: 'POST' });
@@ -333,7 +373,7 @@ export async function refreshPairToken() {
     currentPairCommand = data.command;
     cmdEl.textContent = data.command;
     if (expireEl) {
-      expireEl.textContent = `命令 ${Math.floor(data.ttlSeconds / 60)} 分钟内有效`;
+      expireEl.textContent = `${Math.floor(data.ttlSeconds / 60)} 分钟内有效`;
     }
   } catch (err) {
     console.error('[DeviceManager] Error generating pair token:', err);
@@ -352,9 +392,9 @@ async function deleteDevice(deviceId) {
     updateSwitcherDropdownItems();
     await loadDeviceList();
 
-    // If currently operating this device, switch back to cloud
+    // If currently operating this device, switch to next best available device
     if (state.currentDeviceId === deviceId) {
-      switchToDevice('cloud');
+      switchToDevice(pickDefaultDevice(state.remoteDevices));
     }
   } catch (err) {
     alert(`解绑失败: ${err.message}`);
@@ -400,10 +440,10 @@ export async function loadSandboxPanel() {
           <div class="sandbox-info">
             <div class="sandbox-title-row">
               <i data-lucide="box"></i>
-              <span class="sandbox-title">云端 Docker 沙箱未启用</span>
-              <span class="device-status-pill offline">不可用</span>
+              <span class="sandbox-title">我的云电脑</span>
+              <span class="device-status-pill offline">未启用</span>
             </div>
-            <div class="device-meta-sub">当前宿主机未启用 Docker 沙箱引擎，仅支持宿主机或外部接入设备。</div>
+            <div class="device-meta-sub">当前服务器未开启云电脑服务</div>
           </div>
         </div>
       `;
@@ -414,17 +454,16 @@ export async function loadSandboxPanel() {
     const isRunning = !!data.running;
     const isOnline = !!data.isOnline;
     const statusClass = isRunning && isOnline ? 'online' : 'offline';
-    const statusText = isRunning ? (isOnline ? '运行中 · 在线' : '启动中...') : (data.exists ? '已休眠 (数据保留)' : '未创建');
+    const statusText = isRunning ? (isOnline ? '运行中' : '启动中...') : (data.exists ? '已休眠' : '未启动');
     const limits = data.limits || {};
-    const limitText = `${limits.memory || '1g'} RAM · ${limits.cpus || '1'} CPU · ${limits.pidsLimit || 256} PIDs · 空闲 ${data.idleTimeoutMinutes || 30}m 自动休眠`;
+    const limitText = `${limits.cpus || '1'} 核 · ${String(limits.memory || '1g').toUpperCase()} 内存 · 闲置 ${data.idleTimeoutMinutes || 30} 分钟休眠`;
 
     panel.innerHTML = `
       <div class="sandbox-row">
         <div class="sandbox-info">
           <div class="sandbox-title-row">
             <i data-lucide="box"></i>
-            <span class="sandbox-title">${escapeHtml(data.containerName || 'ccnow-sandbox')}</span>
-            <span class="device-kind-pill docker-sandbox">Docker Sandbox</span>
+            <span class="sandbox-title" title="${escapeHtml(data.containerName || 'ccnow-sandbox')}">我的云电脑</span>
             <span class="device-status-pill ${statusClass}">${statusText}</span>
           </div>
           <div class="device-meta-sub">${escapeHtml(limitText)}</div>
@@ -432,10 +471,10 @@ export async function loadSandboxPanel() {
         <div class="sandbox-actions">
           ${isRunning
             ? `
-              ${data.deviceId ? `<button class="device-btn-primary" id="sandboxEnterBtn"><i data-lucide="external-link"></i><span>进入沙箱</span></button>` : ''}
+              ${data.deviceId ? `<button class="device-btn-primary" id="sandboxEnterBtn"><i data-lucide="external-link"></i><span>进入</span></button>` : ''}
               <button class="device-btn-secondary" id="sandboxStopBtn"><i data-lucide="moon"></i><span>休眠</span></button>
             `
-            : `<button class="device-btn-primary" id="sandboxStartBtn"><i data-lucide="play"></i><span>${data.exists ? '唤醒沙箱' : '启动沙箱'}</span></button>`
+            : `<button class="device-btn-primary" id="sandboxStartBtn"><i data-lucide="play"></i><span>${data.exists ? '唤醒' : '启动'}</span></button>`
           }
         </div>
       </div>
@@ -457,7 +496,7 @@ export async function loadSandboxPanel() {
           await loadDeviceList();
           await loadSandboxPanel();
         } catch (err) {
-          alert(`启动云端沙箱失败: ${err.message}`);
+          alert(`启动云电脑失败: ${err.message}`);
           await loadSandboxPanel();
         }
       });
@@ -478,10 +517,10 @@ export async function loadSandboxPanel() {
           await loadDeviceList();
           await loadSandboxPanel();
           if (data.deviceId && state.currentDeviceId === data.deviceId) {
-            switchToDevice('cloud');
+            switchToDevice(pickDefaultDevice(state.remoteDevices));
           }
         } catch (err) {
-          alert(`休眠沙箱失败: ${err.message}`);
+          alert(`休眠云电脑失败: ${err.message}`);
           await loadSandboxPanel();
         }
       });
@@ -496,7 +535,7 @@ export async function loadSandboxPanel() {
     }
   } catch (err) {
     console.error('[DeviceManager] Error loading sandbox panel:', err);
-    panel.innerHTML = `<div class="sandbox-loading-text" style="color: #ef4444;">加载沙箱状态失败: ${escapeHtml(err.message)}</div>`;
+    panel.innerHTML = `<div class="sandbox-loading-text" style="color: #ef4444;">加载云电脑状态失败: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -545,9 +584,10 @@ function escapeHtml(str) {
 export async function initDeviceManager(socket) {
   currentSocket = socket;
 
-  // 1. Initial Device Fetch
-  await fetchDevices();
-  updateSwitcherDropdownItems();
+  // 1. Initial Device Fetch & auto-select unified device (retiring legacy 'cloud' default)
+  const devices = await fetchDevices();
+  const initialDeviceId = pickDefaultDevice(devices);
+  switchToDevice(initialDeviceId, { silent: true });
 
   // 2. Switcher Button and Dropdown Binding
   const switcherBtn = document.getElementById('deviceSwitcherBtn');

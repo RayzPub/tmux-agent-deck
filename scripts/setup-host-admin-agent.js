@@ -29,7 +29,7 @@ function main() {
 
   const managed = deviceService.ensureManagedDevice('admin', {
     deviceKind: 'host-admin',
-    name: `Cloud-Host (${os.hostname()})`,
+    name: '主服务器',
     hostname: os.hostname(),
     platform: process.platform,
     arch: process.arch
