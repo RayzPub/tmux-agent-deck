@@ -11,11 +11,13 @@ const {
   CONFIG_FILE,
   WORKSPACES_FILE,
   readConfig,
-  parseArgs
+  parseArgs,
+  applyManagedGatewayEnv
 } = require('./config');
 const { AgentClient } = require('./client');
 const { downloadAndApplyUpdate } = require('./updater');
 const { handleServiceCommand } = require('./serviceManager');
+const { runSetupCommand } = require('./depsManager');
 
 function printHelp() {
   console.log(`
@@ -81,6 +83,14 @@ switch (parsed.command) {
     break;
   }
 
+  case 'setup': {
+    runSetupCommand().then(() => process.exit(0)).catch((err) => {
+      console.error('❌ Setup failed:', err.message);
+      process.exit(1);
+    });
+    break;
+  }
+
   case 'connect': {
     const { server, token, name } = parsed.options;
     if (!server || !token) {
@@ -126,6 +136,9 @@ switch (parsed.command) {
         console.warn('⚠️ Failed to seed default workspace:', err.message);
       }
     }
+
+    // Align Terminal/Tmux & OAR Pure Chat with Control Plane LLM Gateway when managed (host-admin)
+    applyManagedGatewayEnv({ server, deviceId, deviceSecret });
 
     console.log(`🚀 Starting ccnow-agent (Device: ${deviceName})...`);
     const client = new AgentClient(server, {

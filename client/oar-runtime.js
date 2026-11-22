@@ -52,10 +52,25 @@ const SUPPORTED_IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
 
 function createDeviceOarManager(options = {}) {
   const storageDir = options.storageDir || path.join(os.homedir(), '.ccnow', 'oar_sessions');
+  const resolveEsmUrl = typeof options.resolveEsmUrl === 'function' ? options.resolveEsmUrl : null;
   const activeSessions = new Map();
   const runtimeCache = new Map();
   let rootOarPromise = null;
   let capsModulePromise = null;
+
+  async function importOarSpecifier(specifier) {
+    try {
+      return await import(specifier);
+    } catch (primaryErr) {
+      if (resolveEsmUrl) {
+        const fallbackUrl = resolveEsmUrl(specifier);
+        if (fallbackUrl) {
+          return await import(fallbackUrl);
+        }
+      }
+      throw primaryErr;
+    }
+  }
 
   function ensureStorageDir() {
     if (!fs.existsSync(storageDir)) {
@@ -73,8 +88,9 @@ function createDeviceOarManager(options = {}) {
 
   function getRootOar() {
     if (!rootOarPromise) {
-      rootOarPromise = import('@botiverse/oar').catch(err => {
+      rootOarPromise = importOarSpecifier('@botiverse/oar').catch(err => {
         console.warn('[DeviceOAR] @botiverse/oar not available on this device:', err.message);
+        rootOarPromise = null; // Allow retry after background auto-install completes
         return null;
       });
     }
@@ -83,7 +99,10 @@ function createDeviceOarManager(options = {}) {
 
   function getCapabilitiesModule() {
     if (!capsModulePromise) {
-      capsModulePromise = import('@botiverse/oar/capabilities').catch(() => null);
+      capsModulePromise = importOarSpecifier('@botiverse/oar/capabilities').catch(() => {
+        capsModulePromise = null;
+        return null;
+      });
     }
     return capsModulePromise;
   }
@@ -93,10 +112,11 @@ function createDeviceOarManager(options = {}) {
     if (runtimeCache.has(runtimeId)) return runtimeCache.get(runtimeId);
     const promise = (async () => {
       try {
-        const mod = await import(`@botiverse/oar/runtimes/${runtimeId}`);
+        const mod = await importOarSpecifier(`@botiverse/oar/runtimes/${runtimeId}`);
         return mod[RUNTIME_EXPORT_NAME[runtimeId]] || null;
       } catch (err) {
         console.warn(`[DeviceOAR] Failed to load @botiverse/oar/runtimes/${runtimeId}:`, err.message);
+        runtimeCache.delete(runtimeId); // Allow retry after background auto-install completes
         return null;
       }
     })();

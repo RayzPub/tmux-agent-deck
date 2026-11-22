@@ -4,17 +4,19 @@ const gitHandlers = require('./gitHandlers');
 const tmuxHandlers = require('./tmuxHandlers');
 const chatHandlers = require('./chatHandlers');
 const { ensureLocalAgentScript, handleSystemUpdate } = require('./updater');
+const { tryRequireOptional, installPackageSync, ensureOptionalDepsInBackground } = require('./depsManager');
 
-// Ensure native or installed WebSocket
-let WSClient = typeof WebSocket !== 'undefined' ? WebSocket : null;
+// Ensure native or installed WebSocket (auto-installs 'ws' into ~/.ccnow/node_modules on Node < 21)
+let WSClient = typeof WebSocket !== 'undefined' ? WebSocket : tryRequireOptional('ws');
 if (!WSClient) {
-  try {
-    WSClient = require('ws');
-  } catch (e) {
-    console.error('❌ Error: Global WebSocket not available in this Node.js version.');
-    console.error('Please run with Node.js >= 21 or run: npm install -g ws');
-    process.exit(1);
+  if (installPackageSync('ws')) {
+    WSClient = tryRequireOptional('ws');
   }
+}
+if (!WSClient) {
+  console.error('❌ Error: Global WebSocket not available in this Node.js version.');
+  console.error('Please run with Node.js >= 21 or run: npm install -g ws');
+  process.exit(1);
 }
 
 class AgentClient {
@@ -157,6 +159,7 @@ class AgentClient {
         ensureLocalAgentScript(this.serverUrl);
         this.credentials = { deviceId: msg.deviceId, deviceSecret: msg.deviceSecret };
         this.startHeartbeat();
+        ensureOptionalDepsInBackground();
         return;
 
       case 'pair_failed':
@@ -168,6 +171,7 @@ class AgentClient {
       case 'auth_success':
         console.log(`✅ Authenticated successfully as ${msg.deviceId}! Online and ready.`);
         this.startHeartbeat();
+        ensureOptionalDepsInBackground();
         return;
 
       case 'auth_failed':

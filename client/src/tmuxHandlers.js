@@ -3,6 +3,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 const { hasCommand, resolveBaseDir, tmuxArgs } = require('./config');
+const { tryRequireOptional } = require('./depsManager');
+const sessionRegistry = require('./sessionRegistry');
 
 // Active interactive PTY / terminal sessions: termId -> { write, resize, kill }
 const activeTerminals = new Map();
@@ -15,6 +17,20 @@ function cleanupAllTerminals() {
 }
 
 function readTmuxSessionMeta(sessionName) {
+  // 1. Check tmux-free Pure Chat OAR registry first
+  const pureChat = sessionRegistry.getPureChatSession(sessionName);
+  if (pureChat) {
+    return {
+      workspacePath: (pureChat.workspacePath && fs.existsSync(pureChat.workspacePath))
+        ? pureChat.workspacePath
+        : (process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd()),
+      agentType: pureChat.agentType || 'claude',
+      sessionMode: 'chat_only',
+      model: pureChat.agentModel || pureChat.modelName || ''
+    };
+  }
+
+  // 2. Fall back to tmux metadata for terminal / hybrid / legacy sessions
   let workspacePath = process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd();
   let agentType = 'claude';
   let sessionMode = 'hybrid';
@@ -39,6 +55,7 @@ function readTmuxSessionMeta(sessionName) {
 function handleListSessions(send, reqId) {
   const hasTmux = hasCommand('tmux');
   const sessions = [];
+  const seenNames = new Set();
 
   if (hasTmux) {
     try {
@@ -54,6 +71,7 @@ function handleListSessions(send, reqId) {
           const agentType = parts[6] || '';
           const rawMode = parts[8] || '';
           const sessionMode = rawMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+          seenNames.add(parts[0]);
           sessions.push({
             name: parts[0],
             windows: parseInt(parts[1], 10) || 1,
@@ -72,7 +90,18 @@ function handleListSessions(send, reqId) {
     } catch (e) {
       // No tmux server or zero active sessions
     }
-  } else if (sessions.length === 0) {
+  }
+
+  // Merge tmux-free OAR Pure Chat sessions from ~/.ccnow/sessions.json
+  for (const s of sessionRegistry.listPureChatSessions()) {
+    if (!seenNames.has(s.name)) {
+      seenNames.add(s.name);
+      sessions.push(s);
+    }
+  }
+
+  // Non-tmux hosts still expose a default terminal shell if no terminal session exists
+  if (!hasTmux && !sessions.some(s => s.sessionMode !== 'chat_only')) {
     sessions.push({
       name: 'default',
       windows: 1,
@@ -92,26 +121,61 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
   const agent = msg.agent || msg.agentType || 'default';
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
   const hasTmux = hasCommand('tmux');
+  const targetDir = resolveBaseDir(workspace);
+  const baseName = String(sessionName || '').replace(/[^a-zA-Z0-9_-]/g, '') || (agent !== 'default' ? agent : 'shell');
 
+  // Helper to deduplicate against both sessionRegistry and tmux sessions
+  const existingSet = new Set(Object.keys(sessionRegistry.readRegistry()));
+  if (hasTmux) {
+    try {
+      const existingOut = execFileSync('tmux', tmuxArgs(['list-sessions', '-F', '#{session_name}']), {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      for (const n of existingOut.trim().split('\n').filter(Boolean)) existingSet.add(n);
+    } catch (_) {}
+  }
+  let finalName = baseName;
+  if (existingSet.has(finalName)) {
+    let idx = 2;
+    while (existingSet.has(`${baseName}-${idx}`)) idx++;
+    finalName = `${baseName}-${idx}`;
+  }
+
+  // 1. Pure Chat Mode (OAR): 100% tmux-free! Persisted in ~/.ccnow/sessions.json
+  if (targetMode === 'chat_only') {
+    try {
+      const effectiveAgent = agent !== 'default' ? agent : 'claude';
+      sessionRegistry.upsertPureChatSession(finalName, {
+        workspacePath: targetDir,
+        workspaceName: workspaceName ? String(workspaceName) : '',
+        agentType: effectiveAgent,
+        agentModel: agentModel ? String(agentModel) : '',
+        modelName: modelName ? String(modelName) : '',
+        created: Date.now()
+      });
+
+      const oarMgr = getDeviceOarManager();
+      if (oarMgr) {
+        oarMgr.deleteSession(finalName);
+        oarMgr.getOrCreateSession(finalName, {
+          agentType: effectiveAgent,
+          workspacePath: targetDir,
+          model: agentModel || modelName || ''
+        });
+      }
+
+      send({ action: 'tmux:new_session_result', reqId, success: true, sessionName: finalName });
+      return;
+    } catch (e) {
+      send({ action: 'tmux:new_session_result', reqId, error: e.message });
+      return;
+    }
+  }
+
+  // 2. Terminal / Hybrid Mode: backed by tmux when available
   if (hasTmux && sessionName) {
     try {
-      const targetDir = resolveBaseDir(workspace);
-      const baseName = String(sessionName).replace(/[^a-zA-Z0-9_-]/g, '') || (agent !== 'default' ? agent : 'shell');
-
-      let finalName = baseName;
-      try {
-        const existingOut = execFileSync('tmux', tmuxArgs(['list-sessions', '-F', '#{session_name}']), {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore']
-        });
-        const existingSet = new Set(existingOut.trim().split('\n').filter(Boolean));
-        if (existingSet.has(finalName)) {
-          let idx = 2;
-          while (existingSet.has(`${baseName}-${idx}`)) idx++;
-          finalName = `${baseName}-${idx}`;
-        }
-      } catch (_) {}
-
       execFileSync('tmux', tmuxArgs(['new-session', '-d', '-s', finalName, '-c', targetDir]), { stdio: 'ignore' });
 
       let agentSessionId = '';
@@ -135,21 +199,7 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
         } catch (_) {}
       }
 
-      if (targetMode === 'chat_only') {
-        const oarMgr = getDeviceOarManager();
-        if (oarMgr) {
-          oarMgr.deleteSession(finalName);
-          oarMgr.getOrCreateSession(finalName, {
-            agentType: agent !== 'default' ? agent : 'claude',
-            workspacePath: targetDir,
-            model: agentModel || modelName || ''
-          });
-        }
-        try {
-          const bannerCmd = `printf '\\033[1;36m[OAR Pure Chat Session]\\033[0m\\n此会话由设备端 Open Agent Runtime 直接驱动（纯会话模式）。\\n'`;
-          execFileSync('tmux', tmuxArgs(['send-keys', '-t', finalName, bannerCmd, 'C-m']), { stdio: 'ignore' });
-        } catch (_) {}
-      } else if (agent && agent !== 'default' && agent !== 'terminal') {
+      if (agent && agent !== 'default' && agent !== 'terminal') {
         let agentCmd = String(agent).replace(/"/g, '');
         if (agent === 'agy') {
           agentCmd = 'agy --dangerously-skip-permissions';
@@ -177,15 +227,16 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
       return;
     }
   }
-  send({ action: 'tmux:new_session_result', reqId, success: true, sessionName });
+  send({ action: 'tmux:new_session_result', reqId, success: true, sessionName: finalName });
 }
 
 function handleKillSession(send, reqId, sessionName, getDeviceOarManager) {
+  const wasPureChat = sessionRegistry.deletePureChatSession(sessionName);
   const oarMgr = getDeviceOarManager();
   if (oarMgr && sessionName) {
     try { oarMgr.deleteSession(sessionName); } catch (_) {}
   }
-  if (hasCommand('tmux') && sessionName) {
+  if (!wasPureChat && hasCommand('tmux') && sessionName) {
     try {
       execFileSync('tmux', tmuxArgs(['kill-session', '-t', sessionName]), { stdio: 'ignore' });
     } catch (e) {}
@@ -239,33 +290,35 @@ function handleOpenTerminal(send, msg) {
 
   let ptyHandler = null;
 
-  // Method 1: node-pty (if installed locally)
-  try {
-    const nodePty = require('node-pty');
-    const ptyProcess = nodePty.spawn(targetCmd, targetArgs, {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      cwd: process.cwd(),
-      env: { ...process.env, TERM: 'xterm-256color', FORCE_COLOR: '1' }
-    });
+  // Method 1: node-pty (two-tier lookup: standard node_modules -> ~/.ccnow/node_modules)
+  const nodePty = tryRequireOptional('node-pty');
+  if (nodePty) {
+    try {
+      const ptyProcess = nodePty.spawn(targetCmd, targetArgs, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color', FORCE_COLOR: '1' }
+      });
 
-    ptyProcess.onData((data) => {
-      send({ action: 'term:output', termId, data });
-    });
+      ptyProcess.onData((data) => {
+        send({ action: 'term:output', termId, data });
+      });
 
-    ptyProcess.onExit(() => {
-      activeTerminals.delete(termId);
-      send({ action: 'term:exit', termId });
-    });
+      ptyProcess.onExit(() => {
+        activeTerminals.delete(termId);
+        send({ action: 'term:exit', termId });
+      });
 
-    ptyHandler = {
-      write: (d) => ptyProcess.write(d),
-      resize: (c, r) => ptyProcess.resize(c, r),
-      kill: () => ptyProcess.kill()
-    };
-  } catch (e) {
-    // Fallback to Python 3 PTY or child_process
+      ptyHandler = {
+        write: (d) => ptyProcess.write(d),
+        resize: (c, r) => ptyProcess.resize(c, r),
+        kill: () => ptyProcess.kill()
+      };
+    } catch (e) {
+      // Fallback to Python 3 PTY or child_process
+    }
   }
 
   // Method 2: Python 3 POSIX PTY Bridge

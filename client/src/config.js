@@ -1,10 +1,10 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 // Client Version (kept as literal string for self-update version regex detection)
-const CLIENT_VERSION = '1.7.0';
+const CLIENT_VERSION = '1.7.3';
 
 // Configuration directory & files (supports env override for managed host/container agents)
 const CONFIG_DIR = process.env.CCNOW_CONFIG_DIR || path.join(os.homedir(), '.ccnow');
@@ -121,6 +121,63 @@ function safeResolve(workspacePath, reqPath) {
   return target;
 }
 
+/**
+ * Inject Control Plane LLM Gateway loopback env + scoped virtual key (`sk-ccnow-<deviceId>.<deviceSecret>`)
+ * for managed host-admin agents when CCNOW_MANAGED_LLM_GATEWAY=1.
+ * Keeps Terminal/Tmux sessions and OAR Pure Chat sessions 100% aligned without storing secrets in systemd unit files.
+ */
+function applyManagedGatewayEnv({ server, deviceId, deviceSecret }) {
+  if (process.env.CCNOW_MANAGED_LLM_GATEWAY !== '1') return;
+  if (!server || !deviceId || !deviceSecret) return;
+
+  const baseUrl = String(server).trim().replace(/\/+$/, '');
+  const virtualKey = `sk-ccnow-${deviceId}.${deviceSecret}`;
+  const claudeOAuthMode = process.env.CCNOW_CLAUDE_OAUTH_MODE === '1';
+
+  const envMap = {
+    OPENAI_BASE_URL: `${baseUrl}/v1`,
+    OPENAI_API_BASE: `${baseUrl}/v1`,
+    OPENAI_API_KEY: virtualKey,
+    CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: '1'
+  };
+
+  if (claudeOAuthMode) {
+    delete process.env.ANTHROPIC_BASE_URL;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+  } else {
+    envMap.ANTHROPIC_BASE_URL = baseUrl;
+    envMap.ANTHROPIC_API_KEY = virtualKey;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+  }
+
+  for (const [k, v] of Object.entries(envMap)) {
+    process.env[k] = v;
+  }
+
+  // Sync into running tmux server global environment so new tmux panes/sessions inherit the exact gateway env
+  if (hasCommand('tmux')) {
+    for (const [k, v] of Object.entries(envMap)) {
+      try {
+        execFileSync('tmux', tmuxArgs(['set-environment', '-g', k, v]), { stdio: 'ignore' });
+      } catch (_) {}
+    }
+    if (claudeOAuthMode) {
+      for (const k of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']) {
+        try {
+          execFileSync('tmux', tmuxArgs(['set-environment', '-gu', k]), { stdio: 'ignore' });
+        } catch (_) {}
+      }
+    } else {
+      try {
+        execFileSync('tmux', tmuxArgs(['set-environment', '-gu', 'ANTHROPIC_AUTH_TOKEN']), { stdio: 'ignore' });
+      } catch (_) {}
+    }
+  }
+
+  console.log(`🔐 [ccnow-agent] Managed LLM Gateway active (${baseUrl}, Claude: ${claudeOAuthMode ? 'OAuth Direct' : 'Scoped Virtual Key'}, Codex: Scoped Virtual Key)`);
+}
+
 module.exports = {
   CLIENT_VERSION,
   CONFIG_DIR,
@@ -135,5 +192,6 @@ module.exports = {
   getLocalDeviceInfo,
   toWsUrl,
   resolveBaseDir,
-  safeResolve
+  safeResolve,
+  applyManagedGatewayEnv
 };

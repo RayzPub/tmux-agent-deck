@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { CONFIG_DIR, hasCommand, safeResolve, tmuxArgs } = require('./config');
+const { resolveOptionalEsmUrl } = require('./depsManager');
 const { readTmuxSessionMeta } = require('./tmuxHandlers');
+const sessionRegistry = require('./sessionRegistry');
 
 // Single source of truth: directly bundled by esbuild from services/agentChatService.js & client/oar-runtime.js
 const agentChatService = require('../../services/agentChatService');
@@ -17,7 +19,8 @@ function getDeviceOarManager() {
   if (deviceOarManager) return deviceOarManager;
   try {
     deviceOarManager = createDeviceOarManager({
-      storageDir: path.join(CONFIG_DIR, 'oar_sessions')
+      storageDir: path.join(CONFIG_DIR, 'oar_sessions'),
+      resolveEsmUrl: resolveOptionalEsmUrl
     });
     return deviceOarManager;
   } catch (err) {
@@ -31,7 +34,8 @@ async function handleClearContext(send, reqId, sessionName) {
   if (oarMgr && sessionName) {
     try { await oarMgr.clearSession(sessionName); } catch (_) {}
   }
-  if (hasCommand('tmux') && sessionName) {
+  const isPureChat = Boolean(sessionRegistry.getPureChatSession(sessionName));
+  if (!isPureChat && hasCommand('tmux') && sessionName) {
     try {
       try { execFileSync('tmux', tmuxArgs(['set-option', '-u', '-t', sessionName, '@agent_session_id']), { stdio: 'ignore' }); } catch (_) {}
       execFileSync('tmux', tmuxArgs(['send-keys', '-t', sessionName, '/clear', 'C-m']), { stdio: 'ignore' });
@@ -108,6 +112,19 @@ async function handleOarAbort(send, reqId, sessionName) {
 
 async function handleChatHistory(send, reqId, sessionName) {
   try {
+    // 0. Fast-path: tmux-free Pure Chat OAR session from ~/.ccnow/sessions.json
+    const pureChat = sessionRegistry.getPureChatSession(sessionName);
+    if (pureChat) {
+      const oarMgr = getDeviceOarManager();
+      if (oarMgr) {
+        const snapshot = oarMgr.getHistorySnapshot(sessionName, {
+          agentType: pureChat.agentType || 'claude',
+          workspacePath: pureChat.workspacePath || process.cwd()
+        });
+        return send({ action: 'agent:chat_history_result', reqId, ...snapshot });
+      }
+    }
+
     const hasTmux = hasCommand('tmux');
     let sessionCwd = process.cwd();
     let agentType = '';
@@ -196,21 +213,27 @@ async function handleChatHistory(send, reqId, sessionName) {
   }
 }
 
+function resolveSessionWorkspace(sessionName) {
+  const pureChat = sessionRegistry.getPureChatSession(sessionName);
+  if (pureChat && pureChat.workspacePath && fs.existsSync(pureChat.workspacePath)) {
+    return pureChat.workspacePath;
+  }
+  if (hasCommand('tmux') && sessionName) {
+    try {
+      const out = execFileSync('tmux', tmuxArgs(['display-message', '-p', '-t', sessionName, '#{session_path}']), {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim();
+      if (out && fs.existsSync(out)) return out;
+    } catch (_) {}
+  }
+  return os.homedir();
+}
+
 function handleChatUpload(send, reqId, msg) {
   try {
     const { sessionName, files } = msg;
-    let targetWorkspace = os.homedir();
-    if (hasCommand('tmux') && sessionName) {
-      try {
-        const out = execFileSync('tmux', tmuxArgs(['display-message', '-p', '-t', sessionName, '#{session_path}']), {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore']
-        }).trim();
-        if (out && fs.existsSync(out)) {
-          targetWorkspace = out;
-        }
-      } catch (e) {}
-    }
+    const targetWorkspace = resolveSessionWorkspace(sessionName);
     const uploadDir = path.join(targetWorkspace, '.deck', 'uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -248,16 +271,7 @@ function handleChatAttachment(send, reqId, msg) {
     if (!cleanName) {
       return send({ action: 'agent:chat_attachment_result', reqId, error: 'Invalid filename' });
     }
-    let targetWorkspace = os.homedir();
-    if (hasCommand('tmux') && sessionName) {
-      try {
-        const out = execFileSync('tmux', tmuxArgs(['display-message', '-p', '-t', sessionName, '#{session_path}']), {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore']
-        }).trim();
-        if (out && fs.existsSync(out)) targetWorkspace = out;
-      } catch (_) {}
-    }
+    const targetWorkspace = resolveSessionWorkspace(sessionName);
     const filePath = safeResolve(targetWorkspace, path.join('.deck', 'uploads', cleanName));
     if (!fs.existsSync(filePath)) {
       return send({ action: 'agent:chat_attachment_result', reqId, error: 'Attachment not found' });

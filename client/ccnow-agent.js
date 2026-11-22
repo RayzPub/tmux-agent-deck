@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// ccnow-agent CLIENT_VERSION = '1.7.0'
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+// ccnow-agent CLIENT_VERSION = '1.7.3'
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __commonJS = (cb, mod) => function __require() {
   try {
     return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
@@ -13,22 +8,6 @@ var __commonJS = (cb, mod) => function __require() {
     throw mod = 0, e;
   }
 };
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 
 // client/src/config.js
 var require_config = __commonJS({
@@ -36,8 +15,8 @@ var require_config = __commonJS({
     var os = require("os");
     var fs2 = require("fs");
     var path2 = require("path");
-    var { execSync } = require("child_process");
-    var CLIENT_VERSION2 = "1.7.0";
+    var { execSync, execFileSync } = require("child_process");
+    var CLIENT_VERSION2 = "1.7.3";
     var CONFIG_DIR2 = process.env.CCNOW_CONFIG_DIR || path2.join(os.homedir(), ".ccnow");
     var CONFIG_FILE2 = path2.join(CONFIG_DIR2, "device.json");
     var WORKSPACES_FILE2 = path2.join(CONFIG_DIR2, "workspaces.json");
@@ -133,6 +112,53 @@ var require_config = __commonJS({
       }
       return target;
     }
+    function applyManagedGatewayEnv2({ server, deviceId, deviceSecret }) {
+      if (process.env.CCNOW_MANAGED_LLM_GATEWAY !== "1") return;
+      if (!server || !deviceId || !deviceSecret) return;
+      const baseUrl = String(server).trim().replace(/\/+$/, "");
+      const virtualKey = `sk-ccnow-${deviceId}.${deviceSecret}`;
+      const claudeOAuthMode = process.env.CCNOW_CLAUDE_OAUTH_MODE === "1";
+      const envMap = {
+        OPENAI_BASE_URL: `${baseUrl}/v1`,
+        OPENAI_API_BASE: `${baseUrl}/v1`,
+        OPENAI_API_KEY: virtualKey,
+        CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1"
+      };
+      if (claudeOAuthMode) {
+        delete process.env.ANTHROPIC_BASE_URL;
+        delete process.env.ANTHROPIC_API_KEY;
+        delete process.env.ANTHROPIC_AUTH_TOKEN;
+      } else {
+        envMap.ANTHROPIC_BASE_URL = baseUrl;
+        envMap.ANTHROPIC_API_KEY = virtualKey;
+        delete process.env.ANTHROPIC_AUTH_TOKEN;
+      }
+      for (const [k, v] of Object.entries(envMap)) {
+        process.env[k] = v;
+      }
+      if (hasCommand("tmux")) {
+        for (const [k, v] of Object.entries(envMap)) {
+          try {
+            execFileSync("tmux", tmuxArgs(["set-environment", "-g", k, v]), { stdio: "ignore" });
+          } catch (_) {
+          }
+        }
+        if (claudeOAuthMode) {
+          for (const k of ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {
+            try {
+              execFileSync("tmux", tmuxArgs(["set-environment", "-gu", k]), { stdio: "ignore" });
+            } catch (_) {
+            }
+          }
+        } else {
+          try {
+            execFileSync("tmux", tmuxArgs(["set-environment", "-gu", "ANTHROPIC_AUTH_TOKEN"]), { stdio: "ignore" });
+          } catch (_) {
+          }
+        }
+      }
+      console.log(`\u{1F510} [ccnow-agent] Managed LLM Gateway active (${baseUrl}, Claude: ${claudeOAuthMode ? "OAuth Direct" : "Scoped Virtual Key"}, Codex: Scoped Virtual Key)`);
+    }
     module2.exports = {
       CLIENT_VERSION: CLIENT_VERSION2,
       CONFIG_DIR: CONFIG_DIR2,
@@ -147,7 +173,8 @@ var require_config = __commonJS({
       getLocalDeviceInfo,
       toWsUrl,
       resolveBaseDir,
-      safeResolve
+      safeResolve,
+      applyManagedGatewayEnv: applyManagedGatewayEnv2
     };
   }
 });
@@ -552,6 +579,327 @@ var require_gitHandlers = __commonJS({
   }
 });
 
+// client/src/depsManager.js
+var require_depsManager = __commonJS({
+  "client/src/depsManager.js"(exports2, module2) {
+    var fs2 = require("fs");
+    var path2 = require("path");
+    var Module = require("module");
+    var { pathToFileURL } = require("url");
+    var { spawn, execFileSync } = require("child_process");
+    var { CONFIG_DIR: CONFIG_DIR2, hasCommand } = require_config();
+    var autoInstallStarted = false;
+    function getConfigRequire() {
+      try {
+        return Module.createRequire(path2.join(CONFIG_DIR2, "package.json"));
+      } catch (_) {
+        return null;
+      }
+    }
+    function getConfigPkgDir(pkgName) {
+      return path2.join(CONFIG_DIR2, "node_modules", ...pkgName.split("/"));
+    }
+    function tryRequireOptional(pkgName) {
+      try {
+        return require(pkgName);
+      } catch (_) {
+      }
+      try {
+        const cfgReq = getConfigRequire();
+        if (cfgReq) return cfgReq(pkgName);
+      } catch (_) {
+      }
+      return null;
+    }
+    function resolveOptionalEsmUrl(specifier) {
+      try {
+        const cfgReq = getConfigRequire();
+        if (cfgReq) {
+          const resolved = cfgReq.resolve(specifier);
+          if (resolved) return pathToFileURL(resolved).href;
+        }
+      } catch (_) {
+      }
+      try {
+        const parts = specifier.split("/");
+        const pkgName = specifier.startsWith("@") ? `${parts[0]}/${parts[1]}` : parts[0];
+        const subpath = specifier.startsWith("@") ? parts.length > 2 ? "./" + parts.slice(2).join("/") : "." : parts.length > 1 ? "./" + parts.slice(1).join("/") : ".";
+        const pkgDir = getConfigPkgDir(pkgName);
+        const pkgJsonPath = path2.join(pkgDir, "package.json");
+        if (!fs2.existsSync(pkgJsonPath)) return null;
+        const pkgJson = JSON.parse(fs2.readFileSync(pkgJsonPath, "utf8"));
+        const exportsMap = pkgJson.exports;
+        let relTarget = null;
+        if (exportsMap && typeof exportsMap === "object") {
+          const pickImport = (entry) => {
+            if (!entry) return null;
+            if (typeof entry === "string") return entry;
+            if (typeof entry === "object") return entry.import || entry.default || null;
+            return null;
+          };
+          if (exportsMap[subpath] !== void 0) {
+            relTarget = pickImport(exportsMap[subpath]);
+          } else {
+            for (const [pattern, entry] of Object.entries(exportsMap)) {
+              const starIdx = pattern.indexOf("*");
+              if (starIdx === -1) continue;
+              const prefix = pattern.slice(0, starIdx);
+              const suffix = pattern.slice(starIdx + 1);
+              if (subpath.startsWith(prefix) && subpath.endsWith(suffix)) {
+                const matched = subpath.slice(prefix.length, subpath.length - suffix.length);
+                const rawTarget = pickImport(entry);
+                if (rawTarget) {
+                  relTarget = rawTarget.replace("*", matched);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (!relTarget && subpath === ".") {
+          relTarget = pkgJson.module || pkgJson.main || "./index.js";
+        }
+        if (relTarget) {
+          const fullPath = path2.resolve(pkgDir, relTarget);
+          if (fs2.existsSync(fullPath)) {
+            return pathToFileURL(fullPath).href;
+          }
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    function isPackageAvailable(pkgName) {
+      if (fs2.existsSync(path2.join(getConfigPkgDir(pkgName), "package.json"))) {
+        return true;
+      }
+      try {
+        require.resolve(pkgName);
+        return true;
+      } catch (_) {
+      }
+      try {
+        let dir = __dirname;
+        for (let i = 0; i < 6; i++) {
+          const candidate = path2.join(dir, "node_modules", ...pkgName.split("/"), "package.json");
+          if (fs2.existsSync(candidate)) return true;
+          const parent = path2.dirname(dir);
+          if (parent === dir) break;
+          dir = parent;
+        }
+      } catch (_) {
+      }
+      return false;
+    }
+    function ensureConfigPackageJson() {
+      if (!fs2.existsSync(CONFIG_DIR2)) {
+        fs2.mkdirSync(CONFIG_DIR2, { recursive: true });
+      }
+      const pkgPath = path2.join(CONFIG_DIR2, "package.json");
+      if (!fs2.existsSync(pkgPath)) {
+        fs2.writeFileSync(
+          pkgPath,
+          JSON.stringify({ name: "ccnow-agent-deps", version: "1.0.0", private: true }, null, 2),
+          "utf8"
+        );
+      }
+    }
+    function installPackageSync(pkgName) {
+      if (!hasCommand("npm")) return false;
+      try {
+        ensureConfigPackageJson();
+        console.log(`\u{1F4E6} [ccnow-agent] Installing required fallback dependency '${pkgName}' into ${CONFIG_DIR2}...`);
+        execFileSync("npm", ["install", "--prefix", CONFIG_DIR2, "--save", "--no-audit", "--no-fund", pkgName], {
+          stdio: "ignore",
+          timeout: 6e4
+        });
+        return isPackageAvailable(pkgName);
+      } catch (_) {
+        return false;
+      }
+    }
+    function installPackageAsync(pkgName) {
+      return new Promise((resolve) => {
+        if (!hasCommand("npm")) return resolve({ pkg: pkgName, ok: false, reason: "npm not found" });
+        try {
+          ensureConfigPackageJson();
+        } catch (err) {
+          return resolve({ pkg: pkgName, ok: false, reason: err.message });
+        }
+        const child = spawn(
+          "npm",
+          ["install", "--prefix", CONFIG_DIR2, "--save", "--no-audit", "--no-fund", pkgName],
+          { stdio: "ignore", env: { ...process.env, npm_config_loglevel: "error" } }
+        );
+        const timer = setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch (_) {
+          }
+          resolve({ pkg: pkgName, ok: false, reason: "timeout" });
+        }, 12e4);
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          const ok = code === 0 && isPackageAvailable(pkgName);
+          resolve({ pkg: pkgName, ok, code });
+        });
+        child.on("error", (err) => {
+          clearTimeout(timer);
+          resolve({ pkg: pkgName, ok: false, reason: err.message });
+        });
+      });
+    }
+    function getMissingOptionalDeps() {
+      const missing = [];
+      const nodeMajor = parseInt(String(process.versions.node || "0").split(".")[0], 10) || 0;
+      if (nodeMajor >= 24 && !isPackageAvailable("@botiverse/oar")) {
+        missing.push("@botiverse/oar");
+      }
+      if (!isPackageAvailable("node-pty")) {
+        missing.push("node-pty");
+      }
+      return missing;
+    }
+    function ensureOptionalDepsInBackground() {
+      if (autoInstallStarted || process.env.CCNOW_SKIP_AUTO_INSTALL === "1") return;
+      autoInstallStarted = true;
+      const missing = getMissingOptionalDeps();
+      if (missing.length === 0 || !hasCommand("npm")) return;
+      console.log(`\u{1F4E6} [ccnow-agent] Installing optional enhancements in background (${missing.join(", ")}) -> ${CONFIG_DIR2}/node_modules`);
+      (async () => {
+        for (const pkg of missing) {
+          const res = await installPackageAsync(pkg);
+          if (res.ok) {
+            console.log(`\u2705 [ccnow-agent] Optional dependency '${pkg}' installed and ready.`);
+          } else {
+            console.log(`\u2139\uFE0F [ccnow-agent] Optional dependency '${pkg}' skipped (${res.reason || `exit ${res.code}`}); fallback mode remains active.`);
+          }
+        }
+      })();
+    }
+    async function runSetupCommand2() {
+      const missing = getMissingOptionalDeps();
+      console.log(`\u{1F4C1} Config directory: ${CONFIG_DIR2}`);
+      console.log(`   - @botiverse/oar: ${isPackageAvailable("@botiverse/oar") ? "\u2705 installed" : "\u26AA missing"}`);
+      console.log(`   - node-pty:       ${isPackageAvailable("node-pty") ? "\u2705 installed" : "\u26AA missing"}`);
+      if (missing.length === 0) {
+        console.log("\u2728 All optional dependencies are already available.");
+        return;
+      }
+      if (!hasCommand("npm")) {
+        console.error("\u274C npm not found in PATH; cannot auto-install optional dependencies.");
+        process.exit(1);
+      }
+      for (const pkg of missing) {
+        console.log(`\u2B07\uFE0F Installing ${pkg} into ${CONFIG_DIR2}/node_modules ...`);
+        const res = await installPackageAsync(pkg);
+        console.log(res.ok ? `\u2705 ${pkg} installed.` : `\u26A0\uFE0F ${pkg} failed (${res.reason || `exit ${res.code}`}), fallback remains active.`);
+      }
+    }
+    module2.exports = {
+      tryRequireOptional,
+      resolveOptionalEsmUrl,
+      isPackageAvailable,
+      installPackageSync,
+      installPackageAsync,
+      getMissingOptionalDeps,
+      ensureOptionalDepsInBackground,
+      runSetupCommand: runSetupCommand2
+    };
+  }
+});
+
+// client/src/sessionRegistry.js
+var require_sessionRegistry = __commonJS({
+  "client/src/sessionRegistry.js"(exports2, module2) {
+    var fs2 = require("fs");
+    var path2 = require("path");
+    var { CONFIG_DIR: CONFIG_DIR2 } = require_config();
+    var SESSIONS_FILE = path2.join(CONFIG_DIR2, "sessions.json");
+    function readRegistry() {
+      try {
+        if (fs2.existsSync(SESSIONS_FILE)) {
+          const data = JSON.parse(fs2.readFileSync(SESSIONS_FILE, "utf8"));
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            return data;
+          }
+        }
+      } catch (_) {
+      }
+      return {};
+    }
+    function writeRegistry(map) {
+      try {
+        if (!fs2.existsSync(CONFIG_DIR2)) {
+          fs2.mkdirSync(CONFIG_DIR2, { recursive: true });
+        }
+        const tmp = `${SESSIONS_FILE}.tmp.${process.pid}.${Date.now()}`;
+        fs2.writeFileSync(tmp, JSON.stringify(map, null, 2), "utf8");
+        fs2.renameSync(tmp, SESSIONS_FILE);
+        return true;
+      } catch (err) {
+        console.warn("\u26A0\uFE0F [sessionRegistry] Failed to persist sessions.json:", err.message);
+        return false;
+      }
+    }
+    function listPureChatSessions() {
+      const reg = readRegistry();
+      return Object.values(reg).filter((s) => s && s.name).map((s) => ({
+        name: s.name,
+        windows: 1,
+        created: s.created || Date.now(),
+        attached: false,
+        path: s.workspacePath || "",
+        workspaceName: s.workspaceName || "",
+        agentType: s.agentType || "claude",
+        agentModel: s.agentModel || s.modelName || "",
+        sessionMode: "chat_only",
+        agentSessionId: "",
+        isRemote: true
+      }));
+    }
+    function getPureChatSession(sessionName) {
+      if (!sessionName) return null;
+      const reg = readRegistry();
+      return reg[sessionName] || null;
+    }
+    function upsertPureChatSession(sessionName, meta = {}) {
+      if (!sessionName) return null;
+      const reg = readRegistry();
+      const prev = reg[sessionName] || {};
+      const record = {
+        name: sessionName,
+        workspacePath: meta.workspacePath || prev.workspacePath || process.cwd(),
+        workspaceName: meta.workspaceName !== void 0 ? meta.workspaceName : prev.workspaceName || "",
+        agentType: meta.agentType || prev.agentType || "claude",
+        agentModel: meta.agentModel !== void 0 ? meta.agentModel : prev.agentModel || "",
+        modelName: meta.modelName !== void 0 ? meta.modelName : prev.modelName || "",
+        sessionMode: "chat_only",
+        created: prev.created || meta.created || Date.now()
+      };
+      reg[sessionName] = record;
+      writeRegistry(reg);
+      return record;
+    }
+    function deletePureChatSession(sessionName) {
+      if (!sessionName) return false;
+      const reg = readRegistry();
+      if (!Object.prototype.hasOwnProperty.call(reg, sessionName)) return false;
+      delete reg[sessionName];
+      writeRegistry(reg);
+      return true;
+    }
+    module2.exports = {
+      SESSIONS_FILE,
+      readRegistry,
+      listPureChatSessions,
+      getPureChatSession,
+      upsertPureChatSession,
+      deletePureChatSession
+    };
+  }
+});
+
 // client/src/tmuxHandlers.js
 var require_tmuxHandlers = __commonJS({
   "client/src/tmuxHandlers.js"(exports2, module2) {
@@ -560,6 +908,8 @@ var require_tmuxHandlers = __commonJS({
     var crypto = require("crypto");
     var { spawn, execFileSync } = require("child_process");
     var { hasCommand, resolveBaseDir, tmuxArgs } = require_config();
+    var { tryRequireOptional } = require_depsManager();
+    var sessionRegistry = require_sessionRegistry();
     var activeTerminals = /* @__PURE__ */ new Map();
     function cleanupAllTerminals() {
       for (const [, term] of activeTerminals.entries()) {
@@ -571,6 +921,15 @@ var require_tmuxHandlers = __commonJS({
       activeTerminals.clear();
     }
     function readTmuxSessionMeta(sessionName) {
+      const pureChat = sessionRegistry.getPureChatSession(sessionName);
+      if (pureChat) {
+        return {
+          workspacePath: pureChat.workspacePath && fs2.existsSync(pureChat.workspacePath) ? pureChat.workspacePath : process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd(),
+          agentType: pureChat.agentType || "claude",
+          sessionMode: "chat_only",
+          model: pureChat.agentModel || pureChat.modelName || ""
+        };
+      }
       let workspacePath = process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd();
       let agentType = "claude";
       let sessionMode = "hybrid";
@@ -595,6 +954,7 @@ var require_tmuxHandlers = __commonJS({
     function handleListSessions(send, reqId) {
       const hasTmux = hasCommand("tmux");
       const sessions = [];
+      const seenNames = /* @__PURE__ */ new Set();
       if (hasTmux) {
         try {
           const fmt = "#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}";
@@ -609,6 +969,7 @@ var require_tmuxHandlers = __commonJS({
               const agentType = parts[6] || "";
               const rawMode = parts[8] || "";
               const sessionMode = rawMode || (agentType === "default" ? "terminal_only" : "hybrid");
+              seenNames.add(parts[0]);
               sessions.push({
                 name: parts[0],
                 windows: parseInt(parts[1], 10) || 1,
@@ -626,7 +987,14 @@ var require_tmuxHandlers = __commonJS({
           }
         } catch (e) {
         }
-      } else if (sessions.length === 0) {
+      }
+      for (const s of sessionRegistry.listPureChatSessions()) {
+        if (!seenNames.has(s.name)) {
+          seenNames.add(s.name);
+          sessions.push(s);
+        }
+      }
+      if (!hasTmux && !sessions.some((s) => s.sessionMode !== "chat_only")) {
         sessions.push({
           name: "default",
           windows: 1,
@@ -644,24 +1012,54 @@ var require_tmuxHandlers = __commonJS({
       const agent = msg.agent || msg.agentType || "default";
       const targetMode = sessionMode || (agent === "default" ? "terminal_only" : "hybrid");
       const hasTmux = hasCommand("tmux");
+      const targetDir = resolveBaseDir(workspace);
+      const baseName = String(sessionName || "").replace(/[^a-zA-Z0-9_-]/g, "") || (agent !== "default" ? agent : "shell");
+      const existingSet = new Set(Object.keys(sessionRegistry.readRegistry()));
+      if (hasTmux) {
+        try {
+          const existingOut = execFileSync("tmux", tmuxArgs(["list-sessions", "-F", "#{session_name}"]), {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"]
+          });
+          for (const n of existingOut.trim().split("\n").filter(Boolean)) existingSet.add(n);
+        } catch (_) {
+        }
+      }
+      let finalName = baseName;
+      if (existingSet.has(finalName)) {
+        let idx = 2;
+        while (existingSet.has(`${baseName}-${idx}`)) idx++;
+        finalName = `${baseName}-${idx}`;
+      }
+      if (targetMode === "chat_only") {
+        try {
+          const effectiveAgent = agent !== "default" ? agent : "claude";
+          sessionRegistry.upsertPureChatSession(finalName, {
+            workspacePath: targetDir,
+            workspaceName: workspaceName ? String(workspaceName) : "",
+            agentType: effectiveAgent,
+            agentModel: agentModel ? String(agentModel) : "",
+            modelName: modelName ? String(modelName) : "",
+            created: Date.now()
+          });
+          const oarMgr = getDeviceOarManager();
+          if (oarMgr) {
+            oarMgr.deleteSession(finalName);
+            oarMgr.getOrCreateSession(finalName, {
+              agentType: effectiveAgent,
+              workspacePath: targetDir,
+              model: agentModel || modelName || ""
+            });
+          }
+          send({ action: "tmux:new_session_result", reqId, success: true, sessionName: finalName });
+          return;
+        } catch (e) {
+          send({ action: "tmux:new_session_result", reqId, error: e.message });
+          return;
+        }
+      }
       if (hasTmux && sessionName) {
         try {
-          const targetDir = resolveBaseDir(workspace);
-          const baseName = String(sessionName).replace(/[^a-zA-Z0-9_-]/g, "") || (agent !== "default" ? agent : "shell");
-          let finalName = baseName;
-          try {
-            const existingOut = execFileSync("tmux", tmuxArgs(["list-sessions", "-F", "#{session_name}"]), {
-              encoding: "utf8",
-              stdio: ["ignore", "pipe", "ignore"]
-            });
-            const existingSet = new Set(existingOut.trim().split("\n").filter(Boolean));
-            if (existingSet.has(finalName)) {
-              let idx = 2;
-              while (existingSet.has(`${baseName}-${idx}`)) idx++;
-              finalName = `${baseName}-${idx}`;
-            }
-          } catch (_) {
-          }
           execFileSync("tmux", tmuxArgs(["new-session", "-d", "-s", finalName, "-c", targetDir]), { stdio: "ignore" });
           let agentSessionId = "";
           if (agent === "claude") {
@@ -682,22 +1080,7 @@ var require_tmuxHandlers = __commonJS({
             } catch (_) {
             }
           }
-          if (targetMode === "chat_only") {
-            const oarMgr = getDeviceOarManager();
-            if (oarMgr) {
-              oarMgr.deleteSession(finalName);
-              oarMgr.getOrCreateSession(finalName, {
-                agentType: agent !== "default" ? agent : "claude",
-                workspacePath: targetDir,
-                model: agentModel || modelName || ""
-              });
-            }
-            try {
-              const bannerCmd = `printf '\\033[1;36m[OAR Pure Chat Session]\\033[0m\\n\u6B64\u4F1A\u8BDD\u7531\u8BBE\u5907\u7AEF Open Agent Runtime \u76F4\u63A5\u9A71\u52A8\uFF08\u7EAF\u4F1A\u8BDD\u6A21\u5F0F\uFF09\u3002\\n'`;
-              execFileSync("tmux", tmuxArgs(["send-keys", "-t", finalName, bannerCmd, "C-m"]), { stdio: "ignore" });
-            } catch (_) {
-            }
-          } else if (agent && agent !== "default" && agent !== "terminal") {
+          if (agent && agent !== "default" && agent !== "terminal") {
             let agentCmd = String(agent).replace(/"/g, "");
             if (agent === "agy") {
               agentCmd = "agy --dangerously-skip-permissions";
@@ -729,9 +1112,10 @@ var require_tmuxHandlers = __commonJS({
           return;
         }
       }
-      send({ action: "tmux:new_session_result", reqId, success: true, sessionName });
+      send({ action: "tmux:new_session_result", reqId, success: true, sessionName: finalName });
     }
     function handleKillSession(send, reqId, sessionName, getDeviceOarManager) {
+      const wasPureChat = sessionRegistry.deletePureChatSession(sessionName);
       const oarMgr = getDeviceOarManager();
       if (oarMgr && sessionName) {
         try {
@@ -739,7 +1123,7 @@ var require_tmuxHandlers = __commonJS({
         } catch (_) {
         }
       }
-      if (hasCommand("tmux") && sessionName) {
+      if (!wasPureChat && hasCommand("tmux") && sessionName) {
         try {
           execFileSync("tmux", tmuxArgs(["kill-session", "-t", sessionName]), { stdio: "ignore" });
         } catch (e) {
@@ -791,28 +1175,30 @@ var require_tmuxHandlers = __commonJS({
         targetArgs = tmuxArgs(["attach-session", "-t", sessionName]);
       }
       let ptyHandler = null;
-      try {
-        const nodePty = require("node-pty");
-        const ptyProcess = nodePty.spawn(targetCmd, targetArgs, {
-          name: "xterm-256color",
-          cols,
-          rows,
-          cwd: process.cwd(),
-          env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" }
-        });
-        ptyProcess.onData((data) => {
-          send({ action: "term:output", termId, data });
-        });
-        ptyProcess.onExit(() => {
-          activeTerminals.delete(termId);
-          send({ action: "term:exit", termId });
-        });
-        ptyHandler = {
-          write: (d) => ptyProcess.write(d),
-          resize: (c, r) => ptyProcess.resize(c, r),
-          kill: () => ptyProcess.kill()
-        };
-      } catch (e) {
+      const nodePty = tryRequireOptional("node-pty");
+      if (nodePty) {
+        try {
+          const ptyProcess = nodePty.spawn(targetCmd, targetArgs, {
+            name: "xterm-256color",
+            cols,
+            rows,
+            cwd: process.cwd(),
+            env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" }
+          });
+          ptyProcess.onData((data) => {
+            send({ action: "term:output", termId, data });
+          });
+          ptyProcess.onExit(() => {
+            activeTerminals.delete(termId);
+            send({ action: "term:exit", termId });
+          });
+          ptyHandler = {
+            write: (d) => ptyProcess.write(d),
+            resize: (c, r) => ptyProcess.resize(c, r),
+            kill: () => ptyProcess.kill()
+          };
+        } catch (e) {
+        }
       }
       if (!ptyHandler && hasPython) {
         const fullCmdList = [targetCmd, ...targetArgs];
@@ -1680,10 +2066,24 @@ var require_oar_runtime = __commonJS({
     var SUPPORTED_IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
     function createDeviceOarManager(options = {}) {
       const storageDir = options.storageDir || path2.join(os.homedir(), ".ccnow", "oar_sessions");
+      const resolveEsmUrl = typeof options.resolveEsmUrl === "function" ? options.resolveEsmUrl : null;
       const activeSessions = /* @__PURE__ */ new Map();
       const runtimeCache = /* @__PURE__ */ new Map();
       let rootOarPromise = null;
       let capsModulePromise = null;
+      async function importOarSpecifier(specifier) {
+        try {
+          return await import(specifier);
+        } catch (primaryErr) {
+          if (resolveEsmUrl) {
+            const fallbackUrl = resolveEsmUrl(specifier);
+            if (fallbackUrl) {
+              return await import(fallbackUrl);
+            }
+          }
+          throw primaryErr;
+        }
+      }
       function ensureStorageDir() {
         if (!fs2.existsSync(storageDir)) {
           try {
@@ -1699,8 +2099,9 @@ var require_oar_runtime = __commonJS({
       }
       function getRootOar() {
         if (!rootOarPromise) {
-          rootOarPromise = import("@botiverse/oar").catch((err) => {
+          rootOarPromise = importOarSpecifier("@botiverse/oar").catch((err) => {
             console.warn("[DeviceOAR] @botiverse/oar not available on this device:", err.message);
+            rootOarPromise = null;
             return null;
           });
         }
@@ -1708,7 +2109,10 @@ var require_oar_runtime = __commonJS({
       }
       function getCapabilitiesModule() {
         if (!capsModulePromise) {
-          capsModulePromise = import("@botiverse/oar/capabilities").catch(() => null);
+          capsModulePromise = importOarSpecifier("@botiverse/oar/capabilities").catch(() => {
+            capsModulePromise = null;
+            return null;
+          });
         }
         return capsModulePromise;
       }
@@ -1717,10 +2121,11 @@ var require_oar_runtime = __commonJS({
         if (runtimeCache.has(runtimeId)) return runtimeCache.get(runtimeId);
         const promise = (async () => {
           try {
-            const mod = await import(`@botiverse/oar/runtimes/${runtimeId}`);
+            const mod = await importOarSpecifier(`@botiverse/oar/runtimes/${runtimeId}`);
             return mod[RUNTIME_EXPORT_NAME[runtimeId]] || null;
           } catch (err) {
             console.warn(`[DeviceOAR] Failed to load @botiverse/oar/runtimes/${runtimeId}:`, err.message);
+            runtimeCache.delete(runtimeId);
             return null;
           }
         })();
@@ -2479,7 +2884,9 @@ var require_chatHandlers = __commonJS({
     var path2 = require("path");
     var { spawn, execFileSync } = require("child_process");
     var { CONFIG_DIR: CONFIG_DIR2, hasCommand, safeResolve, tmuxArgs } = require_config();
+    var { resolveOptionalEsmUrl } = require_depsManager();
     var { readTmuxSessionMeta } = require_tmuxHandlers();
+    var sessionRegistry = require_sessionRegistry();
     var agentChatService = require_agentChatService();
     var { createDeviceOarManager } = require_oar_runtime();
     var runningTasks = /* @__PURE__ */ new Map();
@@ -2488,7 +2895,8 @@ var require_chatHandlers = __commonJS({
       if (deviceOarManager) return deviceOarManager;
       try {
         deviceOarManager = createDeviceOarManager({
-          storageDir: path2.join(CONFIG_DIR2, "oar_sessions")
+          storageDir: path2.join(CONFIG_DIR2, "oar_sessions"),
+          resolveEsmUrl: resolveOptionalEsmUrl
         });
         return deviceOarManager;
       } catch (err) {
@@ -2504,7 +2912,8 @@ var require_chatHandlers = __commonJS({
         } catch (_) {
         }
       }
-      if (hasCommand("tmux") && sessionName) {
+      const isPureChat = Boolean(sessionRegistry.getPureChatSession(sessionName));
+      if (!isPureChat && hasCommand("tmux") && sessionName) {
         try {
           try {
             execFileSync("tmux", tmuxArgs(["set-option", "-u", "-t", sessionName, "@agent_session_id"]), { stdio: "ignore" });
@@ -2580,6 +2989,17 @@ var require_chatHandlers = __commonJS({
     }
     async function handleChatHistory(send, reqId, sessionName) {
       try {
+        const pureChat = sessionRegistry.getPureChatSession(sessionName);
+        if (pureChat) {
+          const oarMgr = getDeviceOarManager();
+          if (oarMgr) {
+            const snapshot = oarMgr.getHistorySnapshot(sessionName, {
+              agentType: pureChat.agentType || "claude",
+              workspacePath: pureChat.workspacePath || process.cwd()
+            });
+            return send({ action: "agent:chat_history_result", reqId, ...snapshot });
+          }
+        }
         const hasTmux = hasCommand("tmux");
         let sessionCwd = process.cwd();
         let agentType = "";
@@ -2662,22 +3082,27 @@ var require_chatHandlers = __commonJS({
         });
       }
     }
+    function resolveSessionWorkspace(sessionName) {
+      const pureChat = sessionRegistry.getPureChatSession(sessionName);
+      if (pureChat && pureChat.workspacePath && fs2.existsSync(pureChat.workspacePath)) {
+        return pureChat.workspacePath;
+      }
+      if (hasCommand("tmux") && sessionName) {
+        try {
+          const out = execFileSync("tmux", tmuxArgs(["display-message", "-p", "-t", sessionName, "#{session_path}"]), {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"]
+          }).trim();
+          if (out && fs2.existsSync(out)) return out;
+        } catch (_) {
+        }
+      }
+      return os.homedir();
+    }
     function handleChatUpload(send, reqId, msg) {
       try {
         const { sessionName, files } = msg;
-        let targetWorkspace = os.homedir();
-        if (hasCommand("tmux") && sessionName) {
-          try {
-            const out = execFileSync("tmux", tmuxArgs(["display-message", "-p", "-t", sessionName, "#{session_path}"]), {
-              encoding: "utf8",
-              stdio: ["ignore", "pipe", "ignore"]
-            }).trim();
-            if (out && fs2.existsSync(out)) {
-              targetWorkspace = out;
-            }
-          } catch (e) {
-          }
-        }
+        const targetWorkspace = resolveSessionWorkspace(sessionName);
         const uploadDir = path2.join(targetWorkspace, ".deck", "uploads");
         if (!fs2.existsSync(uploadDir)) {
           fs2.mkdirSync(uploadDir, { recursive: true });
@@ -2714,17 +3139,7 @@ var require_chatHandlers = __commonJS({
         if (!cleanName) {
           return send({ action: "agent:chat_attachment_result", reqId, error: "Invalid filename" });
         }
-        let targetWorkspace = os.homedir();
-        if (hasCommand("tmux") && sessionName) {
-          try {
-            const out = execFileSync("tmux", tmuxArgs(["display-message", "-p", "-t", sessionName, "#{session_path}"]), {
-              encoding: "utf8",
-              stdio: ["ignore", "pipe", "ignore"]
-            }).trim();
-            if (out && fs2.existsSync(out)) targetWorkspace = out;
-          } catch (_) {
-          }
-        }
+        const targetWorkspace = resolveSessionWorkspace(sessionName);
         const filePath = safeResolve(targetWorkspace, path2.join(".deck", "uploads", cleanName));
         if (!fs2.existsSync(filePath)) {
           return send({ action: "agent:chat_attachment_result", reqId, error: "Attachment not found" });
@@ -2968,15 +3383,17 @@ var require_client = __commonJS({
     var tmuxHandlers = require_tmuxHandlers();
     var chatHandlers = require_chatHandlers();
     var { ensureLocalAgentScript, handleSystemUpdate } = require_updater();
-    var WSClient = typeof WebSocket !== "undefined" ? WebSocket : null;
+    var { tryRequireOptional, installPackageSync, ensureOptionalDepsInBackground } = require_depsManager();
+    var WSClient = typeof WebSocket !== "undefined" ? WebSocket : tryRequireOptional("ws");
     if (!WSClient) {
-      try {
-        WSClient = require("ws");
-      } catch (e) {
-        console.error("\u274C Error: Global WebSocket not available in this Node.js version.");
-        console.error("Please run with Node.js >= 21 or run: npm install -g ws");
-        process.exit(1);
+      if (installPackageSync("ws")) {
+        WSClient = tryRequireOptional("ws");
       }
+    }
+    if (!WSClient) {
+      console.error("\u274C Error: Global WebSocket not available in this Node.js version.");
+      console.error("Please run with Node.js >= 21 or run: npm install -g ws");
+      process.exit(1);
     }
     var AgentClient2 = class {
       constructor(serverUrl, credentials = {}) {
@@ -3107,6 +3524,7 @@ var require_client = __commonJS({
             ensureLocalAgentScript(this.serverUrl);
             this.credentials = { deviceId: msg.deviceId, deviceSecret: msg.deviceSecret };
             this.startHeartbeat();
+            ensureOptionalDepsInBackground();
             return;
           case "pair_failed":
             console.error(`\u274C Pairing failed: ${msg.error}`);
@@ -3116,6 +3534,7 @@ var require_client = __commonJS({
           case "auth_success":
             console.log(`\u2705 Authenticated successfully as ${msg.deviceId}! Online and ready.`);
             this.startHeartbeat();
+            ensureOptionalDepsInBackground();
             return;
           case "auth_failed":
             console.error(`\u274C Authentication failed: ${msg.error}`);
@@ -3430,11 +3849,13 @@ var {
   CONFIG_FILE,
   WORKSPACES_FILE,
   readConfig,
-  parseArgs
+  parseArgs,
+  applyManagedGatewayEnv
 } = require_config();
 var { AgentClient } = require_client();
 var { downloadAndApplyUpdate } = require_updater();
 var { handleServiceCommand } = require_serviceManager();
+var { runSetupCommand } = require_depsManager();
 function printHelp() {
   console.log(`
 ccnow-agent (v${CLIENT_VERSION}) - Ultra-lightweight edge daemon for ccnow (tmux-agent-deck)
@@ -3494,6 +3915,13 @@ switch (parsed.command) {
     handleServiceCommand(subcommand, parsed.options);
     break;
   }
+  case "setup": {
+    runSetupCommand().then(() => process.exit(0)).catch((err) => {
+      console.error("\u274C Setup failed:", err.message);
+      process.exit(1);
+    });
+    break;
+  }
   case "connect": {
     const { server, token, name } = parsed.options;
     if (!server || !token) {
@@ -3534,6 +3962,7 @@ switch (parsed.command) {
         console.warn("\u26A0\uFE0F Failed to seed default workspace:", err.message);
       }
     }
+    applyManagedGatewayEnv({ server, deviceId, deviceSecret });
     console.log(`\u{1F680} Starting ccnow-agent (Device: ${deviceName})...`);
     const client = new AgentClient(server, {
       deviceId,
