@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const { getDb, withTransaction } = require('./services/sqliteService');
 
-const BINDINGS_FILE = path.join(__dirname, 'im_bindings.json');
 let bindings = {
   telegram: [],
   feishu: [],
@@ -26,24 +26,47 @@ const getWebUsername = (id) => {
 };
 
 function loadBindings() {
-  if (fs.existsSync(BINDINGS_FILE)) {
-    try {
-      bindings = JSON.parse(fs.readFileSync(BINDINGS_FILE, 'utf8'));
-      if (!bindings.telegram) bindings.telegram = [];
-      if (!bindings.feishu) bindings.feishu = [];
-      if (!bindings.wechat) bindings.wechat = [];
-      if (!bindings.activeSessions) bindings.activeSessions = {};
-    } catch (e) {
-      console.error('[IM Bot] Error loading bindings:', e);
+  try {
+    const db = getDb();
+    const rows = db.prepare('SELECT key, value_json FROM im_bindings_kv').all();
+    const loaded = {
+      telegram: [],
+      feishu: [],
+      wechat: [],
+      activeSessions: {}
+    };
+    for (const row of rows) {
+      try {
+        loaded[row.key] = JSON.parse(row.value_json);
+      } catch (_) {}
     }
+    if (!Array.isArray(loaded.telegram)) loaded.telegram = [];
+    if (!Array.isArray(loaded.feishu)) loaded.feishu = [];
+    if (!Array.isArray(loaded.wechat)) loaded.wechat = [];
+    if (!loaded.activeSessions || typeof loaded.activeSessions !== 'object') loaded.activeSessions = {};
+    bindings = loaded;
+  } catch (e) {
+    console.error('[IM Bot] Error loading bindings from SQLite:', e);
   }
 }
 
 function saveBindings() {
   try {
-    fs.writeFileSync(BINDINGS_FILE, JSON.stringify(bindings, null, 2), 'utf8');
+    const now = new Date().toISOString();
+    withTransaction((db) => {
+      const upsert = db.prepare(`
+        INSERT INTO im_bindings_kv (key, value_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value_json = excluded.value_json,
+          updated_at = excluded.updated_at
+      `);
+      for (const k of ['telegram', 'feishu', 'wechat', 'activeSessions']) {
+        upsert.run(k, JSON.stringify(bindings[k] ?? (k === 'activeSessions' ? {} : [])), now);
+      }
+    });
   } catch (e) {
-    console.error('[IM Bot] Error saving bindings:', e);
+    console.error('[IM Bot] Error saving bindings to SQLite:', e);
   }
 }
 

@@ -471,23 +471,17 @@ const initClaudeConfig = () => {
     }
   }
 
-  // Also scan data/ directory for any workspaces_*.json
-  if (fs.existsSync(DATA_DIR)) {
-    try {
-      const files = fs.readdirSync(DATA_DIR);
-      for (const file of files) {
-        if (file.startsWith('workspaces_') && file.endsWith('.json')) {
-          const username = file.replace(/^workspaces_/, '').replace(/\.json$/, '');
-          const wsList = readWorkspaces(username);
-          if (Array.isArray(wsList)) {
-            for (const w of wsList) {
-              if (w && w.path) allPathsToTrust.add(resolveWorkspacePath(w.path, username));
-            }
-          }
-        }
-      }
-    } catch (e) {}
-  }
+  // Scan all workspace scopes stored in SQLite (multi-user + single-user)
+  try {
+    const { getDb } = require('./sqliteService');
+    const db = getDb();
+    const rows = db.prepare('SELECT scope, path FROM workspaces').all();
+    for (const row of rows) {
+      if (!row || !row.path) continue;
+      const scopeUser = row.scope === '__single__' ? null : row.scope;
+      allPathsToTrust.add(resolveWorkspacePath(row.path, scopeUser));
+    }
+  } catch (e) {}
 
   ensureClaudeTrust(Array.from(allPathsToTrust), sysHome);
 };
@@ -1055,15 +1049,21 @@ const resolveWorkspacePath = (p, username) => {
 
 const readWorkspaces = (username) => {
   try {
-    if (MULTI_USER_ENABLED && username) {
-      const userWorkspacesFile = path.join(DATA_DIR, `workspaces_${username}.json`);
-      if (fs.existsSync(userWorkspacesFile)) {
-        const list = JSON.parse(fs.readFileSync(userWorkspacesFile, 'utf8'));
-        if (Array.isArray(list)) {
-          return list;
-        }
-      }
+    const { getDb } = require('./sqliteService');
+    const db = getDb();
+    const isMultiUserScope = Boolean(MULTI_USER_ENABLED && username);
+    const scope = isMultiUserScope ? username : '__single__';
 
+    const rows = db.prepare('SELECT name, path, extra_json FROM workspaces WHERE scope = ? ORDER BY sort_order ASC, id ASC').all(scope);
+    if (rows.length > 0) {
+      return rows.map(r => {
+        let extra = {};
+        try { extra = JSON.parse(r.extra_json || '{}'); } catch (_) {}
+        return { ...extra, name: r.name, path: r.path };
+      });
+    }
+
+    if (isMultiUserScope) {
       // Auto-initialize with default workspace folder
       const defaultWorkspacePath = path.join(PROJECT_ROOT, 'workspaces', username, 'default');
       const defaultWorkspaces = [{ name: 'default', path: defaultWorkspacePath }];
@@ -1075,39 +1075,39 @@ const readWorkspaces = (username) => {
       }
       return defaultWorkspaces;
     }
-
-    if (fs.existsSync(WORKSPACES_FILE)) {
-      return JSON.parse(fs.readFileSync(WORKSPACES_FILE, 'utf8'));
-    }
   } catch (err) {
-    console.error('Error reading workspaces file:', err);
+    console.error('Error reading workspaces from SQLite:', err);
   }
   return [];
 };
 
 const writeWorkspaces = (workspaces, username) => {
   try {
-    if (MULTI_USER_ENABLED && username) {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      const userWorkspacesFile = path.join(DATA_DIR, `workspaces_${username}.json`);
-      fs.writeFileSync(userWorkspacesFile, JSON.stringify(workspaces, null, 2), 'utf8');
-      if (Array.isArray(workspaces)) {
-        const paths = workspaces.map(w => resolveWorkspacePath(w.path, username));
-        ensureClaudeTrust(paths, getUserHomeDir(username));
-      }
-      return true;
-    }
+    const { withTransaction } = require('./sqliteService');
+    const isMultiUserScope = Boolean(MULTI_USER_ENABLED && username);
+    const scope = isMultiUserScope ? username : '__single__';
+    const list = Array.isArray(workspaces) ? workspaces : [];
 
-    fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(workspaces, null, 2), 'utf8');
-    if (Array.isArray(workspaces)) {
-      const paths = workspaces.map(w => resolveWorkspacePath(w.path));
+    withTransaction((db) => {
+      db.prepare('DELETE FROM workspaces WHERE scope = ?').run(scope);
+      const ins = db.prepare('INSERT INTO workspaces (scope, name, path, sort_order, extra_json) VALUES (?, ?, ?, ?, ?)');
+      list.forEach((w, idx) => {
+        if (!w || !w.path) return;
+        const { name, path: wsPath, ...extra } = w;
+        ins.run(scope, name || path.basename(wsPath) || 'default', wsPath, idx, JSON.stringify(extra || {}));
+      });
+    });
+
+    if (isMultiUserScope) {
+      const paths = list.map(w => resolveWorkspacePath(w.path, username));
+      ensureClaudeTrust(paths, getUserHomeDir(username));
+    } else {
+      const paths = list.map(w => resolveWorkspacePath(w.path));
       ensureClaudeTrust(paths, getHomeDir());
     }
     return true;
   } catch (err) {
-    console.error('Error writing workspaces file:', err);
+    console.error('Error writing workspaces to SQLite:', err);
     return false;
   }
 };

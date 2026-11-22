@@ -111,15 +111,12 @@ function loadConfig() {
 }
 
 /**
- * Save gateway configuration to data/llm_gateway.json
+ * Save gateway configuration to data/llm_gateway.json (atomic write + 0600 permissions)
  */
 function saveConfig(config) {
   try {
-    const dir = path.dirname(CONFIG_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    const { atomicWriteJSON } = require('./sqliteService');
+    atomicWriteJSON(CONFIG_FILE, config, { mode: 0o600 });
     return true;
   } catch (err) {
     console.error('❌ [LLM-Gateway] Failed to save config file:', err.message);

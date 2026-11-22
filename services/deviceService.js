@@ -1,15 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
-const { PROJECT_ROOT } = require('../config');
-
-const DATA_DIR = path.join(PROJECT_ROOT, 'data');
-const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+const { getDb } = require('./sqliteService');
 
 // In-memory pair tokens: token -> { username, createdAt, expireAt }
 const pairTokens = new Map();
@@ -26,31 +16,71 @@ const activeTerminals = new Map();
 // Pending general RPC requests: reqId -> { resolve, timer }
 const pendingRpcRequests = new Map();
 
-/**
- * Read all registered devices from disk
- */
-function readDevices() {
+function rowToDevice(row) {
+  if (!row) return null;
+  let agentTypes = [];
   try {
-    if (fs.existsSync(DEVICES_FILE)) {
-      return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8'));
-    }
-  } catch (err) {
-    console.error('[DeviceService] Error reading devices file:', err);
+    agentTypes = JSON.parse(row.agent_types_json || '[]');
+  } catch (_) {
+    agentTypes = [];
   }
-  return [];
+  return {
+    deviceId: row.device_id,
+    userId: row.user_id,
+    name: row.name,
+    hostname: row.hostname,
+    platform: row.platform,
+    arch: row.arch,
+    clientVersion: row.client_version || '1.0.0',
+    agentTypes: Array.isArray(agentTypes) ? agentTypes : [],
+    deviceKind: row.device_kind || 'external',
+    containerName: row.container_name || null,
+    secretHash: row.secret_hash,
+    createdAt: Number(row.created_at),
+    lastSeen: Number(row.last_seen)
+  };
 }
 
 /**
- * Write devices list to disk safely
+ * Read all registered devices from SQLite
  */
-function writeDevices(devices) {
+function readDevices() {
   try {
-    fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf8');
-    return true;
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM devices ORDER BY created_at ASC').all();
+    return rows.map(rowToDevice);
   } catch (err) {
-    console.error('[DeviceService] Error writing devices file:', err);
-    return false;
+    console.error('[DeviceService] Error reading devices from SQLite:', err);
+    return [];
   }
+}
+
+/**
+ * Insert a new device row into SQLite
+ */
+function insertDeviceRow(d) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO devices (
+      device_id, user_id, name, hostname, platform, arch, client_version,
+      agent_types_json, device_kind, container_name, secret_hash, created_at, last_seen
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    d.deviceId,
+    d.userId,
+    d.name,
+    d.hostname,
+    d.platform,
+    d.arch,
+    d.clientVersion || '1.0.0',
+    JSON.stringify(Array.isArray(d.agentTypes) ? d.agentTypes : []),
+    d.deviceKind || 'external',
+    d.containerName || null,
+    d.secretHash,
+    Number(d.createdAt || Date.now()),
+    Number(d.lastSeen || Date.now())
+  );
 }
 
 /**
@@ -113,7 +143,6 @@ function verifyAndConsumePairToken(token) {
  * Register a newly paired device
  */
 function registerDevice(username, deviceInfo = {}) {
-  const devices = readDevices();
   const deviceId = 'dev_' + generateRandomHex(8);
   const deviceSecret = generateRandomHex(24);
   const secretHash = hashSecret(deviceSecret);
@@ -127,13 +156,14 @@ function registerDevice(username, deviceInfo = {}) {
     arch: deviceInfo.arch || 'unknown',
     clientVersion: deviceInfo.version || '1.0.0',
     agentTypes: deviceInfo.agentTypes || ['claude-code', 'custom-cli'],
+    deviceKind: deviceInfo.deviceKind || 'external',
+    containerName: deviceInfo.containerName || null,
     secretHash,
     createdAt: Date.now(),
     lastSeen: Date.now()
   };
 
-  devices.push(newDevice);
-  writeDevices(devices);
+  insertDeviceRow(newDevice);
 
   return {
     deviceId,
@@ -147,8 +177,7 @@ function registerDevice(username, deviceInfo = {}) {
  */
 function authenticateDevice(deviceId, deviceSecret) {
   if (!deviceId || !deviceSecret) return null;
-  const devices = readDevices();
-  const record = devices.find(d => d.deviceId === deviceId);
+  const record = getDeviceById(deviceId);
   if (!record) return null;
 
   const checkHash = hashSecret(deviceSecret);
@@ -169,32 +198,46 @@ function isDeviceOnline(deviceId) {
  * Get device record by deviceId
  */
 function getDeviceById(deviceId) {
-  const devices = readDevices();
-  return devices.find(d => d.deviceId === deviceId) || null;
+  if (!deviceId) return null;
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM devices WHERE device_id = ?').get(deviceId);
+    return rowToDevice(row);
+  } catch (err) {
+    console.error('[DeviceService] Error reading device by id:', err);
+    return null;
+  }
 }
 
 /**
  * Get all devices belonging to a user, augmented with online status
  */
 function getUserDevices(username) {
-  const devices = readDevices();
-  const userDevices = devices.filter(d => d.userId === username);
-
-  return userDevices.map(d => ({
-    deviceId: d.deviceId,
-    userId: d.userId,
-    name: d.name,
-    hostname: d.hostname,
-    platform: d.platform,
-    arch: d.arch,
-    clientVersion: d.clientVersion || '1.0.0',
-    agentTypes: d.agentTypes,
-    deviceKind: d.deviceKind || 'external',
-    containerName: d.containerName || null,
-    createdAt: d.createdAt,
-    lastSeen: d.lastSeen,
-    isOnline: activeConnections.has(d.deviceId)
-  }));
+  try {
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM devices WHERE user_id = ? ORDER BY created_at ASC').all(username);
+    return rows.map(row => {
+      const d = rowToDevice(row);
+      return {
+        deviceId: d.deviceId,
+        userId: d.userId,
+        name: d.name,
+        hostname: d.hostname,
+        platform: d.platform,
+        arch: d.arch,
+        clientVersion: d.clientVersion || '1.0.0',
+        agentTypes: d.agentTypes,
+        deviceKind: d.deviceKind || 'external',
+        containerName: d.containerName || null,
+        createdAt: d.createdAt,
+        lastSeen: d.lastSeen,
+        isOnline: activeConnections.has(d.deviceId)
+      };
+    });
+  } catch (err) {
+    console.error('[DeviceService] Error reading user devices:', err);
+    return [];
+  }
 }
 
 /**
@@ -202,13 +245,21 @@ function getUserDevices(username) {
  * If created, returns the newly generated plaintext deviceSecret; otherwise deviceSecret is null.
  */
 function ensureManagedDevice(username, opts = {}) {
-  const devices = readDevices();
+  const db = getDb();
   const deviceKind = opts.deviceKind || 'docker-sandbox';
-  const existing = devices.find(
-    d => d.userId === username && d.deviceKind === deviceKind && (!opts.containerName || d.containerName === opts.containerName)
-  );
+  let row;
+  if (opts.containerName) {
+    row = db.prepare(
+      'SELECT * FROM devices WHERE user_id = ? AND device_kind = ? AND container_name = ? LIMIT 1'
+    ).get(username, deviceKind, opts.containerName);
+  } else {
+    row = db.prepare(
+      'SELECT * FROM devices WHERE user_id = ? AND device_kind = ? LIMIT 1'
+    ).get(username, deviceKind);
+  }
 
-  if (existing) {
+  if (row) {
+    const existing = rowToDevice(row);
     let changed = false;
     if (opts.name && existing.name !== opts.name) {
       existing.name = opts.name;
@@ -218,7 +269,10 @@ function ensureManagedDevice(username, opts = {}) {
       existing.containerName = opts.containerName;
       changed = true;
     }
-    if (changed) writeDevices(devices);
+    if (changed) {
+      db.prepare('UPDATE devices SET name = ?, container_name = ? WHERE device_id = ?')
+        .run(existing.name, existing.containerName, existing.deviceId);
+    }
     return {
       deviceId: existing.deviceId,
       deviceSecret: null,
@@ -247,8 +301,7 @@ function ensureManagedDevice(username, opts = {}) {
     lastSeen: Date.now()
   };
 
-  devices.push(newDevice);
-  writeDevices(devices);
+  insertDeviceRow(newDevice);
 
   return {
     deviceId,
@@ -262,14 +315,14 @@ function ensureManagedDevice(username, opts = {}) {
  * Rotate a managed device's secret and return the new plaintext secret.
  */
 function rotateManagedDeviceSecret(deviceId) {
-  const devices = readDevices();
-  const target = devices.find(d => d.deviceId === deviceId);
-  if (!target) return null;
+  const db = getDb();
+  const existing = getDeviceById(deviceId);
+  if (!existing) return null;
 
   const deviceSecret = generateRandomHex(24);
-  target.secretHash = hashSecret(deviceSecret);
-  target.lastSeen = Date.now();
-  writeDevices(devices);
+  const secretHash = hashSecret(deviceSecret);
+  db.prepare('UPDATE devices SET secret_hash = ?, last_seen = ? WHERE device_id = ?')
+    .run(secretHash, Date.now(), deviceId);
   return deviceSecret;
 }
 
@@ -287,9 +340,9 @@ function hasActiveDeviceStreams(deviceId) {
  * Delete / Unbind a device
  */
 function removeDevice(username, deviceId) {
-  const devices = readDevices();
-  const target = devices.find(d => d.deviceId === deviceId && d.userId === username);
-  if (!target) return false;
+  const db = getDb();
+  const row = db.prepare('SELECT device_id FROM devices WHERE device_id = ? AND user_id = ?').get(deviceId, username);
+  if (!row) return false;
 
   // If connected, close its WebSocket
   if (activeConnections.has(deviceId)) {
@@ -300,8 +353,7 @@ function removeDevice(username, deviceId) {
     activeConnections.delete(deviceId);
   }
 
-  const filtered = devices.filter(d => d.deviceId !== deviceId);
-  writeDevices(filtered);
+  db.prepare('DELETE FROM devices WHERE device_id = ? AND user_id = ?').run(deviceId, username);
   return true;
 }
 
@@ -390,14 +442,14 @@ function unregisterConnection(deviceId, wsOrIo, maybeIo) {
 }
 
 /**
- * Update device last seen timestamp on disk
+ * Update device last seen timestamp in SQLite
  */
 function updateDeviceLastSeen(deviceId) {
-  const devices = readDevices();
-  const item = devices.find(d => d.deviceId === deviceId);
-  if (item) {
-    item.lastSeen = Date.now();
-    writeDevices(devices);
+  try {
+    const db = getDb();
+    db.prepare('UPDATE devices SET last_seen = ? WHERE device_id = ?').run(Date.now(), deviceId);
+  } catch (err) {
+    console.error('[DeviceService] Error updating lastSeen:', err);
   }
 }
 
@@ -729,20 +781,37 @@ function remoteSystemUpdate(deviceId, serverUrl) {
  * Update device metadata (version, agent types, etc.)
  */
 function updateDeviceInfo(deviceId, info = {}) {
-  const devices = readDevices();
-  const target = devices.find(d => d.deviceId === deviceId);
+  const target = getDeviceById(deviceId);
   if (!target) return false;
 
-  if (info.version) target.clientVersion = info.version;
-  if (info.name && !target.name) target.name = info.name;
-  if (info.hostname) target.hostname = info.hostname;
-  if (info.platform) target.platform = info.platform;
-  if (info.arch) target.arch = info.arch;
-  if (Array.isArray(info.agentTypes)) target.agentTypes = info.agentTypes;
-  target.lastSeen = Date.now();
+  const nextVersion = info.version || target.clientVersion;
+  const nextName = (info.name && !target.name) ? info.name : target.name;
+  const nextHostname = info.hostname || target.hostname;
+  const nextPlatform = info.platform || target.platform;
+  const nextArch = info.arch || target.arch;
+  const nextAgentTypes = Array.isArray(info.agentTypes) ? info.agentTypes : target.agentTypes;
 
-  writeDevices(devices);
-  return true;
+  try {
+    const db = getDb();
+    db.prepare(`
+      UPDATE devices
+      SET client_version = ?, name = ?, hostname = ?, platform = ?, arch = ?, agent_types_json = ?, last_seen = ?
+      WHERE device_id = ?
+    `).run(
+      nextVersion,
+      nextName,
+      nextHostname,
+      nextPlatform,
+      nextArch,
+      JSON.stringify(nextAgentTypes),
+      Date.now(),
+      deviceId
+    );
+    return true;
+  } catch (err) {
+    console.error('[DeviceService] Error updating device info:', err);
+    return false;
+  }
 }
 
 module.exports = {

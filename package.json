@@ -10,7 +10,9 @@
     "start": "node server.js",
     "build": "node bin/build.js",
     "generate-icons": "node bin/generate-icons.js",
-    "test": "node test/gateway.test.js"
+    "migrate:sqlite": "node scripts/migrate-json-to-sqlite.js",
+    "test": "node test/gateway.test.js",
+    "test:storage": "node test/storage.test.js"
   },
   "keywords": [],
   "author": "",

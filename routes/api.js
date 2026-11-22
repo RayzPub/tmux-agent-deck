@@ -136,32 +136,10 @@ router.post('/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Invalid username. Use 3-15 alphanumeric characters.' });
   }
 
-  const codes = db.getCodes();
-  const invite = codes.find(c => c.code === code && c.status === 'pending');
-  if (!invite) {
-    return res.status(400).json({ error: 'Invalid or already used invite code' });
+  const result = db.registerUserWithInviteCode({ code, username, password });
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
   }
-
-  const users = db.getUsers();
-  const reservedUsernames = ['default', 'admin', 'system', 'guest', 'user_data', 'workspaces'];
-  if (reservedUsernames.includes(username.toLowerCase()) || users[username.toLowerCase()]) {
-    return res.status(400).json({ error: 'Username already exists or is reserved.' });
-  }
-
-  // Create user
-  users[username.toLowerCase()] = {
-    username,
-    passwordHash: db.hashPassword(password),
-    role: 'user',
-    createdAt: new Date().toISOString()
-  };
-  db.saveUsers(users);
-
-  // Update invite code status
-  invite.status = 'used';
-  invite.usedBy = username;
-  invite.usedAt = new Date().toISOString();
-  db.saveCodes(codes);
 
   res.json({ success: true, message: 'Account registered successfully!' });
 });

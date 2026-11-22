@@ -118,7 +118,8 @@ function writeProjectMetadata(workspacePath, missionText, options = {}) {
     mission: String(missionText || '').trim(),
     updatedAt: now
   };
-  fs.writeFileSync(projectFile, JSON.stringify(payload, null, 2), 'utf8');
+  const { atomicWriteJSON } = require('./sqliteService');
+  atomicWriteJSON(projectFile, payload);
 
   // Also sync mission to tasks.json if it exists
   const tasksFile = safeResolve(deckDir, 'tasks.json');
@@ -131,15 +132,15 @@ function writeProjectMetadata(workspacePath, missionText, options = {}) {
       if (options && options.clearTasks) {
         tasksData.tasks = [];
       }
-      fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2), 'utf8');
+      atomicWriteJSON(tasksFile, tasksData);
     } catch (e) {}
   } else if (options && options.clearTasks) {
     try {
-      fs.writeFileSync(tasksFile, JSON.stringify({
+      atomicWriteJSON(tasksFile, {
         mission: payload.mission,
         updatedAt: now,
         tasks: []
-      }, null, 2), 'utf8');
+      });
       const runUser = getRunUser();
       if (runUser && process.getuid && process.getuid() === 0) {
         try {
@@ -178,7 +179,8 @@ function writeProjectTasks(workspacePath, tasks, missionText = null) {
   };
 
   const tasksFile = safeResolve(deckDir, 'tasks.json');
-  fs.writeFileSync(tasksFile, JSON.stringify(payload, null, 2), 'utf8');
+  const { atomicWriteJSON } = require('./sqliteService');
+  atomicWriteJSON(tasksFile, payload);
   return payload;
 }
 
@@ -504,67 +506,172 @@ async function dispatchTask(workspaceIdentifier, sessionName, promptText, userna
 }
 
 /**
- * Helper: Safe per-user task board JSON store path under data/
+ * Helper: Safe per-user task board username key for SQLite storage
  */
-function getTaskBoardStorePath(username) {
-  const dataDir = path.join(PROJECT_ROOT, 'data');
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-  const safeUser = String(username || 'default').replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
-  return safeResolve(dataDir, `task_board_${safeUser}.json`);
+function getTaskBoardUserKey(username) {
+  const effectiveUser = username || (MULTI_USER_ENABLED ? 'admin' : 'default');
+  return String(effectiveUser || 'default').replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
 }
 
 function readTaskBoardStore(username) {
-  const effectiveUser = username || (MULTI_USER_ENABLED ? 'admin' : 'default');
+  const userKey = getTaskBoardUserKey(username);
   try {
-    const filePath = getTaskBoardStorePath(effectiveUser);
-    if (fs.existsSync(filePath)) {
-      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const { getDb } = require('./sqliteService');
+    const db = getDb();
+    const todoRows = db.prepare(
+      'SELECT * FROM task_board_todos WHERE username = ? ORDER BY created_at DESC'
+    ).all(userKey);
+
+    const todos = todoRows.map(r => {
+      let extra = {};
+      try { extra = JSON.parse(r.extra_json || '{}'); } catch (_) {}
       return {
-        todos: Array.isArray(parsed.todos) ? parsed.todos : [],
-        cardMeta: (parsed.cardMeta && typeof parsed.cardMeta === 'object') ? parsed.cardMeta : {}
+        ...extra,
+        id: r.id,
+        title: r.title,
+        description: r.description || '',
+        workspaceName: r.workspace_name || '',
+        workspacePath: r.workspace_path || '',
+        agentType: r.agent_type || 'agy',
+        priority: r.priority || 'medium',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
       };
+    });
+
+    const metaRows = db.prepare(
+      'SELECT * FROM task_board_card_meta WHERE username = ?'
+    ).all(userKey);
+
+    const cardMeta = {};
+    for (const r of metaRows) {
+      let extra = {};
+      try { extra = JSON.parse(r.extra_json || '{}'); } catch (_) {}
+      const entry = { ...extra, updatedAt: r.updated_at };
+      if (r.custom_title !== null && r.custom_title !== undefined && r.custom_title !== '') {
+        entry.customTitle = r.custom_title;
+      }
+      if (r.pinned) {
+        entry.pinned = true;
+      }
+      cardMeta[r.session_name] = entry;
     }
+
+    return { todos, cardMeta };
   } catch (err) {
-    // ignore corrupted/missing file
+    console.error('[ProjectService] Error reading task board from SQLite:', err);
+    return { todos: [], cardMeta: {} };
   }
-  return { todos: [], cardMeta: {} };
 }
 
 function writeTaskBoardStore(username, store) {
-  const effectiveUser = username || (MULTI_USER_ENABLED ? 'admin' : 'default');
-  const filePath = getTaskBoardStorePath(effectiveUser);
-  const payload = {
-    todos: Array.isArray(store.todos) ? store.todos : [],
-    cardMeta: (store.cardMeta && typeof store.cardMeta === 'object') ? store.cardMeta : {},
-    updatedAt: new Date().toISOString()
-  };
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-  const runUser = getRunUser();
-  if (runUser && process.getuid && process.getuid() === 0) {
-    try {
-      const { execSync } = require('child_process');
-      execSync(`chown ${runUser}:${runUser} "${filePath}"`);
-    } catch (e) {}
-  }
-  return payload;
+  const userKey = getTaskBoardUserKey(username);
+  const now = new Date().toISOString();
+  const todos = Array.isArray(store.todos) ? store.todos : [];
+  const cardMeta = (store.cardMeta && typeof store.cardMeta === 'object') ? store.cardMeta : {};
+
+  const { withTransaction } = require('./sqliteService');
+  withTransaction((db) => {
+    db.prepare('DELETE FROM task_board_todos WHERE username = ?').run(userKey);
+    const insTodo = db.prepare(`
+      INSERT INTO task_board_todos (
+        id, username, title, description, workspace_name, workspace_path,
+        agent_type, priority, extra_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const t of todos) {
+      if (!t || !t.id) continue;
+      const { id, title, description, workspaceName, workspacePath, agentType, priority, createdAt, updatedAt, ...extra } = t;
+      insTodo.run(
+        String(id),
+        userKey,
+        String(title || ''),
+        String(description || ''),
+        String(workspaceName || ''),
+        String(workspacePath || ''),
+        String(agentType || 'agy'),
+        String(priority || 'medium'),
+        JSON.stringify(extra || {}),
+        createdAt || now,
+        updatedAt || now
+      );
+    }
+
+    db.prepare('DELETE FROM task_board_card_meta WHERE username = ?').run(userKey);
+    const insMeta = db.prepare(`
+      INSERT INTO task_board_card_meta (username, session_name, custom_title, pinned, extra_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const [sessionName, meta] of Object.entries(cardMeta)) {
+      if (!meta || typeof meta !== 'object') continue;
+      const { customTitle, pinned, updatedAt, ...extra } = meta;
+      insMeta.run(
+        userKey,
+        sessionName,
+        customTitle !== undefined ? String(customTitle) : null,
+        pinned ? 1 : 0,
+        JSON.stringify(extra || {}),
+        updatedAt || now
+      );
+    }
+  });
+
+  return { todos, cardMeta, updatedAt: now };
 }
 
 function upsertTodoItem(username, item) {
-  const store = readTaskBoardStore(username);
+  const userKey = getTaskBoardUserKey(username);
+  const { getDb } = require('./sqliteService');
+  const db = getDb();
   const now = new Date().toISOString();
-  let todo;
+
+  let existing = null;
   if (item.id) {
-    const idx = store.todos.findIndex(t => String(t.id) === String(item.id));
-    if (idx >= 0) {
-      todo = { ...store.todos[idx], ...item, updatedAt: now };
-      store.todos[idx] = todo;
+    const row = db.prepare('SELECT * FROM task_board_todos WHERE id = ? AND username = ?').get(String(item.id), userKey);
+    if (row) {
+      let extra = {};
+      try { extra = JSON.parse(row.extra_json || '{}'); } catch (_) {}
+      existing = {
+        ...extra,
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        workspaceName: row.workspace_name,
+        workspacePath: row.workspace_path,
+        agentType: row.agent_type,
+        priority: row.priority,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
     }
   }
-  if (!todo) {
+
+  let todo;
+  if (existing) {
+    todo = { ...existing, ...item, updatedAt: now };
+    const { id, title, description, workspaceName, workspacePath, agentType, priority, createdAt, updatedAt, ...extra } = todo;
+    db.prepare(`
+      UPDATE task_board_todos
+      SET title = ?, description = ?, workspace_name = ?, workspace_path = ?,
+          agent_type = ?, priority = ?, extra_json = ?, updated_at = ?
+      WHERE id = ? AND username = ?
+    `).run(
+      String(title || ''),
+      String(description || ''),
+      String(workspaceName || ''),
+      String(workspacePath || ''),
+      String(agentType || 'agy'),
+      String(priority || 'medium'),
+      JSON.stringify(extra || {}),
+      updatedAt,
+      String(id),
+      userKey
+    );
+  } else {
+    const id = `todo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     todo = {
-      id: `todo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      id,
       title: item.title,
       description: item.description || '',
       workspaceName: item.workspaceName || '',
@@ -574,20 +681,42 @@ function upsertTodoItem(username, item) {
       createdAt: now,
       updatedAt: now
     };
-    store.todos.unshift(todo);
+    db.prepare(`
+      INSERT INTO task_board_todos (
+        id, username, title, description, workspace_name, workspace_path,
+        agent_type, priority, extra_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+    `).run(
+      todo.id,
+      userKey,
+      String(todo.title || ''),
+      String(todo.description || ''),
+      String(todo.workspaceName || ''),
+      String(todo.workspacePath || ''),
+      String(todo.agentType || 'agy'),
+      String(todo.priority || 'medium'),
+      todo.createdAt,
+      todo.updatedAt
+    );
   }
-  writeTaskBoardStore(username, store);
+
+  const store = readTaskBoardStore(username);
   return { todo, todos: store.todos };
 }
 
 function deleteTodoItem(username, todoId) {
-  const store = readTaskBoardStore(username);
-  store.todos = store.todos.filter(t => String(t.id) !== String(todoId));
-  writeTaskBoardStore(username, store);
-  return store.todos;
+  const userKey = getTaskBoardUserKey(username);
+  const { getDb } = require('./sqliteService');
+  const db = getDb();
+  db.prepare('DELETE FROM task_board_todos WHERE id = ? AND username = ?').run(String(todoId), userKey);
+  return readTaskBoardStore(username).todos;
 }
 
 function updateCardMeta(username, sessionName, patch) {
+  const userKey = getTaskBoardUserKey(username);
+  const { getDb } = require('./sqliteService');
+  const db = getDb();
   const store = readTaskBoardStore(username);
   const existing = store.cardMeta[sessionName] || {};
   const next = {
@@ -599,12 +728,28 @@ function updateCardMeta(username, sessionName, patch) {
     delete next.customTitle;
   }
   if (!next.customTitle && !next.pinned) {
-    delete store.cardMeta[sessionName];
-  } else {
-    store.cardMeta[sessionName] = next;
+    db.prepare('DELETE FROM task_board_card_meta WHERE username = ? AND session_name = ?').run(userKey, sessionName);
+    return {};
   }
-  writeTaskBoardStore(username, store);
-  return store.cardMeta[sessionName] || {};
+
+  const { customTitle, pinned, updatedAt, ...extra } = next;
+  db.prepare(`
+    INSERT INTO task_board_card_meta (username, session_name, custom_title, pinned, extra_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(username, session_name) DO UPDATE SET
+      custom_title = excluded.custom_title,
+      pinned = excluded.pinned,
+      extra_json = excluded.extra_json,
+      updated_at = excluded.updated_at
+  `).run(
+    userKey,
+    sessionName,
+    customTitle !== undefined ? String(customTitle) : null,
+    pinned ? 1 : 0,
+    JSON.stringify(extra || {}),
+    updatedAt
+  );
+  return next;
 }
 
 /**
@@ -960,6 +1105,7 @@ module.exports = {
   writeProjectTasks,
   dispatchTask,
   getGlobalTaskBoard,
+  readTaskBoardStore,
   upsertTodoItem,
   deleteTodoItem,
   updateCardMeta

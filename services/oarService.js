@@ -231,7 +231,8 @@ function loadPersistedSession(username, sessionName) {
 function savePersistedSession(username, sessionName, data) {
   try {
     const file = getSessionStorageFile(username, sessionName);
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    const { atomicWriteJSON } = require('./sqliteService');
+    atomicWriteJSON(file, data);
   } catch (e) {
     console.error('[OAR] Failed to save session JSON:', e.message);
   }
