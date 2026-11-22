@@ -25,6 +25,7 @@ const llmGatewayService = require('../services/llmGatewayService');
 const projectService = require('../services/projectService');
 const deviceService = require('../services/deviceService');
 const containerService = require('../services/containerService');
+const sessionMetaService = require('../services/sessionMetaService');
 const { requireDeviceOwnership } = require('../middlewares/deviceGuard');
 
 // Global middleware to guard device access across all API endpoints
@@ -295,7 +296,7 @@ router.get('/admin/settings', requireAdmin, (req, res) => {
 
 // API: Update admin settings (Admin only)
 router.post('/admin/settings', requireAdmin, (req, res) => {
-  const { enabledAgents, appIcon, claudeOAuthMode } = req.body;
+  const { enabledAgents, appIcon, claudeOAuthMode, sessionIdPrefix } = req.body;
   const current = db.getSettings();
 
   if (enabledAgents !== undefined) {
@@ -307,6 +308,14 @@ router.post('/admin/settings', requireAdmin, (req, res) => {
 
   if (claudeOAuthMode !== undefined) {
     current.claudeOAuthMode = !!claudeOAuthMode;
+  }
+
+  if (sessionIdPrefix !== undefined) {
+    const cleanPrefix = String(sessionIdPrefix || '').trim();
+    if (cleanPrefix && !/^[a-zA-Z0-9_-]{1,16}$/.test(cleanPrefix)) {
+      return res.status(400).json({ error: 'sessionIdPrefix 仅支持 1-16 位字母、数字、下划线或连字符' });
+    }
+    current.sessionIdPrefix = cleanPrefix;
   }
 
   if (appIcon !== undefined) {
@@ -555,12 +564,20 @@ router.get('/llm-models', requireAuth, (req, res) => {
 router.get('/sessions', requireAuth, (req, res) => {
   const targetDeviceId = resolveComputeDeviceId(req);
   if (!targetDeviceId) return res.json([]);
+  const metaMap = sessionMetaService.getDeviceSessionMetaMap(targetDeviceId);
   deviceService.getRemoteSessions(targetDeviceId).then((sessions) => {
     const mapped = (sessions || []).map(s => {
       const agentType = s.agentType || '';
       const sessionMode = s.sessionMode || (agentType === 'default' ? 'terminal_only' : 'hybrid');
+      const meta = metaMap.get(s.name) || null;
+      const displayTitle = sessionMetaService.getDisplayTitleForSession(s.name, meta, { agentType, sessionMode });
       return {
         name: s.name,
+        title: meta?.title || '',
+        displayTitle,
+        seqId: meta?.seqId || s.seqId || null,
+        autoTitle: meta ? Boolean(meta.autoTitle) : false,
+        titleSource: meta?.titleSource || 'legacy',
         attached: Boolean(s.attached),
         created: s.created ? new Date(s.created).toLocaleString() : 'N/A',
         path: s.path || '',
@@ -582,7 +599,7 @@ router.get('/sessions', requireAuth, (req, res) => {
 
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { name, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode } = req.body;
+  const { name, title, autoTitle, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode } = req.body;
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
 
   // Validate allowed agents uniformly across all devices
@@ -598,10 +615,40 @@ router.post('/sessions', requireAuth, async (req, res) => {
     return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   }
 
-  const rawName = (typeof name === 'string' && name.trim()) ? name.trim() : (reqAgent !== 'default' ? reqAgent : 'shell');
+  // Always allocate a persistent monotonic auto-incrementing sequence ID (guarantees zero collision across tmux & OAR)
+  const seqId = sessionMetaService.allocateNextSessionSeq();
+  const rawInputTitle = (typeof title === 'string' && title.trim())
+    ? title.trim()
+    : ((typeof name === 'string' && name.trim()) ? name.trim() : '');
+
+  const supportsAutoSummary = targetMode === 'chat_only' || (reqAgent !== 'default' && targetMode !== 'terminal_only');
+  const useAutoTitle = (autoTitle === true || !rawInputTitle) ? supportsAutoSummary : false;
+  const isManualTitle = Boolean(rawInputTitle && autoTitle !== true);
+  const isAsciiTmuxSafe = isManualTitle && /^[a-zA-Z0-9_-]{1,48}$/.test(rawInputTitle);
+
+  const requestedTechName = isAsciiTmuxSafe
+    ? rawInputTitle
+    : sessionMetaService.buildAutoSessionId({
+      agentType: reqAgent,
+      sessionMode: targetMode,
+      seqId,
+      customPrefix: settings.sessionIdPrefix || ''
+    });
+
+  const initialDisplayTitle = isManualTitle
+    ? rawInputTitle.slice(0, 60)
+    : sessionMetaService.buildDefaultDisplayTitle({
+      agentType: reqAgent,
+      sessionMode: targetMode,
+      seqId,
+      sessionName: requestedTechName
+    });
+
   try {
     const result = await deviceService.remoteTmuxNewSession(targetDeviceId, {
-      sessionName: rawName,
+      sessionName: requestedTechName,
+      seqId,
+      displayTitle: initialDisplayTitle,
       workspace: workspacePath || '~',
       workspaceName: workspaceName || '',
       sessionMode: targetMode,
@@ -612,18 +659,82 @@ router.post('/sessions', requireAuth, async (req, res) => {
     if (result && result.error) {
       return res.status(400).json({ error: result.error });
     }
-    const createdName = result?.sessionName || rawName;
+    const createdName = result?.sessionName || requestedTechName;
+    const savedMeta = sessionMetaService.upsertSessionMeta(targetDeviceId, createdName, {
+      seqId,
+      username: req.user?.username || 'admin',
+      title: isManualTitle ? rawInputTitle.slice(0, 60) : '',
+      autoTitle: useAutoTitle,
+      titleSource: isManualTitle ? 'manual' : (useAutoTitle ? 'auto_pending' : 'auto_seq'),
+      agentType: reqAgent,
+      sessionMode: targetMode
+    });
+    const displayTitle = sessionMetaService.getDisplayTitleForSession(createdName, savedMeta, {
+      agentType: reqAgent,
+      sessionMode: targetMode
+    });
+
     return res.json({
       success: true,
       session: createdName,
       name: createdName,
-      originalName: rawName,
-      renamed: createdName !== rawName,
+      seqId,
+      title: savedMeta?.title || '',
+      displayTitle,
+      autoTitle: Boolean(savedMeta?.autoTitle),
+      titleSource: savedMeta?.titleSource || 'auto_pending',
+      originalName: requestedTechName,
+      renamed: isAsciiTmuxSafe && createdName !== requestedTechName,
       sessionMode: targetMode
     });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+});
+
+// Update / rename session display title
+router.patch('/sessions/:name/title', requireAuth, (req, res) => {
+  const { name } = req.params;
+  const { title, autoTitle } = req.body || {};
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+
+  const meta = sessionMetaService.updateSessionTitle(targetDeviceId, name, title, {
+    autoTitle: autoTitle !== undefined ? Boolean(autoTitle) : !(typeof title === 'string' && title.trim()),
+    source: (typeof title === 'string' && title.trim()) ? 'manual' : 'auto_pending',
+    username: req.user?.username || 'admin'
+  });
+  const displayTitle = sessionMetaService.getDisplayTitleForSession(name, meta);
+  return res.json({
+    success: true,
+    name,
+    title: meta?.title || '',
+    displayTitle,
+    seqId: meta?.seqId || null,
+    autoTitle: Boolean(meta?.autoTitle),
+    titleSource: meta?.titleSource || 'manual'
+  });
+});
+
+// Trigger instant + async LLM auto-title summarization from a user prompt (e.g., hybrid chat mode)
+router.post('/sessions/:name/auto-title', requireAuth, (req, res) => {
+  const { name } = req.params;
+  const { prompt } = req.body || {};
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+
+  const updated = sessionMetaService.maybeAutoSummarizeTitle(targetDeviceId, name, prompt);
+  const meta = updated || sessionMetaService.getSessionMeta(targetDeviceId, name);
+  const displayTitle = sessionMetaService.getDisplayTitleForSession(name, meta);
+  return res.json({
+    success: true,
+    updated: Boolean(updated),
+    name,
+    title: meta?.title || '',
+    displayTitle,
+    autoTitle: Boolean(meta?.autoTitle),
+    titleSource: meta?.titleSource || 'legacy'
+  });
 });
 
 // Kill session
@@ -634,6 +745,7 @@ router.delete('/sessions/:name', requireAuth, async (req, res) => {
   try {
     const result = await deviceService.remoteTmuxKillSession(targetDeviceId, name);
     if (result && result.error) return res.status(400).json({ error: result.error });
+    sessionMetaService.deleteSessionMeta(targetDeviceId, name);
     return res.json({ success: true });
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -1332,14 +1444,49 @@ router.get('/login-by-token', (req, res) => {
 // API: Get structured chat history for a session (Unified Device Tunnel)
 router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
   const { name } = req.params;
+  const since = req.query.since;
   const targetDeviceId = resolveComputeDeviceId(req);
   if (!targetDeviceId) {
-    return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
+    return res.json({ sessionName: name, displayTitle: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
   }
   try {
-    const result = await deviceService.remoteChatHistory(targetDeviceId, name);
+    const result = await deviceService.remoteChatHistory(targetDeviceId, name, since);
+    // Auto-summarize session title from first meaningful user message if pending
+    if (result && !result.notModified && Array.isArray(result.messages) && result.messages.length > 0) {
+      const firstUserMsg = result.messages.find(m => m && m.role === 'user' && m.content);
+      if (firstUserMsg) {
+        sessionMetaService.maybeAutoSummarizeTitle(targetDeviceId, name, firstUserMsg.content);
+      }
+    }
+    const meta = sessionMetaService.getSessionMeta(targetDeviceId, name);
+    const displayTitle = sessionMetaService.getDisplayTitleForSession(name, meta, {
+      agentType: result?.agentType || '',
+      sessionMode: result?.sessionMode || 'hybrid'
+    });
+    const titleFields = {
+      title: meta?.title || '',
+      displayTitle,
+      seqId: meta?.seqId || null,
+      autoTitle: Boolean(meta?.autoTitle),
+      titleSource: meta?.titleSource || 'legacy'
+    };
+
+    if (result && result.notModified) {
+      return res.json({
+        sessionName: name,
+        ...titleFields,
+        agentType: result.agentType || '',
+        agentSessionId: result.agentSessionId || null,
+        sessionMode: result.sessionMode || 'hybrid',
+        supported: result.supported !== false,
+        notModified: true,
+        isGenerating: Boolean(result.isGenerating),
+        lastUpdated: result.lastUpdated
+      });
+    }
     return res.json({
       sessionName: name,
+      ...titleFields,
       agentType: result?.agentType || '',
       agentSessionId: result?.agentSessionId || null,
       sessionMode: result?.sessionMode || 'hybrid',
@@ -1356,7 +1503,7 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
       messages: result?.messages || []
     });
   } catch (e) {
-    return res.json({ sessionName: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
+    return res.json({ sessionName: name, displayTitle: name, sessionMode: 'hybrid', supported: true, lastUpdated: Date.now(), messages: [] });
   }
 });
 
@@ -1396,6 +1543,10 @@ router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
   const targetDeviceId = resolveComputeDeviceId(req);
   if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
+    // Trigger instant heuristic + async LLM session title summary on first user message
+    if (hasText) {
+      sessionMetaService.maybeAutoSummarizeTitle(targetDeviceId, name, content);
+    }
     const result = await deviceService.remoteOarMessage(targetDeviceId, name, {
       content: content || '',
       images: rawImages
@@ -1403,7 +1554,16 @@ router.post('/sessions/:name/oar-message', requireAuth, async (req, res) => {
     if (result && result.error && !result.accepted) {
       return res.status(502).json({ error: result.error });
     }
-    return res.json({ success: true, ...result });
+    const meta = sessionMetaService.getSessionMeta(targetDeviceId, name);
+    const displayTitle = sessionMetaService.getDisplayTitleForSession(name, meta, { sessionMode: 'chat_only' });
+    return res.json({
+      success: true,
+      ...result,
+      title: meta?.title || '',
+      displayTitle,
+      autoTitle: Boolean(meta?.autoTitle),
+      titleSource: meta?.titleSource || 'legacy'
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

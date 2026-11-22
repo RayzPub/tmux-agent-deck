@@ -1,7 +1,9 @@
 const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const { hasCommand, resolveBaseDir, tmuxArgs } = require('./config');
 const { tryRequireOptional } = require('./depsManager');
 const sessionRegistry = require('./sessionRegistry');
@@ -52,7 +54,7 @@ function readTmuxSessionMeta(sessionName) {
   return { workspacePath, agentType, sessionMode, model };
 }
 
-function handleListSessions(send, reqId) {
+async function handleListSessions(send, reqId) {
   const hasTmux = hasCommand('tmux');
   const sessions = [];
   const seenNames = new Set();
@@ -60,11 +62,10 @@ function handleListSessions(send, reqId) {
   if (hasTmux) {
     try {
       const fmt = '#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}';
-      const out = execFileSync('tmux', tmuxArgs(['list-sessions', '-F', fmt]), {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore']
+      const { stdout } = await execFileAsync('tmux', tmuxArgs(['list-sessions', '-F', fmt]), {
+        encoding: 'utf8'
       });
-      const lines = out.trim().split('\n').filter(Boolean);
+      const lines = (stdout || '').trim().split('\n').filter(Boolean);
       for (const line of lines) {
         const parts = line.split('|');
         if (parts.length >= 1 && parts[0]) {
@@ -117,12 +118,15 @@ function handleListSessions(send, reqId) {
 }
 
 function handleNewSession(send, reqId, msg, getDeviceOarManager) {
-  const { sessionName, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
+  const { sessionName, seqId, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
   const agent = msg.agent || msg.agentType || 'default';
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
   const hasTmux = hasCommand('tmux');
   const targetDir = resolveBaseDir(workspace);
-  const baseName = String(sessionName || '').replace(/[^a-zA-Z0-9_-]/g, '') || (agent !== 'default' ? agent : 'shell');
+  const fallbackBase = targetMode === 'chat_only'
+    ? `oar-${agent !== 'default' ? agent : 'claude'}`
+    : (agent !== 'default' ? agent : 'shell');
+  const baseName = String(sessionName || '').replace(/[^a-zA-Z0-9_-]/g, '') || (seqId ? `${fallbackBase}-${seqId}` : fallbackBase);
 
   // Helper to deduplicate against both sessionRegistry and tmux sessions
   const existingSet = new Set(Object.keys(sessionRegistry.readRegistry()));
@@ -137,9 +141,13 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
   }
   let finalName = baseName;
   if (existingSet.has(finalName)) {
-    let idx = 2;
-    while (existingSet.has(`${baseName}-${idx}`)) idx++;
-    finalName = `${baseName}-${idx}`;
+    if (seqId && !existingSet.has(`${baseName}-${seqId}`)) {
+      finalName = `${baseName}-${seqId}`;
+    } else {
+      let idx = Math.max(2, Number(seqId) || 2);
+      while (existingSet.has(`${baseName}-${idx}`)) idx++;
+      finalName = `${baseName}-${idx}`;
+    }
   }
 
   // 1. Pure Chat Mode (OAR): 100% tmux-free! Persisted in ~/.ccnow/sessions.json
@@ -147,6 +155,7 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
     try {
       const effectiveAgent = agent !== 'default' ? agent : 'claude';
       sessionRegistry.upsertPureChatSession(finalName, {
+        seqId: seqId || undefined,
         workspacePath: targetDir,
         workspaceName: workspaceName ? String(workspaceName) : '',
         agentType: effectiveAgent,
@@ -174,7 +183,7 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
   }
 
   // 2. Terminal / Hybrid Mode: backed by tmux when available
-  if (hasTmux && sessionName) {
+  if (hasTmux && finalName) {
     try {
       execFileSync('tmux', tmuxArgs(['new-session', '-d', '-s', finalName, '-c', targetDir]), { stdio: 'ignore' });
 
@@ -189,6 +198,7 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
         ['@session_mode', targetMode],
         ['@agent_type', agent]
       ];
+      if (seqId) tmuxOptions.push(['@session_seq_id', String(seqId)]);
       if (workspaceName) tmuxOptions.push(['@workspace_name', String(workspaceName)]);
       if (agentSessionId) tmuxOptions.push(['@agent_session_id', agentSessionId]);
       if (agentModel) tmuxOptions.push(['@agent_model', String(agentModel)]);
@@ -268,6 +278,12 @@ function handleSendKeys(send, reqId, msg) {
 
 function handleOpenTerminal(send, msg) {
   const { termId, sessionName, cols = 80, rows = 24 } = msg;
+
+  // Guard: tmux-free Pure Chat OAR sessions have no tmux PTY; do not spawn tmux attach or emit term:exit
+  if (sessionName && sessionRegistry.getPureChatSession(sessionName)) {
+    console.log(`💬 [Terminal PTY] Skipping PTY attach for tmux-free OAR session '${sessionName}'`);
+    return;
+  }
 
   if (activeTerminals.has(termId)) {
     try { activeTerminals.get(termId).kill(); } catch (e) {}

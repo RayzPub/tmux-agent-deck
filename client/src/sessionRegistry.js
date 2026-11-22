@@ -37,6 +37,7 @@ function listPureChatSessions() {
     .filter(s => s && s.name)
     .map(s => ({
       name: s.name,
+      seqId: s.seqId || null,
       windows: 1,
       created: s.created || Date.now(),
       attached: false,
@@ -62,6 +63,7 @@ function upsertPureChatSession(sessionName, meta = {}) {
   const prev = reg[sessionName] || {};
   const record = {
     name: sessionName,
+    seqId: meta.seqId !== undefined ? meta.seqId : (prev.seqId || null),
     workspacePath: meta.workspacePath || prev.workspacePath || process.cwd(),
     workspaceName: meta.workspaceName !== undefined ? meta.workspaceName : (prev.workspaceName || ''),
     agentType: meta.agentType || prev.agentType || 'claude',

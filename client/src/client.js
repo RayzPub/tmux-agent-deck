@@ -277,7 +277,7 @@ class AgentClient {
 
       // Agent Chat & OAR
       case 'agent:chat_history':
-        chatHandlers.handleChatHistory(this.send, msg.reqId, msg.sessionName);
+        chatHandlers.handleChatHistory(this.send, msg.reqId, msg.sessionName, msg.since);
         return;
       case 'agent:clear_context':
         chatHandlers.handleClearContext(this.send, msg.reqId, msg.sessionName);

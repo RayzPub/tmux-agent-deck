@@ -4,7 +4,7 @@ import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/t
 import { saveEditorFile, updateMarkdownPreview, updatePreviewUI, buildHtmlPreviewUrl } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath, triggerUpload, uploadFiles, initFileTreeDropZone } from './modules/explorer.js';
 import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard, showTipToast } from './modules/terminal.js';
-import { getNextAvailableSessionName } from './modules/sessionUtils.js';
+import { getNextAvailableSessionName, getSessionDisplayTitle, syncSessionDisplayTitle, escapeHtmlText } from './modules/sessionUtils.js';
 import { initPushNotifications, togglePushSubscription } from './modules/push.js';
 import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
@@ -320,6 +320,7 @@ export function renderSessions(sessions) {
   filteredSessions.forEach(session => {
     const card = document.createElement('div');
     card.className = `session-card ${state.currentSession === session.name ? 'active' : ''}`;
+    card.dataset.sessionName = session.name;
     
     const matchingWs = state.workspacesList.find(w => w.path === session.path);
     let workspaceText = 'DEFAULT';
@@ -343,23 +344,33 @@ export function renderSessions(sessions) {
       modeBadgeHtml = '<span class="session-mode-badge mode-hybrid" title="混合双模 (支持在聊天与终端间平滑切换)">双模</span>';
     }
 
-    card.setAttribute('title', `${session.name} · 工作区: ${workspaceText}${session.agentModel ? ` (模型: ${session.agentModel})` : ''} · 创建于: ${session.created}`);
+    const displayTitle = (session.displayTitle && session.displayTitle.trim()) ? session.displayTitle.trim() : session.name;
+    const safeDisplayTitle = escapeHtmlText(displayTitle);
+    const safeSessionName = escapeHtmlText(session.name);
+    const idMetaPart = displayTitle !== session.name ? ` (ID: ${session.name})` : '';
+    const autoPart = session.autoTitle && session.titleSource === 'auto_pending' ? ' · 等待首条对话自动摘要' : '';
+
+    card.setAttribute('title', `${displayTitle}${idMetaPart}${autoPart} · 工作区: ${workspaceText}${session.agentModel ? ` (模型: ${session.agentModel})` : ''} · 创建于: ${session.created}`);
 
     card.innerHTML = `
       <div class="session-info">
         <div class="session-name-wrapper">
           <span class="session-status-dot ${session.attached ? 'attached' : 'detached'}" title="${session.attached ? '前台活跃 (Active)' : '后台挂起 (Background)'}"></span>
-          <div class="session-name" title="${session.name}">${session.name}</div>
+          <div class="session-name" title="${safeDisplayTitle}${escapeHtmlText(idMetaPart)}">${safeDisplayTitle}</div>
         </div>
       </div>
       <div class="session-sub-row">
         ${modeBadgeHtml}
         <div class="card-actions">
-          <button class="session-more-btn" data-action="toggle-menu" data-name="${session.name}" title="更多操作">
+          <button class="session-more-btn" data-action="toggle-menu" data-name="${safeSessionName}" title="更多操作">
             <i data-lucide="more-horizontal"></i>
           </button>
           <div class="session-card-menu hidden">
-            <button class="session-menu-item danger" data-action="kill" data-name="${session.name}" title="终止该会话">
+            <button class="session-menu-item" data-action="rename" data-name="${safeSessionName}" title="重命名该会话">
+              <i data-lucide="pencil"></i>
+              <span>重命名</span>
+            </button>
+            <button class="session-menu-item danger" data-action="kill" data-name="${safeSessionName}" title="终止该会话">
               <i data-lucide="trash-2"></i>
               <span>结束会话</span>
             </button>
@@ -394,7 +405,7 @@ export function renderSessions(sessions) {
             const btnRect = moreBtn.getBoundingClientRect();
             const spaceBelow = listRect.bottom - btnRect.bottom;
             const spaceAbove = btnRect.top - listRect.top;
-            if (spaceBelow < 50 && spaceAbove > 50) {
+            if (spaceBelow < 85 && spaceAbove > 85) {
               cardMenu.classList.add('dropup');
             } else {
               cardMenu.classList.remove('dropup');
@@ -403,6 +414,23 @@ export function renderSessions(sessions) {
         } else {
           cardMenu.classList.remove('dropup');
         }
+      });
+    }
+
+    const renameBtn = card.querySelector('.session-menu-item[data-action="rename"]');
+    if (renameBtn) {
+      renameBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (cardMenu) {
+          cardMenu.classList.add('hidden');
+          cardMenu.classList.remove('dropup');
+        }
+        card.classList.remove('menu-open');
+        const name = renameBtn.getAttribute('data-name');
+        const currentTitle = getSessionDisplayTitle(name, state.sessionListCache);
+        const nextTitle = prompt(`重命名会话 (ID: ${name})\n留空可恢复默认/自动摘要命名：`, currentTitle);
+        if (nextTitle === null) return;
+        await renameSessionTitle(name, nextTitle.trim());
       });
     }
 
@@ -416,7 +444,9 @@ export function renderSessions(sessions) {
         }
         card.classList.remove('menu-open');
         const name = killBtn.getAttribute('data-name');
-        if (confirm(`您确定要终止 tmux 会话 "${name}" 吗？`)) {
+        const titleLabel = getSessionDisplayTitle(name, state.sessionListCache);
+        const confirmLabel = titleLabel && titleLabel !== name ? `"${titleLabel}" (${name})` : `"${name}"`;
+        if (confirm(`您确定要终止会话 ${confirmLabel} 吗？`)) {
           await killSession(name);
         }
       });
@@ -425,8 +455,42 @@ export function renderSessions(sessions) {
     sessionList.appendChild(card);
   });
 
+  // Keep open terminal tabs and active header in sync with latest server display titles
+  filteredSessions.forEach(s => {
+    if (s.displayTitle) {
+      syncSessionDisplayTitle(s.name, s.displayTitle, s);
+    }
+  });
+
   if (window.lucide) {
     window.lucide.createIcons();
+  }
+}
+
+async function renameSessionTitle(sessionName, newTitle) {
+  try {
+    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/title${devParam}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newTitle,
+        autoTitle: !newTitle
+      })
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.displayTitle) {
+        syncSessionDisplayTitle(sessionName, data.displayTitle, data);
+      }
+      await loadSessions();
+    } else {
+      const data = await response.json().catch(() => ({}));
+      alert('重命名会话失败: ' + (data.error || '未知错误'));
+    }
+  } catch (err) {
+    console.error('Failed to rename session:', err);
+    alert('重命名会话时发生网络错误');
   }
 }
 
@@ -1027,14 +1091,50 @@ editorTextarea.addEventListener('keydown', (e) => {
   }
 });
 
-// Session creation
-let suggestedSessionName = '';
+// Session creation: auto-summary & monotonic auto-incrementing unique ID UI
+const sessionAutoTitlePill = document.getElementById('sessionAutoTitlePill');
+const sessionNameHint = document.getElementById('sessionNameHint');
+const clearSessionNameBtn = document.getElementById('clearSessionNameBtn');
 
-const getSuggestedNameForAgent = (agent) => {
-  const base = agent === 'default' ? 'shell' : (agent || 'session');
-  const existingNames = (state.sessionListCache || []).map(s => s.name);
-  return getNextAvailableSessionName(base, existingNames);
-};
+function syncSessionNameFieldUI() {
+  const rawVal = newSessionNameInput ? newSessionNameInput.value.trim() : '';
+  const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
+  const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
+  const selectedModeRadio = document.querySelector('input[name="sessionMode"]:checked');
+  const mode = selectedModeRadio ? selectedModeRadio.value : 'hybrid';
+  const supportsAutoSummary = mode === 'chat_only' || (agent !== 'default' && mode !== 'terminal_only');
+
+  if (clearSessionNameBtn) {
+    clearSessionNameBtn.classList.toggle('hidden', !rawVal);
+  }
+
+  if (newSessionNameInput) {
+    newSessionNameInput.placeholder = supportsAutoSummary
+      ? '留空按首条对话自动摘要，或输入自定义名称...'
+      : '留空自动分配唯一编号，或输入自定义名称...';
+  }
+
+  if (sessionAutoTitlePill) {
+    const labelSpan = sessionAutoTitlePill.querySelector('span');
+    if (rawVal) {
+      sessionAutoTitlePill.classList.add('is-manual');
+      if (labelSpan) labelSpan.textContent = '自定义名称';
+    } else {
+      sessionAutoTitlePill.classList.remove('is-manual');
+      if (labelSpan) labelSpan.textContent = supportsAutoSummary ? '自动摘要' : '自动编号';
+    }
+  }
+
+  if (sessionNameHint) {
+    if (rawVal) {
+      sessionNameHint.textContent = '支持中文与自定义名称，底层自动分配唯一自增 ID 确保 tmux / OAR 不冲突';
+    } else if (supportsAutoSummary) {
+      sessionNameHint.textContent = '系统自动分配唯一自增 ID 确保 tmux / OAR 不冲突，首条对话后自动生成摘要标题';
+    } else {
+      sessionNameHint.textContent = '系统自动分配唯一自增 ID（不冲突），创建后可在侧边栏随时重命名';
+    }
+  }
+}
 
 // Dynamic LLM models cache and renderer
 state.availableModels = null;
@@ -1094,8 +1194,9 @@ newSessionBtn.addEventListener('click', () => {
 
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
-  suggestedSessionName = getSuggestedNameForAgent(agent);
-  newSessionNameInput.value = suggestedSessionName;
+  // Leave blank by default so backend allocates a monotonic unique ID and auto-summarizes title
+  newSessionNameInput.value = '';
+  syncSessionNameFieldUI();
   
   sessionWorkspaceSelect.value = state.currentWorkspacePath || '';
   const activeWs = state.workspacesList.find(w => w.path === state.currentWorkspacePath);
@@ -1108,14 +1209,9 @@ newSessionBtn.addEventListener('click', () => {
   renderSessionFlatModels(agent);
 });
 
-// Update suggested name and auto-recommend session mode when user switches agent options
+// Update models, mode recommendation, and name hint when user switches agent or mode options
 document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
   radio.addEventListener('change', () => {
-    const curVal = newSessionNameInput.value.trim();
-    if (!curVal || curVal === suggestedSessionName) {
-      suggestedSessionName = getSuggestedNameForAgent(radio.value);
-      newSessionNameInput.value = suggestedSessionName;
-    }
     renderSessionFlatModels(radio.value);
 
     // Smart mode suggestion
@@ -1129,15 +1225,29 @@ document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
         if (hybridRadio) hybridRadio.checked = true;
       }
     }
+    syncSessionNameFieldUI();
   });
 });
 
-// Track if user manually customizes the session name
-newSessionNameInput.addEventListener('input', () => {
-  if (newSessionNameInput.value.trim() !== suggestedSessionName) {
-    suggestedSessionName = '';
-  }
+document.querySelectorAll('input[name="sessionMode"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    syncSessionNameFieldUI();
+  });
 });
+
+if (newSessionNameInput) {
+  newSessionNameInput.addEventListener('input', syncSessionNameFieldUI);
+}
+
+if (clearSessionNameBtn) {
+  clearSessionNameBtn.addEventListener('click', () => {
+    if (newSessionNameInput) {
+      newSessionNameInput.value = '';
+      newSessionNameInput.focus();
+    }
+    syncSessionNameFieldUI();
+  });
+}
 
 const welcomeNewSessionBtn = document.getElementById('welcomeNewSessionBtn');
 if (welcomeNewSessionBtn) {
@@ -1183,14 +1293,9 @@ sessionModal.addEventListener('click', (e) => {
 createSessionForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (newSessionNameInput) newSessionNameInput.blur();
-  let name = newSessionNameInput.value.trim();
+  const customTitle = newSessionNameInput ? newSessionNameInput.value.trim() : '';
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
-
-  if (!name) {
-    name = getSuggestedNameForAgent(agent);
-    newSessionNameInput.value = name;
-  }
 
   const workspacePath = sessionWorkspaceSelect.value;
   const activeWs = state.workspacesList.find(w => w.path === workspacePath);
@@ -1212,7 +1317,9 @@ createSessionForm.addEventListener('submit', async (e) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        name,
+        name: customTitle,
+        title: customTitle,
+        autoTitle: !customTitle,
         agent,
         workspacePath,
         workspaceName,
@@ -1228,16 +1335,19 @@ createSessionForm.addEventListener('submit', async (e) => {
       const data = await response.json();
       closeModal();
       await loadSessions();
-      const actualName = (data && data.name) ? data.name : name;
+      const actualName = (data && data.name) ? data.name : customTitle;
       clearSessionChatCache(actualName);
       attachSession(actualName);
+      if (data && data.displayTitle) {
+        syncSessionDisplayTitle(actualName, data.displayTitle, data);
+      }
       if (sessionMode === 'chat_only') {
         setSessionViewMode(actualName, 'chat');
       } else if (sessionMode === 'terminal_only') {
         setSessionViewMode(actualName, 'terminal');
       }
       if (data && data.renamed && data.originalName) {
-        showTipToast(`会话 "${data.originalName}" 已存在，已自动命名为 "${actualName}"`, 3500);
+        showTipToast(`会话标识 "${data.originalName}" 已存在，已自动分配唯一 ID "${actualName}"`, 3500);
       }
     } else {
       const data = await response.json();

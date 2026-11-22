@@ -4,6 +4,7 @@ import { loadEditorFile, isImageFile } from './editor.js';
 import { loadGitDiff } from './diff.js';
 import { renderHelpDoc } from './helpDoc.js';
 import { renderProjectOverview } from './projectOverview.js';
+import { getSessionDisplayTitle, escapeHtmlText } from './sessionUtils.js';
 
 export function saveTabsState() {
   try {
@@ -115,9 +116,21 @@ export function renderTabs() {
       `;
     }
 
+    let tabLabel = tab.name;
+    if (tab.type === 'terminal') {
+      const liveTitle = getSessionDisplayTitle(tab.id, state.sessionListCache);
+      if (liveTitle && liveTitle !== tab.id) {
+        tabLabel = liveTitle;
+        tab.name = liveTitle;
+      } else if (!tabLabel) {
+        tabLabel = tab.id;
+      }
+      tabEl.setAttribute('title', `${tabLabel} (${tab.id})`);
+    }
+
     tabEl.innerHTML = `
       <i data-lucide="${icon}"></i>
-      <span>${tab.name}</span>
+      <span>${escapeHtmlText(tabLabel)}</span>
       ${statusPillHtml}
       <i data-lucide="x" class="close-tab-btn" title="Close Tab"></i>
     `;

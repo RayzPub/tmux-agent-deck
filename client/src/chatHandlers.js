@@ -1,7 +1,9 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const { CONFIG_DIR, hasCommand, safeResolve, tmuxArgs } = require('./config');
 const { resolveOptionalEsmUrl } = require('./depsManager');
 const { readTmuxSessionMeta } = require('./tmuxHandlers');
@@ -110,8 +112,10 @@ async function handleOarAbort(send, reqId, sessionName) {
   }
 }
 
-async function handleChatHistory(send, reqId, sessionName) {
+async function handleChatHistory(send, reqId, sessionName, since) {
   try {
+    const sinceNum = (since !== undefined && since !== null && since !== '') ? Number(since) : null;
+
     // 0. Fast-path: tmux-free Pure Chat OAR session from ~/.ccnow/sessions.json
     const pureChat = sessionRegistry.getPureChatSession(sessionName);
     if (pureChat) {
@@ -121,6 +125,19 @@ async function handleChatHistory(send, reqId, sessionName) {
           agentType: pureChat.agentType || 'claude',
           workspacePath: pureChat.workspacePath || process.cwd()
         });
+        if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
+          return send({
+            action: 'agent:chat_history_result',
+            reqId,
+            sessionName,
+            agentType: snapshot.agentType || pureChat.agentType || 'claude',
+            sessionMode: 'chat_only',
+            supported: true,
+            notModified: true,
+            isGenerating: false,
+            lastUpdated: snapshot.lastUpdated
+          });
+        }
         return send({ action: 'agent:chat_history_result', reqId, ...snapshot });
       }
     }
@@ -135,10 +152,10 @@ async function handleChatHistory(send, reqId, sessionName) {
     if (hasTmux && sessionName) {
       try {
         const fmt = '#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}';
-        const out = execFileSync('tmux', tmuxArgs(['display-message', '-p', '-t', sessionName, fmt]), {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore']
-        }).trim();
+        const { stdout } = await execFileAsync('tmux', tmuxArgs(['display-message', '-p', '-t', sessionName, fmt]), {
+          encoding: 'utf8'
+        });
+        const out = (stdout || '').trim();
         const parts = out.split('|');
         if (parts[0] && fs.existsSync(parts[0])) sessionCwd = parts[0];
         agentType = (parts[2] || '').trim();
@@ -157,6 +174,19 @@ async function handleChatHistory(send, reqId, sessionName) {
           agentType: agentType || 'claude',
           workspacePath: sessionCwd
         });
+        if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
+          return send({
+            action: 'agent:chat_history_result',
+            reqId,
+            sessionName,
+            agentType: snapshot.agentType || agentType || 'claude',
+            sessionMode: 'chat_only',
+            supported: true,
+            notModified: true,
+            isGenerating: false,
+            lastUpdated: snapshot.lastUpdated
+          });
+        }
         return send({ action: 'agent:chat_history_result', reqId, ...snapshot });
       }
     }
@@ -172,6 +202,25 @@ async function handleChatHistory(send, reqId, sessionName) {
       homeDir
     );
     if (match && match.filePath && fs.existsSync(match.filePath)) {
+      if (sinceNum) {
+        try {
+          const stat = fs.statSync(match.filePath);
+          if (stat.mtimeMs === sinceNum) {
+            return send({
+              action: 'agent:chat_history_result',
+              reqId,
+              sessionName,
+              agentType: agentType || 'claude',
+              agentSessionId: match.sessionId || agentSessionId,
+              sessionMode,
+              supported: true,
+              notModified: true,
+              lastUpdated: stat.mtimeMs
+            });
+          }
+        } catch (_) {}
+      }
+
       const parsed = await agentChatService.parseAgentChat(agentType || 'claude', match.filePath, 50);
       return send({
         action: 'agent:chat_history_result',

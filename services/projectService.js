@@ -853,11 +853,20 @@ async function getGlobalTaskBoard(username = null, options = {}) {
   let sessions = [];
 
   if (deviceId && deviceId !== 'cloud' && Array.isArray(options.remoteSessions)) {
+    const sessionMetaService = require('./sessionMetaService');
+    const sessionMetaMap = sessionMetaService.getDeviceSessionMetaMap(deviceId);
     // Remote edge device sessions
     sessions = options.remoteSessions.map(s => {
       const name = s.name;
       const wsName = s.workspaceName || s.workspace || (s.path ? path.basename(s.path) : '远程工作区');
       const customMeta = store.cardMeta[name] || {};
+      const sessMeta = sessionMetaMap.get(name) || null;
+      const metaDisplayTitle = sessMeta
+        ? sessionMetaService.getDisplayTitleForSession(name, sessMeta, {
+          agentType: s.agentType || 'terminal',
+          sessionMode: s.sessionMode || 'hybrid'
+        })
+        : '';
       return {
         name,
         fullName: name,
@@ -872,7 +881,7 @@ async function getGlobalTaskBoard(username = null, options = {}) {
         sessionMode: s.sessionMode || 'hybrid',
         status: s.attached ? 'busy' : 'idle',
         statusLabel: s.attached ? '活跃中' : '待命',
-        taskTitle: customMeta.customTitle || name,
+        taskTitle: customMeta.customTitle || metaDisplayTitle || name,
         customTitle: customMeta.customTitle || '',
         lastActivity: { role: 'terminal', text: '远程节点会话已连接', userPrompt: '', timestamp: null },
         isRemote: true,

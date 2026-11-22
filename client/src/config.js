@@ -54,11 +54,18 @@ function parseArgs(args) {
   return result;
 }
 
+const commandCache = new Map();
+
 function hasCommand(cmd) {
+  if (commandCache.has(cmd)) {
+    return commandCache.get(cmd);
+  }
   try {
     execSync(`which ${cmd}`, { stdio: 'ignore' });
+    commandCache.set(cmd, true);
     return true;
   } catch (e) {
+    commandCache.set(cmd, false);
     return false;
   }
 }

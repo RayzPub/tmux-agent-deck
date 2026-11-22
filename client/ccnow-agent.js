@@ -57,11 +57,17 @@ var require_config = __commonJS({
       }
       return result;
     }
+    var commandCache = /* @__PURE__ */ new Map();
     function hasCommand(cmd) {
+      if (commandCache.has(cmd)) {
+        return commandCache.get(cmd);
+      }
       try {
         execSync(`which ${cmd}`, { stdio: "ignore" });
+        commandCache.set(cmd, true);
         return true;
       } catch (e) {
+        commandCache.set(cmd, false);
         return false;
       }
     }
@@ -449,19 +455,26 @@ var require_fsHandlers = __commonJS({
 var require_gitHandlers = __commonJS({
   "client/src/gitHandlers.js"(exports2, module2) {
     var path2 = require("path");
-    var { execSync } = require("child_process");
+    var { execSync, execFile } = require("child_process");
+    var { promisify } = require("util");
+    var execFileAsync = promisify(execFile);
     var { resolveBaseDir } = require_config();
-    function handleGitStatus(send, reqId, workspacePath) {
+    async function handleGitStatus(send, reqId, workspacePath) {
       try {
         const baseDir = resolveBaseDir(workspacePath);
         let gitRoot = "";
         try {
-          gitRoot = execSync("git rev-parse --show-toplevel", { cwd: baseDir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+          const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: baseDir, encoding: "utf8" });
+          gitRoot = (stdout || "").trim();
         } catch (_) {
           return send({ action: "git:status_result", reqId, isGit: false, branch: "", clean: true, files: [] });
         }
-        const branch = execSync('git branch --show-current 2>/dev/null || echo ""', { cwd: baseDir, encoding: "utf8" }).trim();
-        const statusOut = execSync('git -c core.quotePath=false status --porcelain -u -- . 2>/dev/null || echo ""', { cwd: baseDir, encoding: "utf8" });
+        const [branchRes, statusRes] = await Promise.all([
+          execFileAsync("git", ["branch", "--show-current"], { cwd: baseDir, encoding: "utf8" }).catch(() => ({ stdout: "" })),
+          execFileAsync("git", ["-c", "core.quotePath=false", "status", "--porcelain", "-u", "--", "."], { cwd: baseDir, encoding: "utf8" }).catch(() => ({ stdout: "" }))
+        ]);
+        const branch = (branchRes.stdout || "").trim();
+        const statusOut = statusRes.stdout || "";
         const files = [];
         for (const line of statusOut.split("\n")) {
           if (!line.trim()) continue;
@@ -846,6 +859,7 @@ var require_sessionRegistry = __commonJS({
       const reg = readRegistry();
       return Object.values(reg).filter((s) => s && s.name).map((s) => ({
         name: s.name,
+        seqId: s.seqId || null,
         windows: 1,
         created: s.created || Date.now(),
         attached: false,
@@ -869,6 +883,7 @@ var require_sessionRegistry = __commonJS({
       const prev = reg[sessionName] || {};
       const record = {
         name: sessionName,
+        seqId: meta.seqId !== void 0 ? meta.seqId : prev.seqId || null,
         workspacePath: meta.workspacePath || prev.workspacePath || process.cwd(),
         workspaceName: meta.workspaceName !== void 0 ? meta.workspaceName : prev.workspaceName || "",
         agentType: meta.agentType || prev.agentType || "claude",
@@ -906,7 +921,9 @@ var require_tmuxHandlers = __commonJS({
     var os = require("os");
     var fs2 = require("fs");
     var crypto = require("crypto");
-    var { spawn, execFileSync } = require("child_process");
+    var { spawn, execFile, execFileSync } = require("child_process");
+    var { promisify } = require("util");
+    var execFileAsync = promisify(execFile);
     var { hasCommand, resolveBaseDir, tmuxArgs } = require_config();
     var { tryRequireOptional } = require_depsManager();
     var sessionRegistry = require_sessionRegistry();
@@ -951,18 +968,17 @@ var require_tmuxHandlers = __commonJS({
       }
       return { workspacePath, agentType, sessionMode, model };
     }
-    function handleListSessions(send, reqId) {
+    async function handleListSessions(send, reqId) {
       const hasTmux = hasCommand("tmux");
       const sessions = [];
       const seenNames = /* @__PURE__ */ new Set();
       if (hasTmux) {
         try {
           const fmt = "#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,1,0}|#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_model}|#{@session_mode}|#{@agent_session_id}";
-          const out = execFileSync("tmux", tmuxArgs(["list-sessions", "-F", fmt]), {
-            encoding: "utf8",
-            stdio: ["ignore", "pipe", "ignore"]
+          const { stdout } = await execFileAsync("tmux", tmuxArgs(["list-sessions", "-F", fmt]), {
+            encoding: "utf8"
           });
-          const lines = out.trim().split("\n").filter(Boolean);
+          const lines = (stdout || "").trim().split("\n").filter(Boolean);
           for (const line of lines) {
             const parts = line.split("|");
             if (parts.length >= 1 && parts[0]) {
@@ -1008,12 +1024,13 @@ var require_tmuxHandlers = __commonJS({
       send({ action: "tmux:sessions_list", reqId, sessions });
     }
     function handleNewSession(send, reqId, msg, getDeviceOarManager) {
-      const { sessionName, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
+      const { sessionName, seqId, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
       const agent = msg.agent || msg.agentType || "default";
       const targetMode = sessionMode || (agent === "default" ? "terminal_only" : "hybrid");
       const hasTmux = hasCommand("tmux");
       const targetDir = resolveBaseDir(workspace);
-      const baseName = String(sessionName || "").replace(/[^a-zA-Z0-9_-]/g, "") || (agent !== "default" ? agent : "shell");
+      const fallbackBase = targetMode === "chat_only" ? `oar-${agent !== "default" ? agent : "claude"}` : agent !== "default" ? agent : "shell";
+      const baseName = String(sessionName || "").replace(/[^a-zA-Z0-9_-]/g, "") || (seqId ? `${fallbackBase}-${seqId}` : fallbackBase);
       const existingSet = new Set(Object.keys(sessionRegistry.readRegistry()));
       if (hasTmux) {
         try {
@@ -1027,14 +1044,19 @@ var require_tmuxHandlers = __commonJS({
       }
       let finalName = baseName;
       if (existingSet.has(finalName)) {
-        let idx = 2;
-        while (existingSet.has(`${baseName}-${idx}`)) idx++;
-        finalName = `${baseName}-${idx}`;
+        if (seqId && !existingSet.has(`${baseName}-${seqId}`)) {
+          finalName = `${baseName}-${seqId}`;
+        } else {
+          let idx = Math.max(2, Number(seqId) || 2);
+          while (existingSet.has(`${baseName}-${idx}`)) idx++;
+          finalName = `${baseName}-${idx}`;
+        }
       }
       if (targetMode === "chat_only") {
         try {
           const effectiveAgent = agent !== "default" ? agent : "claude";
           sessionRegistry.upsertPureChatSession(finalName, {
+            seqId: seqId || void 0,
             workspacePath: targetDir,
             workspaceName: workspaceName ? String(workspaceName) : "",
             agentType: effectiveAgent,
@@ -1058,7 +1080,7 @@ var require_tmuxHandlers = __commonJS({
           return;
         }
       }
-      if (hasTmux && sessionName) {
+      if (hasTmux && finalName) {
         try {
           execFileSync("tmux", tmuxArgs(["new-session", "-d", "-s", finalName, "-c", targetDir]), { stdio: "ignore" });
           let agentSessionId = "";
@@ -1071,6 +1093,7 @@ var require_tmuxHandlers = __commonJS({
             ["@session_mode", targetMode],
             ["@agent_type", agent]
           ];
+          if (seqId) tmuxOptions.push(["@session_seq_id", String(seqId)]);
           if (workspaceName) tmuxOptions.push(["@workspace_name", String(workspaceName)]);
           if (agentSessionId) tmuxOptions.push(["@agent_session_id", agentSessionId]);
           if (agentModel) tmuxOptions.push(["@agent_model", String(agentModel)]);
@@ -1157,6 +1180,10 @@ var require_tmuxHandlers = __commonJS({
     }
     function handleOpenTerminal(send, msg) {
       const { termId, sessionName, cols = 80, rows = 24 } = msg;
+      if (sessionName && sessionRegistry.getPureChatSession(sessionName)) {
+        console.log(`\u{1F4AC} [Terminal PTY] Skipping PTY attach for tmux-free OAR session '${sessionName}'`);
+        return;
+      }
       if (activeTerminals.has(termId)) {
         try {
           activeTerminals.get(termId).kill();
@@ -1995,12 +2022,31 @@ ${qSummary}`);
         lastUpdated: mtime
       };
     }
+    var PARSE_CACHE_MAX = 64;
+    var parseCache = /* @__PURE__ */ new Map();
     async function parseAgentChat(agentType, filePath, maxMessages = 50) {
       const lower = (agentType || "").toLowerCase();
-      if (lower === "agy" || lower === "antigravity") {
-        return parseAgyJsonl(filePath, maxMessages);
+      if (!filePath) {
+        return { messages: [], lastUpdated: null, pendingAction: null };
       }
-      return parseClaudeJsonl(filePath, maxMessages);
+      let stat = null;
+      try {
+        stat = fs2.statSync(filePath);
+      } catch (e) {
+        return { messages: [], lastUpdated: null, pendingAction: null };
+      }
+      const cacheKey = `${lower}::${filePath}::${maxMessages}`;
+      const cached = parseCache.get(cacheKey);
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        return cached.result;
+      }
+      const result = lower === "agy" || lower === "antigravity" ? await parseAgyJsonl(filePath, maxMessages) : await parseClaudeJsonl(filePath, maxMessages);
+      if (parseCache.size >= PARSE_CACHE_MAX) {
+        const oldestKey = parseCache.keys().next().value;
+        parseCache.delete(oldestKey);
+      }
+      parseCache.set(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size, result });
+      return result;
     }
     module2.exports = {
       getProjectSlug,
@@ -2590,17 +2636,7 @@ var require_oar_runtime = __commonJS({
           contextUsage: persisted && persisted.contextUsage || null,
           createdAt: persisted && persisted.createdAt || Date.now(),
           lastUpdated: persisted && persisted.lastUpdated || Date.now(),
-          messages: persisted && Array.isArray(persisted.messages) ? persisted.messages : [
-            {
-              id: "msg-welcome",
-              role: "assistant",
-              content: `\u{1F44B} \u60A8\u597D\uFF01\u5DF2\u8FDB\u5165 **OAR \u7EAF\u4F1A\u8BDD\u6A21\u5F0F**\uFF08\u8BBE\u5907\u7AEF\u539F\u751F\u6D41\u5F0F\u5F15\u64CE\uFF09\u3002
-\u5F53\u524D\u667A\u80FD\u4F53\uFF1A\`${agentType}\`
-\u5DE5\u4F5C\u533A\uFF1A\`${workspacePath}\`
-\u652F\u6301\u5B9E\u65F6\u6D41\u5F0F\u601D\u8003\u3001\u5DE5\u5177\u8C03\u7528\u8FFD\u8E2A\u3001\u539F\u751F\u56FE\u7247\u8F93\u5165\u3001\u8FD0\u884C\u4E2D\u8F6C\u5411/\u6392\u961F\uFF0C\u4EE5\u53CA \`/compact\` \u4E0A\u4E0B\u6587\u538B\u7F29\u3002`,
-              timestamp: Date.now()
-            }
-          ],
+          messages: persisted && Array.isArray(persisted.messages) ? persisted.messages.filter((m) => m && m.id !== "msg-welcome") : [],
           isGenerating: false,
           statusText: "\u5C31\u7EEA",
           liveSession: null,
@@ -2882,7 +2918,9 @@ var require_chatHandlers = __commonJS({
     var os = require("os");
     var fs2 = require("fs");
     var path2 = require("path");
-    var { spawn, execFileSync } = require("child_process");
+    var { spawn, execFile, execFileSync } = require("child_process");
+    var { promisify } = require("util");
+    var execFileAsync = promisify(execFile);
     var { CONFIG_DIR: CONFIG_DIR2, hasCommand, safeResolve, tmuxArgs } = require_config();
     var { resolveOptionalEsmUrl } = require_depsManager();
     var { readTmuxSessionMeta } = require_tmuxHandlers();
@@ -2987,8 +3025,9 @@ var require_chatHandlers = __commonJS({
         send({ action: "oar:abort_result", reqId, aborted: false, error: err.message });
       }
     }
-    async function handleChatHistory(send, reqId, sessionName) {
+    async function handleChatHistory(send, reqId, sessionName, since) {
       try {
+        const sinceNum = since !== void 0 && since !== null && since !== "" ? Number(since) : null;
         const pureChat = sessionRegistry.getPureChatSession(sessionName);
         if (pureChat) {
           const oarMgr = getDeviceOarManager();
@@ -2997,6 +3036,19 @@ var require_chatHandlers = __commonJS({
               agentType: pureChat.agentType || "claude",
               workspacePath: pureChat.workspacePath || process.cwd()
             });
+            if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
+              return send({
+                action: "agent:chat_history_result",
+                reqId,
+                sessionName,
+                agentType: snapshot.agentType || pureChat.agentType || "claude",
+                sessionMode: "chat_only",
+                supported: true,
+                notModified: true,
+                isGenerating: false,
+                lastUpdated: snapshot.lastUpdated
+              });
+            }
             return send({ action: "agent:chat_history_result", reqId, ...snapshot });
           }
         }
@@ -3009,10 +3061,10 @@ var require_chatHandlers = __commonJS({
         if (hasTmux && sessionName) {
           try {
             const fmt = "#{session_path}|#{@workspace_name}|#{@agent_type}|#{@agent_session_id}|#{pane_pid}|#{@session_mode}";
-            const out = execFileSync("tmux", tmuxArgs(["display-message", "-p", "-t", sessionName, fmt]), {
-              encoding: "utf8",
-              stdio: ["ignore", "pipe", "ignore"]
-            }).trim();
+            const { stdout } = await execFileAsync("tmux", tmuxArgs(["display-message", "-p", "-t", sessionName, fmt]), {
+              encoding: "utf8"
+            });
+            const out = (stdout || "").trim();
             const parts = out.split("|");
             if (parts[0] && fs2.existsSync(parts[0])) sessionCwd = parts[0];
             agentType = (parts[2] || "").trim();
@@ -3030,6 +3082,19 @@ var require_chatHandlers = __commonJS({
               agentType: agentType || "claude",
               workspacePath: sessionCwd
             });
+            if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
+              return send({
+                action: "agent:chat_history_result",
+                reqId,
+                sessionName,
+                agentType: snapshot.agentType || agentType || "claude",
+                sessionMode: "chat_only",
+                supported: true,
+                notModified: true,
+                isGenerating: false,
+                lastUpdated: snapshot.lastUpdated
+              });
+            }
             return send({ action: "agent:chat_history_result", reqId, ...snapshot });
           }
         }
@@ -3043,6 +3108,25 @@ var require_chatHandlers = __commonJS({
           homeDir
         );
         if (match && match.filePath && fs2.existsSync(match.filePath)) {
+          if (sinceNum) {
+            try {
+              const stat = fs2.statSync(match.filePath);
+              if (stat.mtimeMs === sinceNum) {
+                return send({
+                  action: "agent:chat_history_result",
+                  reqId,
+                  sessionName,
+                  agentType: agentType || "claude",
+                  agentSessionId: match.sessionId || agentSessionId,
+                  sessionMode,
+                  supported: true,
+                  notModified: true,
+                  lastUpdated: stat.mtimeMs
+                });
+              }
+            } catch (_) {
+            }
+          }
           const parsed2 = await agentChatService.parseAgentChat(agentType || "claude", match.filePath, 50);
           return send({
             action: "agent:chat_history_result",
@@ -3633,7 +3717,7 @@ var require_client = __commonJS({
             return;
           // Agent Chat & OAR
           case "agent:chat_history":
-            chatHandlers.handleChatHistory(this.send, msg.reqId, msg.sessionName);
+            chatHandlers.handleChatHistory(this.send, msg.reqId, msg.sessionName, msg.since);
             return;
           case "agent:clear_context":
             chatHandlers.handleClearContext(this.send, msg.reqId, msg.sessionName);

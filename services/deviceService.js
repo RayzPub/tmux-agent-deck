@@ -750,8 +750,12 @@ function remoteGitCheckout(deviceId, workspacePath, branch) {
   return sendDeviceRpc(deviceId, 'git:checkout', { workspacePath, branch });
 }
 
-function remoteChatHistory(deviceId, sessionName) {
-  return sendDeviceRpc(deviceId, 'agent:chat_history', { sessionName });
+function remoteChatHistory(deviceId, sessionName, since) {
+  const payload = { sessionName };
+  if (since !== undefined && since !== null && since !== '') {
+    payload.since = since;
+  }
+  return sendDeviceRpc(deviceId, 'agent:chat_history', payload);
 }
 
 function remoteOarRuntimes(deviceId) {

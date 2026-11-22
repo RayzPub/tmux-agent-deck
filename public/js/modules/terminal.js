@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { closeTab, renderTabs, switchMainPanel } from './tabs.js';
 import { refreshFileTree } from './explorer.js';
 import { toggleTerminalSlashPopover, syncTerminalAgentQuickButtons } from './mobileInput.js';
+import { getSessionDisplayTitle } from './sessionUtils.js';
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches || 
@@ -248,14 +249,17 @@ export function fitTerminal() {
 }
 
 export function attachSession(sessionName) {
+  const displayTitle = getSessionDisplayTitle(sessionName, state.sessionListCache);
   let tab = state.tabs.find(t => t.type === 'terminal' && t.id === sessionName);
   if (!tab) {
     tab = {
       id: sessionName,
-      name: sessionName,
+      name: displayTitle,
       type: 'terminal'
     };
     state.tabs.push(tab);
+  } else if (displayTitle && tab.name !== displayTitle) {
+    tab.name = displayTitle;
   }
 
   // Hide all other session containers in cache
@@ -270,7 +274,8 @@ export function attachSession(sessionName) {
 
   state.currentSession = sessionName;
   const activeSessionNameText = document.getElementById('activeSessionName');
-  activeSessionNameText.textContent = sessionName;
+  activeSessionNameText.textContent = displayTitle;
+  activeSessionNameText.setAttribute('title', `会话 ID: ${sessionName}`);
   reportFocusStatus();
   syncTerminalAgentQuickButtons(sessionName);
   
@@ -286,11 +291,14 @@ export function attachSession(sessionName) {
     }
     
     const explorerWorkspaceSelect = document.getElementById('explorerWorkspaceSelect');
+    const prevWorkspacePath = state.currentWorkspacePath;
     if (matchingWs) {
       state.currentWorkspacePath = matchingWs.path;
       explorerWorkspaceSelect.value = matchingWs.path;
       localStorage.setItem('lastWorkspacePath', state.currentWorkspacePath);
-      refreshFileTree();
+      if (state.currentWorkspacePath !== prevWorkspacePath) {
+        refreshFileTree();
+      }
     } else if (sessionObj.path) {
       state.currentWorkspacePath = sessionObj.path;
       let optionExists = Array.from(explorerWorkspaceSelect.options).some(opt => opt.value === sessionObj.path);
@@ -302,7 +310,9 @@ export function attachSession(sessionName) {
       }
       explorerWorkspaceSelect.value = sessionObj.path;
       localStorage.setItem('lastWorkspacePath', state.currentWorkspacePath);
-      refreshFileTree();
+      if (state.currentWorkspacePath !== prevWorkspacePath) {
+        refreshFileTree();
+      }
     }
   }
 
@@ -314,6 +324,16 @@ export function attachSession(sessionName) {
 
   // Show terminal panel & ensure all other panels (editor/diff/doc/welcome) are completely hidden
   switchMainPanel('terminal');
+
+  // Pure Chat (OAR) sessions are tmux-free: never spawn an xterm PTY socket (which would exit and close the tab)
+  const isPureChatSession = Boolean(sessionObj && sessionObj.sessionMode === 'chat_only');
+  if (isPureChatSession) {
+    if (typeof window.applySessionViewMode === 'function') {
+      window.applySessionViewMode(sessionName, 'chat');
+    }
+    return;
+  }
+
   const terminalContainer = document.getElementById('terminal-container');
 
   let cached = state.sessionCache.get(sessionName);
@@ -336,9 +356,12 @@ export function attachSession(sessionName) {
     });
 
     let reconnectingToast = null;
+    let toastDelayTimer = null;
+    let pendingToastPayload = null;
     let isFirstConnect = true;
+    const RECONNECT_TOAST_DELAY_MS = 3000;
 
-    const showConnectionToast = (message, type = 'warning') => {
+    const renderConnectionToast = (message, type = 'warning') => {
       if (reconnectingToast) {
         const msgEl = reconnectingToast.querySelector('.toast-message');
         if (msgEl) msgEl.textContent = message;
@@ -363,7 +386,7 @@ export function attachSession(sessionName) {
       
       reconnectingToast.addEventListener('click', () => {
         if (reconnectingToast.classList.contains('error')) {
-          showConnectionToast('正在重新连接...', 'warning');
+          showConnectionToast('正在重新连接...', 'warning', { immediate: true });
           sessionSocket.connect();
         }
       });
@@ -371,7 +394,35 @@ export function attachSession(sessionName) {
       document.body.appendChild(reconnectingToast);
     };
 
+    const showConnectionToast = (message, type = 'warning', { immediate = false } = {}) => {
+      if (sessionName !== state.currentSession) {
+        return;
+      }
+      pendingToastPayload = { message, type };
+      if (immediate || reconnectingToast) {
+        if (toastDelayTimer) {
+          clearTimeout(toastDelayTimer);
+          toastDelayTimer = null;
+        }
+        renderConnectionToast(message, type);
+        return;
+      }
+      if (!toastDelayTimer) {
+        toastDelayTimer = setTimeout(() => {
+          toastDelayTimer = null;
+          if (!sessionSocket.connected && pendingToastPayload && sessionName === state.currentSession) {
+            renderConnectionToast(pendingToastPayload.message, pendingToastPayload.type);
+          }
+        }, RECONNECT_TOAST_DELAY_MS);
+      }
+    };
+
     const hideConnectionToast = () => {
+      if (toastDelayTimer) {
+        clearTimeout(toastDelayTimer);
+        toastDelayTimer = null;
+      }
+      pendingToastPayload = null;
       if (reconnectingToast) {
         reconnectingToast.remove();
         reconnectingToast = null;
@@ -421,18 +472,18 @@ export function attachSession(sessionName) {
         return;
       }
       if (reason === 'io server disconnect') {
-        showConnectionToast('服务器连接断开。点击以重新连接。', 'error');
+        showConnectionToast('服务器连接断开。点击以重新连接。', 'error', { immediate: true });
       } else {
         showConnectionToast('正在重新连接...', 'warning');
       }
     });
 
     sessionSocket.on('reconnect_attempt', (attemptNumber) => {
-      showConnectionToast(`正在重新连接... (${attemptNumber}/10)`, 'warning');
+      showConnectionToast(`正在重新连接... (${attemptNumber}/15)`, 'warning');
     });
 
     sessionSocket.on('reconnect_failed', () => {
-      showConnectionToast('连接失败。点击重试。', 'error');
+      showConnectionToast('连接失败。点击重试。', 'error', { immediate: true });
     });
 
     const isLight = document.body.classList.contains('light-minimalist');

@@ -6,6 +6,7 @@
 
 import { state } from './state.js';
 import { fitTerminal, attachSession, isTouchDevice, showTipToast } from './terminal.js';
+import { getSessionDisplayTitle, syncSessionDisplayTitle } from './sessionUtils.js';
 import { stopVoiceInput, bindChatVoiceInput } from './voice.js';
 import { restorePwaViewportScroll } from './mobileInput.js';
 import { buildMermaidCardHtml, renderMermaidBlocks, handleMermaidContainerClick } from './mermaidRenderer.js';
@@ -21,6 +22,9 @@ import {
 const sessionViewModes = new Map();
 const sessionHistoryCache = new Map(); // sessionName -> { messages, lastUpdated, pendingAction, agentType }
 const expandedAccordions = new Set();  // Set of `${sessionName}::${accordionKey}` to persist user toggle across polls
+const renderedChatState = { sessionName: null, lastUpdated: null }; // Tracks what is currently rendered in #agentChatMessages
+const MARKDOWN_CACHE_MAX = 200;
+const markdownHtmlCache = new Map(); // `${workspacePath}::${content}` -> enhanced HTML string
 let currentPollTimer = null;
 let currentPollIntervalMs = 2000;
 let activePollSession = null;
@@ -405,6 +409,10 @@ export function clearSessionChatCache(sessionName) {
   if (activePollSession === sessionName) {
     stopChatPolling();
   }
+  if (renderedChatState.sessionName === sessionName) {
+    renderedChatState.sessionName = null;
+    renderedChatState.lastUpdated = null;
+  }
 }
 
 // Expose globally for cross-module invocations
@@ -430,6 +438,9 @@ export async function checkSessionSupport(sessionName) {
       const data = await res.json();
       if (data.sessionMode) {
         sessionModeCache.set(sessionName, data.sessionMode);
+      }
+      if (!data.notModified && Array.isArray(data.messages)) {
+        sessionHistoryCache.set(sessionName, data);
       }
       const isSupp = data.supported === true;
       sessionSupportCache.set(sessionName, isSupp);
@@ -487,7 +498,15 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
   }
 
+  const sessionMeta = state.sessionListCache && state.sessionListCache.find(s => s.name === currentSess);
+  if (sessionMeta && sessionMeta.sessionMode === 'chat_only') {
+    sessionModeCache.set(currentSess, 'chat_only');
+    sessionSupportCache.set(currentSess, true);
+    targetMode = 'chat';
+  }
+
   const cachedSupport = sessionSupportCache.get(currentSess);
+  const cachedSessMode = sessionModeCache.get(currentSess);
   if (targetMode === 'chat' && cachedSupport !== false) {
     terminalContainer.classList.add('hidden');
     if (terminalWrapper) {
@@ -504,6 +523,22 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
     if (workspaceMain) {
       workspaceMain.classList.remove('has-mobile-controls');
+    }
+  } else if (targetMode === 'terminal' && cachedSessMode !== 'chat_only') {
+    chatContainer.classList.add('hidden');
+    terminalContainer.classList.remove('hidden');
+    if (terminalWrapper) {
+      terminalWrapper.classList.remove('hidden');
+      terminalWrapper.style.display = '';
+    }
+    btnTerminal.classList.add('active');
+    btnChat.classList.remove('active');
+    if (mobileControls) {
+      mobileControls.classList.remove('hidden');
+      mobileControls.style.display = '';
+    }
+    if (workspaceMain) {
+      workspaceMain.classList.add('has-mobile-controls');
     }
   } else if (cachedSupport !== true && switcher) {
     switcher.style.display = 'none';
@@ -537,20 +572,29 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
 
     stopChatPolling();
-    fitTerminal();
+    requestAnimationFrame(() => fitTerminal());
     return;
   }
 
   // Pure Chat Mode: Lock to Chat Mode and show OAR branding in switcher
+  let switcherIconsDirty = false;
   if (sessMode === 'chat_only') {
     targetMode = 'chat';
     btnTerminal.style.opacity = '0.5';
     btnTerminal.title = '纯会话模式 (由 OAR 运行时驱动，无需终端物理按键)';
-    btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>纯会话 (OAR)</span>';
+    if (btnChat.dataset.modeLabel !== 'chat_only') {
+      btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>纯会话 (OAR)</span>';
+      btnChat.dataset.modeLabel = 'chat_only';
+      switcherIconsDirty = true;
+    }
   } else {
     btnTerminal.style.opacity = '1';
     btnTerminal.title = '切换至终端交互界面';
-    btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>会话</span>';
+    if (btnChat.dataset.modeLabel !== 'hybrid') {
+      btnChat.innerHTML = '<i data-lucide="messages-square"></i><span>会话</span>';
+      btnChat.dataset.modeLabel = 'hybrid';
+      switcherIconsDirty = true;
+    }
   }
 
   if (switcher) switcher.style.display = 'inline-flex';
@@ -599,10 +643,10 @@ export async function applySessionViewMode(sessionName, forceMode) {
     }
 
     stopChatPolling();
-    fitTerminal();
+    requestAnimationFrame(() => fitTerminal());
   }
 
-  if (window.lucide) {
+  if (switcherIconsDirty && window.lucide) {
     window.lucide.createIcons();
   }
 }
@@ -1278,6 +1322,10 @@ export async function clearChatContext() {
 
   // 2. Wipe cached messages for this session
   sessionHistoryCache.delete(currentSess);
+  if (renderedChatState.sessionName === currentSess) {
+    renderedChatState.sessionName = null;
+    renderedChatState.lastUpdated = null;
+  }
 
   // 3. Reset the chat messages UI container to empty clean state
   const container = document.getElementById('agentChatMessages');
@@ -1392,6 +1440,30 @@ export function sendChatMessage(overrideText) {
   } else {
     // Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
     sendRawToTmux(fullPrompt + '\r');
+    // Immediately trigger auto-title summarization if this session is awaiting its first-prompt summary
+    const sessObj = Array.isArray(state.sessionListCache)
+      ? state.sessionListCache.find(s => s && s.name === currentSess)
+      : null;
+    if (sessObj && sessObj.autoTitle && sessObj.titleSource === 'auto_pending') {
+      const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
+      fetch(`/api/sessions/${encodeURIComponent(currentSess)}/auto-title${devParam}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text })
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(titleData => {
+          if (titleData && titleData.displayTitle) {
+            syncSessionDisplayTitle(currentSess, titleData.displayTitle, titleData);
+            const agentNameEl = document.getElementById('chatAgentName');
+            if (agentNameEl && getCurrentSessionName() === currentSess) {
+              const prefix = agentNameEl.textContent.split(' · ')[0] || 'TMUX 智能体';
+              agentNameEl.textContent = `${prefix} · ${titleData.displayTitle}`;
+            }
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   // 4. Update status indicator
@@ -1446,6 +1518,9 @@ async function sendToOarEngine(sessionName, content, images = []) {
     });
     if (res.ok) {
       const payload = await res.json().catch(() => ({}));
+      if (payload && payload.displayTitle) {
+        syncSessionDisplayTitle(sessionName, payload.displayTitle, payload);
+      }
       loadAndRenderChatHistory(sessionName, false);
       // Only restore slow polling immediately if the turn already finished synchronously (cloud mode)
       if (!payload.streaming && !payload.isGenerating && getCurrentSessionName() === sessionName) {
@@ -1475,14 +1550,26 @@ async function sendToOarEngine(sessionName, content, images = []) {
 export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = false) {
   if (!sessionName) return;
 
+  const initialCached = sessionHistoryCache.get(sessionName);
+  const domAlreadyMatches = Boolean(
+    initialCached &&
+    renderedChatState.sessionName === sessionName &&
+    renderedChatState.lastUpdated !== null &&
+    renderedChatState.lastUpdated === initialCached.lastUpdated
+  );
+
   if (isSessionSwitch) {
     isScrollPinned = true;
-    const cachedData = sessionHistoryCache.get(sessionName);
-    if (cachedData) {
-      renderMessages(sessionName, cachedData, true);
+    if (domAlreadyMatches) {
+      // DOM already displays this exact session & version: zero-cost instant switch!
+      scrollToChatBottom(false);
+    } else if (initialCached) {
+      renderMessages(sessionName, initialCached, true);
     } else {
       const container = document.getElementById('agentChatMessages');
       if (container) {
+        renderedChatState.sessionName = null;
+        renderedChatState.lastUpdated = null;
         container.innerHTML = `
           <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #64748b; font-size: 11px;">
             <span>正在读取会话记录...</span>
@@ -1493,8 +1580,15 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
   }
 
   try {
-    const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history${devParam}`);
+    const queryParts = [];
+    if (state.currentDeviceId && state.currentDeviceId !== 'cloud') {
+      queryParts.push(`deviceId=${encodeURIComponent(state.currentDeviceId)}`);
+    }
+    if (initialCached && initialCached.lastUpdated) {
+      queryParts.push(`since=${encodeURIComponent(initialCached.lastUpdated)}`);
+    }
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/chat-history${qs}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -1502,9 +1596,45 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
       return;
     }
 
+    // Sync any newly summarized or renamed displayTitle from backend (including async LLM upgrades)
+    if (data && data.displayTitle) {
+      const titleChanged = syncSessionDisplayTitle(sessionName, data.displayTitle, data);
+      if (titleChanged) {
+        const agentNameEl = document.getElementById('chatAgentName');
+        if (agentNameEl) {
+          const curText = agentNameEl.textContent || '';
+          const parts = curText.split(' · ');
+          if (parts.length >= 2) {
+            const modelMatch = parts.slice(1).join(' · ').match(/(\s*\([^)]+\))$/);
+            const suffix = modelMatch ? modelMatch[1] : '';
+            agentNameEl.textContent = `${parts[0]} · ${data.displayTitle}${suffix}`;
+          }
+        }
+      }
+    }
+
     const previousCache = sessionHistoryCache.get(sessionName);
-    if (previousCache && previousCache.lastUpdated === data.lastUpdated && !isSessionSwitch) {
-      return; // No changes
+    if (data && data.notModified) {
+      if (previousCache && (renderedChatState.sessionName !== sessionName || renderedChatState.lastUpdated !== previousCache.lastUpdated)) {
+        renderMessages(sessionName, previousCache, isSessionSwitch);
+      }
+      if (data.sessionMode === 'chat_only' && activePollSession === sessionName) {
+        const desiredInterval = data.isGenerating ? 500 : 2000;
+        if (currentPollIntervalMs !== desiredInterval) {
+          startChatPolling(sessionName, desiredInterval);
+        }
+      }
+      return;
+    }
+
+    const isUnchanged = Boolean(
+      previousCache &&
+      previousCache.lastUpdated === data.lastUpdated &&
+      renderedChatState.sessionName === sessionName &&
+      renderedChatState.lastUpdated === data.lastUpdated
+    );
+    if (isUnchanged) {
+      return; // No changes and DOM is already up-to-date
     }
 
     sessionHistoryCache.set(sessionName, data);
@@ -1563,7 +1693,10 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   const prevScrollTop = container.scrollTop;
   const userRecentlyScrolled = (performance.now() - lastUserScrollAt) <= SCROLL_COOL_DOWN_MS;
 
-  const displaySession = sessionName || currentSess || '主会话';
+  const rawSessionName = sessionName || currentSess || '主会话';
+  const displaySession = (data && data.displayTitle)
+    ? data.displayTitle
+    : getSessionDisplayTitle(rawSessionName, state.sessionListCache);
   let agentLabel = 'TMUX 智能体';
   if (data && data.agentType) {
     const t = data.agentType.toLowerCase();
@@ -1578,12 +1711,18 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   if (agentNameEl) {
     const modelSuffix = (data && data.sessionMode === 'chat_only' && data.activeModel) ? ` (${data.activeModel})` : '';
     agentNameEl.textContent = `${agentLabel} · ${displaySession}${modelSuffix}`;
+    agentNameEl.setAttribute('title', `会话 ID: ${rawSessionName}`);
   }
   syncChatQuickClearButton(sessionName || currentSess);
 
   const messages = (data && data.messages) ? data.messages : [];
+  renderedChatState.sessionName = sessionName || currentSess || null;
+  renderedChatState.lastUpdated = (data && data.lastUpdated !== undefined) ? data.lastUpdated : null;
 
   if (messages.length === 0) {
+    const emptyDesc = (data && data.sessionMode === 'chat_only')
+      ? 'OAR 纯会话模式 · 输入需求开启对话，支持图片附件与 /compact'
+      : '在下方输入需求，开启智能体协作对话';
     container.innerHTML = `
       <div class="chat-empty-state">
         <div class="chat-empty-icon">
@@ -1591,7 +1730,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
         </div>
         <div class="chat-empty-title">会话「${escapeHtml(displaySession)}」已就绪</div>
         <div class="chat-empty-desc">
-          在下方输入需求，开启智能体协作对话
+          ${emptyDesc}
         </div>
       </div>
     `;
@@ -1768,8 +1907,17 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
           bodyHtml += `${attHtml}${userText ? `<div>${escapeHtml(userText)}</div>` : ''}`;
         } else if (window.marked) {
           try {
-            const parsedHtml = window.marked.parse(msg.content);
-            const enhancedHtml = enhanceChatFileLinks(enhanceMarkdownCodeBlocks(parsedHtml));
+            const mdCacheKey = `${state.currentWorkspacePath || ''}::${msg.content}`;
+            let enhancedHtml = markdownHtmlCache.get(mdCacheKey);
+            if (enhancedHtml === undefined) {
+              const parsedHtml = window.marked.parse(msg.content);
+              enhancedHtml = enhanceChatFileLinks(enhanceMarkdownCodeBlocks(parsedHtml));
+              if (markdownHtmlCache.size >= MARKDOWN_CACHE_MAX) {
+                const oldestKey = markdownHtmlCache.keys().next().value;
+                markdownHtmlCache.delete(oldestKey);
+              }
+              markdownHtmlCache.set(mdCacheKey, enhancedHtml);
+            }
             bodyHtml += `<div class="chat-prose-body">${enhancedHtml}</div>`;
           } catch (e) {
             bodyHtml += `<div>${escapeHtml(msg.content)}</div>`;

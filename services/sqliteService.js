@@ -4,7 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { PROJECT_ROOT } = require('../config');
 
 const DEFAULT_DATA_DIR = path.join(PROJECT_ROOT, 'data');
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let dbInstance = null;
 let currentDbPath = null;
@@ -174,6 +174,35 @@ function initSchema(db) {
         value      TEXT NOT NULL,
         applied_at TEXT NOT NULL
       );
+
+      PRAGMA user_version = 1;
+      COMMIT;
+    `);
+  }
+
+  if (currentVersion < 2) {
+    db.exec(`
+      BEGIN;
+
+      CREATE TABLE IF NOT EXISTS session_seq (
+        id INTEGER PRIMARY KEY AUTOINCREMENT
+      );
+
+      CREATE TABLE IF NOT EXISTS session_meta (
+        seq_id        INTEGER NOT NULL DEFAULT 0,
+        device_id     TEXT NOT NULL,
+        session_name  TEXT NOT NULL,
+        username      TEXT NOT NULL DEFAULT 'admin',
+        title         TEXT NOT NULL DEFAULT '',
+        auto_title    INTEGER NOT NULL DEFAULT 1,
+        title_source  TEXT NOT NULL DEFAULT 'auto_pending',
+        agent_type    TEXT NOT NULL DEFAULT '',
+        session_mode  TEXT NOT NULL DEFAULT 'hybrid',
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL,
+        PRIMARY KEY (device_id, session_name)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_meta_device ON session_meta(device_id, updated_at DESC);
 
       PRAGMA user_version = ${SCHEMA_VERSION};
       COMMIT;

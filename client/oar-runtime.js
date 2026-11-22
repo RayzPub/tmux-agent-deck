@@ -612,14 +612,9 @@ function createDeviceOarManager(options = {}) {
       contextUsage: (persisted && persisted.contextUsage) || null,
       createdAt: (persisted && persisted.createdAt) || Date.now(),
       lastUpdated: (persisted && persisted.lastUpdated) || Date.now(),
-      messages: (persisted && Array.isArray(persisted.messages)) ? persisted.messages : [
-        {
-          id: 'msg-welcome',
-          role: 'assistant',
-          content: `👋 您好！已进入 **OAR 纯会话模式**（设备端原生流式引擎）。\n当前智能体：\`${agentType}\`\n工作区：\`${workspacePath}\`\n支持实时流式思考、工具调用追踪、原生图片输入、运行中转向/排队，以及 \`/compact\` 上下文压缩。`,
-          timestamp: Date.now()
-        }
-      ],
+      messages: (persisted && Array.isArray(persisted.messages))
+        ? persisted.messages.filter(m => m && m.id !== 'msg-welcome')
+        : [],
       isGenerating: false,
       statusText: '就绪',
       liveSession: null,

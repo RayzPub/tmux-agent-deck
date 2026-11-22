@@ -845,15 +845,42 @@ async function parseAgyJsonl(filePath, maxMessages = 50) {
   };
 }
 
+const PARSE_CACHE_MAX = 64;
+const parseCache = new Map(); // `${lower}::${filePath}::${maxMessages}` -> { mtimeMs, size, result }
+
 /**
  * Unified Chat History Parser dispatching to agent-specific parser
+ * Uses (mtimeMs, size) cache to avoid re-reading and JSON.parse-ing unchanged multi-MB transcripts.
  */
 async function parseAgentChat(agentType, filePath, maxMessages = 50) {
   const lower = (agentType || '').toLowerCase();
-  if (lower === 'agy' || lower === 'antigravity') {
-    return parseAgyJsonl(filePath, maxMessages);
+  if (!filePath) {
+    return { messages: [], lastUpdated: null, pendingAction: null };
   }
-  return parseClaudeJsonl(filePath, maxMessages);
+
+  let stat = null;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (e) {
+    return { messages: [], lastUpdated: null, pendingAction: null };
+  }
+
+  const cacheKey = `${lower}::${filePath}::${maxMessages}`;
+  const cached = parseCache.get(cacheKey);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return cached.result;
+  }
+
+  const result = (lower === 'agy' || lower === 'antigravity')
+    ? await parseAgyJsonl(filePath, maxMessages)
+    : await parseClaudeJsonl(filePath, maxMessages);
+
+  if (parseCache.size >= PARSE_CACHE_MAX) {
+    const oldestKey = parseCache.keys().next().value;
+    parseCache.delete(oldestKey);
+  }
+  parseCache.set(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size, result });
+  return result;
 }
 
 module.exports = {

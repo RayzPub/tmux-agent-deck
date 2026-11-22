@@ -568,21 +568,32 @@
       </div>
       
       <form id="createSessionForm" class="modal-form">
-        <div class="input-group">
-          <label for="newSessionName">
-            <span class="label-tech-text">// 会话唯一标识</span>
-          </label>
-          <div class="input-wrapper">
-            <i data-lucide="terminal" class="input-icon"></i>
+        <div class="input-group session-name-group">
+          <div class="session-name-label-row">
+            <label for="newSessionName">
+              <span class="label-tech-text">// 会话名称</span>
+              <span class="label-optional-tag">可选</span>
+            </label>
+            <span class="session-auto-pill" id="sessionAutoTitlePill" title="留空将根据首条对话自动摘要标题，并自动分配唯一自增 ID">
+              <i data-lucide="sparkles"></i>
+              <span>自动摘要</span>
+            </span>
+          </div>
+          <div class="input-wrapper session-name-input-wrapper">
+            <i data-lucide="sparkles" class="input-icon" id="newSessionNameIcon"></i>
             <input 
               type="text" 
               id="newSessionName" 
-              placeholder="例如 dev-server, my-agent" 
-              required
-              pattern="^[a-zA-Z0-9_-]+$"
-              title="仅允许使用字母、数字、下划线和连字符"
+              placeholder="留空按首条对话自动摘要，或输入自定义名称..." 
+              maxlength="60"
+              autocomplete="off"
             >
-            <div class="input-indicator"></div>
+            <button type="button" class="input-clear-btn hidden" id="clearSessionNameBtn" title="清空并恢复自动摘要">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="session-name-hint" id="sessionNameHint">
+            系统自动分配唯一自增 ID 确保 tmux / OAR 不冲突，首条对话后自动生成摘要标题
           </div>
         </div>
 
@@ -602,8 +613,8 @@
           <label>
             <span class="label-tech-text">// 工作区上下文</span>
           </label>
-          <div class="active-workspace-badge-container" style="padding: 10px 14px; background: rgba(0, 240, 255, 0.03); border: 1px dashed rgba(0, 240, 255, 0.2); border-radius: 4px; font-family: var(--font-mono); font-size: 13px; color: var(--neon-cyan); display: flex; align-items: center; gap: 8px;">
-            <i data-lucide="folder" style="width: 14px; height: 14px;"></i>
+          <div class="active-workspace-badge-container">
+            <i data-lucide="folder" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
             <span id="modalActiveWorkspaceName">默认工作区</span>
           </div>
         </div>

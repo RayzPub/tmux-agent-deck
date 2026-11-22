@@ -1,18 +1,25 @@
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const { resolveBaseDir } = require('./config');
 
-function handleGitStatus(send, reqId, workspacePath) {
+async function handleGitStatus(send, reqId, workspacePath) {
   try {
     const baseDir = resolveBaseDir(workspacePath);
     let gitRoot = '';
     try {
-      gitRoot = execSync('git rev-parse --show-toplevel', { cwd: baseDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: baseDir, encoding: 'utf8' });
+      gitRoot = (stdout || '').trim();
     } catch (_) {
       return send({ action: 'git:status_result', reqId, isGit: false, branch: '', clean: true, files: [] });
     }
-    const branch = execSync('git branch --show-current 2>/dev/null || echo ""', { cwd: baseDir, encoding: 'utf8' }).trim();
-    const statusOut = execSync('git -c core.quotePath=false status --porcelain -u -- . 2>/dev/null || echo ""', { cwd: baseDir, encoding: 'utf8' });
+    const [branchRes, statusRes] = await Promise.all([
+      execFileAsync('git', ['branch', '--show-current'], { cwd: baseDir, encoding: 'utf8' }).catch(() => ({ stdout: '' })),
+      execFileAsync('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '-u', '--', '.'], { cwd: baseDir, encoding: 'utf8' }).catch(() => ({ stdout: '' }))
+    ]);
+    const branch = (branchRes.stdout || '').trim();
+    const statusOut = statusRes.stdout || '';
     const files = [];
     for (const line of statusOut.split('\n')) {
       if (!line.trim()) continue;

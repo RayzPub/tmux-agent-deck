@@ -6890,12 +6890,30 @@ body.light-minimalist .session-menu-item.danger {
 
 .session-menu-item:hover,
 .session-menu-item:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--c-text, #fff);
+}
+
+.session-menu-item.danger:hover,
+.session-menu-item.danger:active {
   background: rgba(255, 0, 127, 0.12);
+  color: var(--neon-pink, #ff007f);
+}
+
+body.light-minimalist .session-menu-item {
+  color: #334155;
 }
 
 body.light-minimalist .session-menu-item:hover,
 body.light-minimalist .session-menu-item:active {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+body.light-minimalist .session-menu-item.danger:hover,
+body.light-minimalist .session-menu-item.danger:active {
   background: #fef2f2;
+  color: #ef4444;
 }
 
 .card-action-btn {
@@ -10054,6 +10072,246 @@ body.light-minimalist .terminal-slash-desc {
   color: var(--c-text) !important;
   padding: 8px 10px !important;
   font-size: 12px !important;
+}
+
+/* Fix modal input-wrapper icon alignment & prevent icon/text overlap across all modals */
+.modal-card .input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.modal-card .input-wrapper .input-icon {
+  position: absolute !important;
+  left: 11px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 15px !important;
+  height: 15px !important;
+  color: var(--c-muted) !important;
+  pointer-events: none !important;
+  z-index: 2;
+  transition: color 0.15s ease;
+}
+
+.modal-card .input-wrapper input {
+  width: 100% !important;
+  height: 38px !important;
+  box-sizing: border-box !important;
+  padding: 8px 12px 8px 36px !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  letter-spacing: normal !important;
+  line-height: 1.4 !important;
+  border-radius: 7px !important;
+  background: var(--c-soft) !important;
+  border: 1px solid var(--c-line) !important;
+  color: var(--c-text) !important;
+  box-shadow: none !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease !important;
+}
+
+.modal-card .input-wrapper input::placeholder {
+  color: var(--c-muted) !important;
+  opacity: 0.78;
+}
+
+.modal-card .input-wrapper input:focus {
+  border-color: var(--c-accent) !important;
+  background: var(--c-bg) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-accent) 22%, transparent) !important;
+  outline: none !important;
+}
+
+.modal-card .input-wrapper:focus-within .input-icon {
+  color: var(--c-accent) !important;
+  filter: none !important;
+}
+
+.modal-card .input-indicator {
+  display: none !important;
+}
+
+.modal-card .cyber-btn {
+  clip-path: none !important;
+}
+
+/* New Session Modal Polish & Auto-Summary Name Field */
+#sessionModal .modal-header {
+  margin-bottom: 16px;
+}
+
+#sessionModal .modal-form {
+  gap: 16px;
+}
+
+#sessionModal .input-group {
+  gap: 6px;
+}
+
+.session-name-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-name-label-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label-optional-tag {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-muted) 14%, transparent);
+  color: var(--c-muted);
+  border: 1px solid color-mix(in srgb, var(--c-line) 80%, transparent);
+  line-height: 1.4;
+}
+
+.session-auto-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-accent) 12%, transparent);
+  color: var(--c-accent);
+  border: 1px solid color-mix(in srgb, var(--c-accent) 30%, transparent);
+  line-height: 1.4;
+  transition: all 0.15s ease;
+}
+
+.session-auto-pill i,
+.session-auto-pill svg {
+  width: 11px;
+  height: 11px;
+}
+
+.session-auto-pill.is-manual {
+  background: color-mix(in srgb, var(--c-green, #27916b) 12%, transparent);
+  color: var(--c-green, #64cda2);
+  border-color: color-mix(in srgb, var(--c-green, #27916b) 32%, transparent);
+}
+
+.session-name-input-wrapper input {
+  padding-right: 34px !important;
+}
+
+.input-clear-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c-muted) 18%, transparent);
+  color: var(--c-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  z-index: 3;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.input-clear-btn:hover {
+  background: color-mix(in srgb, var(--c-muted) 32%, transparent);
+  color: var(--c-text);
+}
+
+.input-clear-btn i,
+.input-clear-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.session-name-hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--c-muted);
+  padding-left: 2px;
+}
+
+.active-workspace-badge-container {
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--c-accent) 7%, var(--c-soft));
+  border: 1px solid color-mix(in srgb, var(--c-accent) 22%, var(--c-line));
+  border-radius: 7px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--c-accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.light-minimalist .modal-card .input-wrapper input {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.light-minimalist .modal-card .input-wrapper input:focus {
+  background: #ffffff !important;
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15) !important;
+}
+
+body.light-minimalist .modal-card .input-wrapper .input-icon {
+  color: #64748b !important;
+}
+
+body.light-minimalist .modal-card .input-wrapper:focus-within .input-icon {
+  color: #4f46e5 !important;
+}
+
+body.light-minimalist .label-optional-tag {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+body.light-minimalist .session-auto-pill {
+  background: #eef2ff;
+  color: #4f46e5;
+  border-color: #c7d2fe;
+}
+
+body.light-minimalist .session-auto-pill.is-manual {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+}
+
+body.light-minimalist .input-clear-btn {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+body.light-minimalist .input-clear-btn:hover {
+  background: #cbd5e1;
+  color: #0f172a;
+}
+
+body.light-minimalist .session-name-hint {
+  color: #64748b;
+}
+
+body.light-minimalist .active-workspace-badge-container {
+  background: #eef2ff !important;
+  border-color: #c7d2fe !important;
+  color: #4f46e5 !important;
 }
 
 /* 8. Duo & Mobile Breakpoints */
