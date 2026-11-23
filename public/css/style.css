@@ -1525,11 +1525,11 @@ body.light-minimalist .session-mode-badge.mode-terminal {
   border: 1px solid #cbd5e1;
 }
 
-/* Session Mode Selector Cards */
+/* Session Mode Selector Cards (2-Engine: Tmux Dual-Mode & OAR Native Stream) */
 .session-mode-cards-container {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   margin-top: 6px;
   margin-bottom: 4px;
   width: 100%;
@@ -1545,13 +1545,13 @@ body.light-minimalist .session-mode-badge.mode-terminal {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: 10px 6px 8px;
+  padding: 10px 10px 9px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   border-radius: var(--radius-sm, 8px);
 }
 
@@ -1574,7 +1574,7 @@ body.light-minimalist .session-mode-badge.mode-terminal {
 }
 
 .session-mode-cards-container .agent-title {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.25;
   text-align: center;
@@ -1585,20 +1585,30 @@ body.light-minimalist .session-mode-badge.mode-terminal {
 }
 
 .session-mode-cards-container .agent-desc {
-  font-size: 9.5px;
-  line-height: 1.2;
+  font-size: 10px;
+  line-height: 1.25;
   color: var(--text-muted, #7e8b9b);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.1px;
 }
 
 .session-mode-cards-container .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-desc {
   color: var(--neon-cyan);
   opacity: 0.85;
+}
+
+/* Soft visual hint when Shell card is shown under OAR Native Stream mode (clicking auto-switches back to Tmux) */
+.agent-card-option.is-tmux-only .agent-card-inner {
+  opacity: 0.56;
+  border-style: dashed;
+}
+
+.agent-card-option.is-tmux-only:hover .agent-card-inner {
+  opacity: 0.9;
 }
 
 /* Model Cards Selection for New Session */
@@ -3567,6 +3577,17 @@ body.light-minimalist .session-mode-cards-container .agent-desc {
 body.light-minimalist .session-mode-cards-container .agent-card-option input[type="radio"]:checked + .agent-card-inner .agent-desc {
   color: #4f46e5;
   opacity: 0.9;
+}
+
+body.light-minimalist .agent-card-option.is-tmux-only .agent-card-inner {
+  opacity: 0.6;
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+body.light-minimalist .agent-card-option.is-tmux-only:hover .agent-card-inner {
+  opacity: 0.95;
+  background: #f1f5f9;
 }
 
 /* Model cards styling in light mode */
@@ -10513,8 +10534,8 @@ body.light-minimalist .active-workspace-badge-container {
   }
 
   #sessionModal .session-mode-cards-container {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
     margin-top: 2px;
     margin-bottom: 0;
   }
@@ -10524,8 +10545,8 @@ body.light-minimalist .active-workspace-badge-container {
     align-items: center;
     justify-content: flex-start;
     text-align: left;
-    padding: 7px 10px;
-    gap: 8px;
+    padding: 9px 12px;
+    gap: 10px;
   }
 
   #sessionModal .session-mode-cards-container .agent-card-inner i,

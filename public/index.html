@@ -325,7 +325,7 @@
             <i data-lucide="smartphone"></i> 手机 · 
             随时随地极客编程
           </p>
-          <p class="slogan-desc" id="welcomeSloganDesc">请从侧边栏选择已有会话，或新建智能体会话（支持双模、OAR 纯会话与纯终端）。</p>
+          <p class="slogan-desc" id="welcomeSloganDesc">请从侧边栏选择已有会话，或新建智能体会话（支持终端双模 Tmux 与原生流 OAR）。</p>
           <div id="welcomeNoSessionAction" class="welcome-action-container">
             <button id="welcomeNewSessionBtn" class="highlight-text-btn">
               <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i>
@@ -659,33 +659,23 @@
               <span class="label-tech-text">// 会话运行模式</span>
             </label>
             <div class="agent-cards-container session-mode-cards-container">
-              <label class="agent-card-option" title="双模随时平滑切换 (推荐)">
+              <label class="agent-card-option" title="基于 Tmux 终端驱动：对话与完整字符终端随时互切（选 Shell 自动以纯终端启动）">
                 <input type="radio" name="sessionMode" value="hybrid" checked>
                 <div class="agent-card-inner">
                   <i data-lucide="split"></i>
                   <div class="agent-card-info">
-                    <span class="agent-title">会话与终端</span>
-                    <span class="agent-desc">双模平滑切换</span>
+                    <span class="agent-title">终端双模 (Tmux)</span>
+                    <span class="agent-desc">对话与终端随时互切</span>
                   </div>
                 </div>
               </label>
-              <label class="agent-card-option" title="纯会话模式 (原生流式对话，免终端干扰)">
+              <label class="agent-card-option" title="基于 OAR 原生事件流直连智能体：免终端干扰、支持 /compact，不依赖 Tmux">
                 <input type="radio" name="sessionMode" value="chat_only">
                 <div class="agent-card-inner">
                   <i data-lucide="messages-square"></i>
                   <div class="agent-card-info">
-                    <span class="agent-title">纯会话 (OAR)</span>
-                    <span class="agent-desc">原生流式对话</span>
-                  </div>
-                </div>
-              </label>
-              <label class="agent-card-option" title="纯终端模式 (原生 ANSI 命令行专注操控)">
-                <input type="radio" name="sessionMode" value="terminal_only">
-                <div class="agent-card-inner">
-                  <i data-lucide="terminal"></i>
-                  <div class="agent-card-info">
-                    <span class="agent-title">纯终端</span>
-                    <span class="agent-desc">命令行专注操控</span>
+                    <span class="agent-title">原生流 (OAR)</span>
+                    <span class="agent-desc">直连流式对话 · 免 Tmux</span>
                   </div>
                 </div>
               </label>

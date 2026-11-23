@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ccnow-agent CLIENT_VERSION = '1.7.4'
+// ccnow-agent CLIENT_VERSION = '1.7.5'
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
   try {
@@ -16,7 +16,7 @@ var require_config = __commonJS({
     var fs2 = require("fs");
     var path2 = require("path");
     var { execSync, execFileSync } = require("child_process");
-    var CLIENT_VERSION2 = "1.7.4";
+    var CLIENT_VERSION2 = "1.7.5";
     var CONFIG_DIR2 = process.env.CCNOW_CONFIG_DIR || path2.join(os.homedir(), ".ccnow");
     var CONFIG_FILE2 = path2.join(CONFIG_DIR2, "device.json");
     var WORKSPACES_FILE2 = path2.join(CONFIG_DIR2, "workspaces.json");
@@ -233,8 +233,7 @@ var require_fsHandlers = __commonJS({
     }
     function handleFsWorkspaces(send, reqId) {
       const defaults = [
-        { name: "Home (~)", path: os.homedir(), isDefault: true },
-        { name: "Current Working Dir", path: process.cwd() }
+        { name: "Home (~)", path: os.homedir(), isDefault: true }
       ];
       const custom = readCustomWorkspaces();
       const seenPaths = new Set(defaults.map((w) => w.path));

@@ -30,8 +30,7 @@ function writeCustomWorkspaces(list) {
 
 function handleFsWorkspaces(send, reqId) {
   const defaults = [
-    { name: 'Home (~)', path: os.homedir(), isDefault: true },
-    { name: 'Current Working Dir', path: process.cwd() }
+    { name: 'Home (~)', path: os.homedir(), isDefault: true }
   ];
   const custom = readCustomWorkspaces();
   const seenPaths = new Set(defaults.map(w => w.path));

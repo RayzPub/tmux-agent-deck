@@ -333,7 +333,7 @@ export function renderSessions(sessions) {
     return;
   } else {
     if (welcomeSloganDesc) {
-      welcomeSloganDesc.textContent = '请从侧边栏选择已有会话，或新建智能体会话（支持双模、OAR 纯会话与纯终端）。';
+      welcomeSloganDesc.textContent = '请从侧边栏选择已有会话，或新建智能体会话（支持终端双模 Tmux 与原生流 OAR）。';
     }
   }
 
@@ -1128,7 +1128,7 @@ function syncSessionNameFieldUI() {
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
   const selectedModeRadio = document.querySelector('input[name="sessionMode"]:checked');
   const mode = selectedModeRadio ? selectedModeRadio.value : 'hybrid';
-  const supportsAutoSummary = mode === 'chat_only' || (agent !== 'default' && mode !== 'terminal_only');
+  const supportsAutoSummary = mode === 'chat_only' || agent !== 'default';
 
   if (clearSessionNameBtn) {
     clearSessionNameBtn.classList.toggle('hidden', !rawVal);
@@ -1210,6 +1210,48 @@ function renderSessionFlatModels(agent, options = {}) {
   }
 }
 
+function syncSessionModeAndAgentUI(trigger = '') {
+  const modeRadio = document.querySelector('input[name="sessionMode"]:checked');
+  const agentRadio = document.querySelector('input[name="sessionAgent"]:checked');
+  const shellRadio = document.querySelector('input[name="sessionAgent"][value="default"]');
+  const shellCard = shellRadio ? shellRadio.closest('.agent-card-option') : null;
+  const shellDesc = shellCard ? shellCard.querySelector('.agent-desc') : null;
+  const hybridRadio = document.querySelector('input[name="sessionMode"][value="hybrid"]');
+
+  let mode = modeRadio ? modeRadio.value : 'hybrid';
+  let agent = agentRadio ? agentRadio.value : 'agy';
+
+  if (trigger === 'agent' && agent === 'default' && mode === 'chat_only') {
+    // Shell requires Tmux: smoothly switch mode back to Tmux Dual-Mode
+    if (hybridRadio) {
+      hybridRadio.checked = true;
+      mode = 'hybrid';
+    }
+  } else if (mode === 'chat_only' && agent === 'default') {
+    // OAR Native Stream runs AI agents, not raw Bash: switch to first visible AI agent
+    const fallbackAi = document.querySelector('.agent-card-option:not(.hidden) input[name="sessionAgent"]:not([value="default"])');
+    if (fallbackAi) {
+      fallbackAi.checked = true;
+      agent = fallbackAi.value;
+      renderSessionFlatModels(agent);
+    } else if (hybridRadio) {
+      hybridRadio.checked = true;
+      mode = 'hybrid';
+    }
+  }
+
+  if (shellCard) {
+    const isOar = mode === 'chat_only';
+    shellCard.classList.toggle('is-tmux-only', isOar);
+    shellCard.title = isOar
+      ? '标准 Bash 命令行环境（选择后将自动切换至终端双模 Tmux）'
+      : '标准 Bash 命令行环境';
+    if (shellDesc) {
+      shellDesc.textContent = isOar ? '需 Tmux 模式' : '标准 Bash';
+    }
+  }
+}
+
 newSessionBtn.addEventListener('click', () => {
   closeSidebarOnMobile();
   sessionModal.classList.remove('hidden');
@@ -1217,6 +1259,7 @@ newSessionBtn.addEventListener('click', () => {
   const modalBody = document.getElementById('sessionModalBody');
   if (modalBody) modalBody.scrollTop = 0;
 
+  syncSessionModeAndAgentUI();
   const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
   const agent = selectedAgentRadio ? selectedAgentRadio.value : 'agy';
   // Leave blank by default so backend allocates a monotonic unique ID and auto-summarizes title
@@ -1234,28 +1277,18 @@ newSessionBtn.addEventListener('click', () => {
   renderSessionFlatModels(agent);
 });
 
-// Update models, mode recommendation, and name hint when user switches agent or mode options
+// Update models, mode/agent compatibility, and name hint when user switches agent or mode options
 document.querySelectorAll('input[name="sessionAgent"]').forEach(radio => {
   radio.addEventListener('change', () => {
     renderSessionFlatModels(radio.value, { scrollIntoView: true });
-
-    // Smart mode suggestion
-    if (radio.value === 'default') {
-      const termModeRadio = document.querySelector('input[name="sessionMode"][value="terminal_only"]');
-      if (termModeRadio) termModeRadio.checked = true;
-    } else {
-      const currentModeRadio = document.querySelector('input[name="sessionMode"]:checked');
-      if (currentModeRadio && currentModeRadio.value === 'terminal_only') {
-        const hybridRadio = document.querySelector('input[name="sessionMode"][value="hybrid"]');
-        if (hybridRadio) hybridRadio.checked = true;
-      }
-    }
+    syncSessionModeAndAgentUI('agent');
     syncSessionNameFieldUI();
   });
 });
 
 document.querySelectorAll('input[name="sessionMode"]').forEach(radio => {
   radio.addEventListener('change', () => {
+    syncSessionModeAndAgentUI('mode');
     syncSessionNameFieldUI();
   });
 });
@@ -1333,7 +1366,8 @@ createSessionForm.addEventListener('submit', async (e) => {
   const modelLabel = selectedModelRadio ? (selectedModelRadio.dataset.displayName || '') : '';
 
   const selectedModeRadio = document.querySelector('input[name="sessionMode"]:checked');
-  const sessionMode = selectedModeRadio ? selectedModeRadio.value : 'hybrid';
+  const rawSessionMode = selectedModeRadio ? selectedModeRadio.value : 'hybrid';
+  const sessionMode = agent === 'default' ? 'terminal_only' : rawSessionMode;
 
   try {
     const response = await fetch('/api/sessions', {

@@ -11,7 +11,7 @@ const AGENT_LABELS = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
   kimi: 'Kimi Code',
-  oar: 'OAR 会话',
+  oar: '原生流 (OAR)',
   default: '终端 Bash'
 };
 
@@ -96,7 +96,7 @@ const AGENT_SLASH_COMMANDS = {
     { cmd: '/help', desc: '显示 Kimi CLI 帮助信息' }
   ],
   oar: [
-    { cmd: '/clear', desc: '清空当前 OAR 会话上下文并重置' },
+    { cmd: '/clear', desc: '清空当前原生流 (OAR) 上下文并重置' },
     { cmd: '/compact', desc: '使用 OAR 原生压缩上下文，释放窗口空间' }
   ],
   default: [

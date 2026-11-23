@@ -64,6 +64,72 @@ let currentPollTimer = null;
 let currentPollIntervalMs = 2000;
 let activePollSession = null;
 
+// Per-session action epoch & pending-turn guard:
+// Prevents stale in-flight polls, pre-echo snapshots, and mid-turn gaps from flashing "已完成" right after sending a prompt.
+const sessionActionEpoch = new Map(); // sessionName -> monotonic action counter
+const pendingTurnMap = new Map();     // sessionName -> { kind, startedAt, graceUntil, baseline, sawBackendActive, sawNewUserMsg }
+const PENDING_PROMPT_GRACE_MS = 25000;
+const PENDING_DECISION_GRACE_MS = 12000;
+const MID_TURN_TOOL_GRACE_MS = 15000;
+
+function getSessionEpoch(sessionName) {
+  return sessionActionEpoch.get(sessionName) || 0;
+}
+
+function bumpSessionEpoch(sessionName) {
+  if (!sessionName) return 0;
+  const next = getSessionEpoch(sessionName) + 1;
+  sessionActionEpoch.set(sessionName, next);
+  return next;
+}
+
+function getMessagesFingerprint(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const last = list.length > 0 ? list[list.length - 1] : null;
+  return {
+    count: list.length,
+    lastId: last ? String(last.id || '') : '',
+    lastRole: last ? String(last.role || '') : '',
+    lastContentLen: last && typeof last.content === 'string' ? last.content.length : 0,
+    lastThinkingLen: last && typeof last.thinking === 'string' ? last.thinking.length : 0,
+    lastToolsCount: last && Array.isArray(last.tools) ? last.tools.length : 0,
+  };
+}
+
+function isFingerprintNewer(fp, baseline) {
+  if (!baseline) return fp.count > 0;
+  return (
+    fp.count !== baseline.count ||
+    fp.lastId !== baseline.lastId ||
+    fp.lastRole !== baseline.lastRole ||
+    fp.lastContentLen !== baseline.lastContentLen ||
+    fp.lastThinkingLen !== baseline.lastThinkingLen ||
+    fp.lastToolsCount !== baseline.lastToolsCount
+  );
+}
+
+function markPendingTurn(sessionName, { kind = 'prompt', graceMs } = {}) {
+  if (!sessionName) return;
+  bumpSessionEpoch(sessionName);
+  const cached = sessionHistoryCache.get(sessionName);
+  const baseline = getMessagesFingerprint(cached?.messages);
+  const now = Date.now();
+  const ttl = graceMs || (kind === 'decision' ? PENDING_DECISION_GRACE_MS : PENDING_PROMPT_GRACE_MS);
+  pendingTurnMap.set(sessionName, {
+    kind,
+    startedAt: now,
+    graceUntil: now + ttl,
+    baseline,
+    sawBackendActive: false,
+    sawNewUserMsg: false,
+  });
+}
+
+function clearPendingTurn(sessionName) {
+  if (!sessionName) return;
+  pendingTurnMap.delete(sessionName);
+}
+
 // Scroll Pinning Physics State (open-claude-ui cooldown + bottom anchor tracking)
 const SCROLL_COOL_DOWN_MS = 150;
 let lastUserScrollAt = 0;
@@ -445,6 +511,8 @@ export function clearSessionChatCache(sessionName) {
   sessionViewModes.delete(sessionName);
   sessionSupportCache.delete(sessionName);
   sessionModeCache.delete(sessionName);
+  pendingTurnMap.delete(sessionName);
+  sessionActionEpoch.delete(sessionName);
 
   for (const key of expandedAccordions) {
     if (key.startsWith(`${sessionName}::`)) {
@@ -1211,11 +1279,15 @@ function bindComposerEvents() {
   if (interruptBtn) {
     interruptBtn.addEventListener('click', () => {
       const currentSess = getCurrentSessionName();
+      if (currentSess) {
+        clearPendingTurn(currentSess);
+        bumpSessionEpoch(currentSess);
+      }
       const sessMode = currentSess ? (sessionModeCache.get(currentSess) || 'hybrid') : 'hybrid';
       if (sessMode === 'chat_only') {
         const devParam = state.currentDeviceId && state.currentDeviceId !== 'cloud' ? `?deviceId=${encodeURIComponent(state.currentDeviceId)}` : '';
         fetch(`/api/sessions/${encodeURIComponent(currentSess)}/oar-abort${devParam}`, { method: 'POST' }).catch(() => {});
-        updateStatusBadge('已请求中止 OAR 生成', 'waiting');
+        updateStatusBadge('已请求中止原生流生成', 'waiting');
       } else {
         sendRawToTmux('\x03');
         updateStatusBadge('已中断当前任务', 'waiting');
@@ -1374,6 +1446,8 @@ export async function clearChatContext() {
   clearCurrentAttachments();
 
   // 2. Wipe cached messages for this session
+  clearPendingTurn(currentSess);
+  bumpSessionEpoch(currentSess);
   sessionHistoryCache.delete(currentSess);
   if (renderedChatState.sessionName === currentSess) {
     renderedChatState.sessionName = null;
@@ -1469,24 +1543,28 @@ export function sendChatMessage(overrideText) {
     fullPrompt = `${text}\n\n[附带文件]:\n${fileEntries}`;
   }
 
-  // 1. Optimistic append & pin scroll to bottom
+  // 1. Mark pending turn BEFORE optimistic UI & dispatch (drops stale pre-send polls & guards against premature "已完成")
+  markPendingTurn(currentSess, { kind: 'prompt' });
+
+  // 2. Optimistic append & pin scroll to bottom
   isScrollPinned = true;
   appendUserMessageToUI(text, attachmentsToSend);
 
-  // 2. Clear input & reset attachments
+  // 3. Clear input & reset attachments
   if (textarea) {
     textarea.value = '';
     textarea.style.height = 'auto';
   }
   clearCurrentAttachments();
 
-  // 3. Pipe to tmux or dispatch to OAR engine
+  // 4. Pipe to tmux or dispatch to OAR engine + update status indicator once
   if (sessMode === 'chat_only') {
     const imagePaths = attachmentsToSend
       .filter(f => /\.(png|jpe?g|gif|webp)$/i.test(f.name || f.relativePath || ''))
       .map(f => ({ relativePath: f.relativePath, path: f.absolutePath }));
     sendToOarEngine(currentSess, fullPrompt, imagePaths);
   } else {
+    updateStatusBadge('思考与执行中...', 'thinking');
     // Pipe to tmux: terminal raw mode requires \r (Carriage Return / Enter) to submit
     sendRawToTmux(fullPrompt + '\r');
     // Immediately trigger auto-title summarization if this session is awaiting its first-prompt summary
@@ -1513,13 +1591,8 @@ export function sendChatMessage(overrideText) {
         })
         .catch(() => {});
     }
-  }
 
-  // 4. Update status indicator
-  updateStatusBadge('思考与执行中...', 'thinking');
-
-  // 5. Trigger quick update
-  if (sessMode !== 'chat_only') {
+    // Trigger quick update
     setTimeout(() => {
       if (getCurrentSessionName() === currentSess) {
         loadAndRenderChatHistory(currentSess, false);
@@ -1570,12 +1643,25 @@ async function sendToOarEngine(sessionName, content, images = []) {
       if (payload && payload.displayTitle) {
         syncSessionDisplayTitle(sessionName, payload.displayTitle, payload);
       }
+      const pending = pendingTurnMap.get(sessionName);
+      if (payload && (payload.streaming || payload.isGenerating)) {
+        if (pending) {
+          pending.sawBackendActive = true;
+          pending.graceUntil = Math.max(pending.graceUntil, Date.now() + PENDING_PROMPT_GRACE_MS);
+        }
+        // Drop any 500ms poll that was already in flight before backend flipped isGenerating=true
+        bumpSessionEpoch(sessionName);
+      } else {
+        // Turn already finished synchronously (or was rejected cleanly)
+        clearPendingTurn(sessionName);
+      }
       loadAndRenderChatHistory(sessionName, false);
       // Only restore slow polling immediately if the turn already finished synchronously (cloud mode)
       if (!payload.streaming && !payload.isGenerating && getCurrentSessionName() === sessionName) {
         startChatPolling(sessionName, 2000);
       }
     } else {
+      clearPendingTurn(sessionName);
       const err = await res.json().catch(() => ({}));
       updateStatusBadge('智能体响应异常', 'error');
       console.error('[OAR] Send message error:', err);
@@ -1585,6 +1671,7 @@ async function sendToOarEngine(sessionName, content, images = []) {
       }
     }
   } catch (e) {
+    clearPendingTurn(sessionName);
     updateStatusBadge('网络请求失败', 'error');
     console.error('[OAR] Send message fetch failed:', e);
     if (getCurrentSessionName() === sessionName) {
@@ -1599,6 +1686,7 @@ async function sendToOarEngine(sessionName, content, images = []) {
 export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = false) {
   if (!sessionName) return;
 
+  const reqEpoch = getSessionEpoch(sessionName);
   const initialCached = sessionHistoryCache.get(sessionName);
   const domAlreadyMatches = Boolean(
     initialCached &&
@@ -1646,6 +1734,11 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
       return;
     }
 
+    // Discard stale responses initiated before a newer send / approval / clear / interrupt
+    if (getSessionEpoch(sessionName) !== reqEpoch) {
+      return;
+    }
+
     // Sync any newly summarized or renamed displayTitle from backend (including async LLM upgrades)
     if (data && data.displayTitle) {
       const titleChanged = syncSessionDisplayTitle(sessionName, data.displayTitle, data);
@@ -1664,17 +1757,60 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
     }
 
     const previousCache = sessionHistoryCache.get(sessionName);
+    const now = Date.now();
+    const activePending = pendingTurnMap.get(sessionName);
+
     if (data && data.notModified) {
-      if (previousCache && (renderedChatState.sessionName !== sessionName || renderedChatState.lastUpdated !== previousCache.lastUpdated)) {
+      if (activePending && now >= activePending.graceUntil) {
+        clearPendingTurn(sessionName);
+        if (previousCache) {
+          renderMessages(sessionName, previousCache, isSessionSwitch);
+        } else {
+          updateStatusBadge('就绪', 'ready');
+        }
+      } else if (!activePending && previousCache && (renderedChatState.sessionName !== sessionName || renderedChatState.lastUpdated !== previousCache.lastUpdated)) {
         renderMessages(sessionName, previousCache, isSessionSwitch);
+      } else if (!activePending && previousCache && data.sessionMode !== 'chat_only') {
+        const stage = inlineAiStatus.getStage();
+        const isInlineActive = ['thinking', 'researching', 'analyzing', 'writing', 'working', 'compacting'].includes(stage);
+        if (isInlineActive && previousCache.lastUpdated && (now - previousCache.lastUpdated) >= MID_TURN_TOOL_GRACE_MS) {
+          renderMessages(sessionName, previousCache, false);
+        }
       }
       if (data.sessionMode === 'chat_only' && activePollSession === sessionName) {
-        const desiredInterval = data.isGenerating ? 500 : 2000;
+        const desiredInterval = (data.isGenerating || pendingTurnMap.has(sessionName)) ? 500 : 2000;
         if (currentPollIntervalMs !== desiredInterval) {
           startChatPolling(sessionName, desiredInterval);
         }
       }
       return;
+    }
+
+    if (activePending) {
+      const incomingFp = getMessagesFingerprint(data.messages);
+      const hasNewerHistory = isFingerprintNewer(incomingFp, activePending.baseline);
+      const isOarMode = data.sessionMode === 'chat_only';
+
+      if (data.isGenerating) {
+        activePending.sawBackendActive = true;
+      }
+
+      // Backend hasn't persisted our newly dispatched prompt/decision yet (still returning pre-send or empty snapshot):
+      // keep optimistic bubble and active status pill intact instead of flashing "已完成"
+      if (
+        now < activePending.graceUntil &&
+        !hasNewerHistory &&
+        !data.isGenerating &&
+        !data.pendingAction &&
+        !activePending.sawBackendActive
+      ) {
+        return;
+      }
+
+      // In OAR mode, once backend explicitly started and then finished generating, clear the guard immediately
+      if (isOarMode && activePending.sawBackendActive && !data.isGenerating) {
+        clearPendingTurn(sessionName);
+      }
     }
 
     const isUnchanged = Boolean(
@@ -1684,6 +1820,10 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
       renderedChatState.lastUpdated === data.lastUpdated
     );
     if (isUnchanged) {
+      if (activePending && now >= activePending.graceUntil) {
+        clearPendingTurn(sessionName);
+        renderMessages(sessionName, data, false);
+      }
       return; // No changes and DOM is already up-to-date
     }
 
@@ -1692,7 +1832,7 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
 
     // Dynamically adjust polling cadence for OAR streaming sessions (500ms active -> 2000ms idle)
     if (data && data.sessionMode === 'chat_only' && activePollSession === sessionName) {
-      const desiredInterval = data.isGenerating ? 500 : 2000;
+      const desiredInterval = (data.isGenerating || pendingTurnMap.has(sessionName)) ? 500 : 2000;
       if (currentPollIntervalMs !== desiredInterval) {
         startChatPolling(sessionName, desiredInterval);
       }
@@ -1770,8 +1910,13 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   renderedChatState.lastUpdated = (data && data.lastUpdated !== undefined) ? data.lastUpdated : null;
 
   if (messages.length === 0) {
+    const pending = pendingTurnMap.get(rawSessionName);
+    if (pending && pending.kind === 'prompt' && Date.now() < pending.graceUntil && !data?.pendingAction) {
+      // First prompt in a fresh session is still being persisted by backend; preserve optimistic bubble & active pill
+      return;
+    }
     const emptyDesc = (data && data.sessionMode === 'chat_only')
-      ? 'OAR 纯会话模式 · 输入需求开启对话，支持图片附件与 /compact'
+      ? '原生流模式 (OAR) · 输入需求开启对话，支持图片附件与 /compact'
       : '在下方输入需求，开启智能体协作对话';
     container.innerHTML = `
       <div class="chat-empty-state">
@@ -1989,6 +2134,9 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   });
 
   // Pending action card (ask_question / permission / yn) + Live Inline AI Status
+  const pending = pendingTurnMap.get(rawSessionName);
+  const now = Date.now();
+  const isOarMode = Boolean(data && data.sessionMode === 'chat_only');
   const lastMessage = messages[messages.length - 1];
   const lastRunningTool = lastMessage && lastMessage.role !== 'user' && Array.isArray(lastMessage.tools)
     ? lastMessage.tools.find(t => t.status === 'running')
@@ -2001,7 +2149,47 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     (!lastMessage.tools || lastMessage.tools.length === 0)
   );
 
+  // When backend echoes the newly sent user message before assistant output starts
+  // (covers both Tmux CLI JSONL echo delay and OAR cold-start ensureLiveSession window),
+  // keep the status pill in active thinking state instead of prematurely flashing "已完成".
+  if (pending && lastMessage && lastMessage.role === 'user' && !pending.sawNewUserMsg) {
+    pending.sawNewUserMsg = true;
+    pending.graceUntil = Math.max(pending.graceUntil, now + PENDING_PROMPT_GRACE_MS);
+  }
+  const waitingForAssistantAfterUserMsg = Boolean(
+    lastMessage &&
+    lastMessage.role === 'user' &&
+    pending &&
+    now < pending.graceUntil &&
+    (!isOarMode || !pending.sawBackendActive)
+  );
+
+  // In Tmux mode, a finished tool call with no final prose content yet means the model is
+  // processing the tool output before its next step / final response.
+  const currentInlineStage = inlineAiStatus.getStage();
+  const isCurrentlyWorking = ['thinking', 'researching', 'analyzing', 'writing', 'working', 'compacting'].includes(currentInlineStage);
+  const assistantMidTurnAfterTool = Boolean(
+    !isOarMode &&
+    lastMessage &&
+    lastMessage.role !== 'user' &&
+    !lastMessage.content &&
+    Array.isArray(lastMessage.tools) &&
+    lastMessage.tools.length > 0 &&
+    (Boolean(pending && now < pending.graceUntil) || (isCurrentlyWorking && data.lastUpdated && (now - data.lastUpdated) < MID_TURN_TOOL_GRACE_MS))
+  );
+
+  // Right after approving a permission or submitting a question answer in Tmux mode
+  const pendingDecisionInFlight = Boolean(
+    !isOarMode &&
+    pending &&
+    pending.kind === 'decision' &&
+    now < pending.graceUntil &&
+    !data.pendingAction &&
+    !isFingerprintNewer(getMessagesFingerprint(messages), pending.baseline)
+  );
+
   if (data.pendingAction) {
+    clearPendingTurn(rawSessionName);
     if (data.pendingAction.type === 'ask_question') {
       if (!hasRenderedActiveQuestion) {
         html += renderQuestionCardHtml(data.pendingAction.questions || [], true, data.pendingAction.toolUseId || '');
@@ -2016,19 +2204,34 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     } else {
       updateStatusBadge('就绪', 'ready');
     }
-  } else if (data.isGenerating || lastRunningTool || lastActivelyThinking) {
+  } else if (
+    data.isGenerating ||
+    lastRunningTool ||
+    lastActivelyThinking ||
+    waitingForAssistantAfterUserMsg ||
+    assistantMidTurnAfterTool ||
+    pendingDecisionInFlight
+  ) {
+    if (pending && (data.isGenerating || lastRunningTool || lastActivelyThinking)) {
+      pending.sawBackendActive = true;
+    }
     if (lastRunningTool) {
       // Tool details already render inside the conversation stream; keep inline status concise (no duplicate tool name)
       const toolStage = inferToolStage(lastRunningTool.name);
       updateStatusBadge('处理中...', toolStage);
-    } else if (lastActivelyThinking) {
+    } else if (lastActivelyThinking || waitingForAssistantAfterUserMsg) {
       updateStatusBadge('思考中...', 'thinking');
+    } else if (assistantMidTurnAfterTool) {
+      updateStatusBadge('思考与整合中...', 'thinking');
     } else if (lastMessage && lastMessage.role !== 'user' && lastMessage.content) {
       updateStatusBadge('生成回复中...', 'writing');
     } else {
       updateStatusBadge('处理中...', 'thinking');
     }
   } else {
+    if (pending) {
+      clearPendingTurn(rawSessionName);
+    }
     updateStatusBadge('就绪', 'ready');
   }
 
@@ -2298,6 +2501,7 @@ function bindDecisionCardEvents(pending) {
           card.style.opacity = '0.7';
           card.style.pointerEvents = 'none';
 
+          markPendingTurn(getCurrentSessionName(), { kind: 'decision' });
           sendRawToTmux(num);
           updateStatusBadge('已提交回答，执行中...', 'working');
 
@@ -2350,6 +2554,7 @@ function bindDecisionCardEvents(pending) {
           });
 
           setTimeout(() => {
+            markPendingTurn(getCurrentSessionName(), { kind: 'decision' });
             sendRawToTmux('1\r');
             updateStatusBadge('已提交回答，执行中...', 'working');
             setTimeout(() => {
@@ -2372,6 +2577,7 @@ function bindDecisionCardEvents(pending) {
 
     if (btnApprove) {
       btnApprove.addEventListener('click', () => {
+        markPendingTurn(getCurrentSessionName(), { kind: 'decision' });
         sendRawToTmux('1');
         if (card) {
           card.style.opacity = '0.6';
@@ -2389,6 +2595,7 @@ function bindDecisionCardEvents(pending) {
 
     if (btnAutoMode) {
       btnAutoMode.addEventListener('click', () => {
+        markPendingTurn(getCurrentSessionName(), { kind: 'decision' });
         sendRawToTmux('3');
         if (card) {
           card.style.opacity = '0.6';
@@ -2431,6 +2638,7 @@ function bindDecisionCardEvents(pending) {
 
     if (btnApprove) {
       btnApprove.addEventListener('click', () => {
+        markPendingTurn(getCurrentSessionName(), { kind: 'decision' });
         sendRawToTmux('y\r');
         if (card) {
           card.style.opacity = '0.6';
