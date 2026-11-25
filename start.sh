@@ -253,6 +253,12 @@ if [ "$EUID" -eq 0 ] && [ -d /run/systemd/system ] && command -v systemd-run >/d
     if [ -n "$SUDO_USER" ]; then
         SYSTEMD_RUN_ARGS+=(--setenv="SUDO_USER=${SUDO_USER}")
     fi
+    if [ -n "$SUDO_UID" ]; then
+        SYSTEMD_RUN_ARGS+=(--setenv="SUDO_UID=${SUDO_UID}")
+    fi
+    if [ -n "$SUDO_GID" ]; then
+        SYSTEMD_RUN_ARGS+=(--setenv="SUDO_GID=${SUDO_GID}")
+    fi
     if [ -n "$PATH" ]; then
         SYSTEMD_RUN_ARGS+=(--setenv="PATH=${PATH}")
     fi

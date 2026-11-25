@@ -13,12 +13,48 @@ const deviceService = require('../services/deviceService');
 const db = require('../services/dbService');
 const { ensureCodexConfig } = require('../services/fileService');
 
-const RUN_USER = process.env.SUDO_USER && process.env.SUDO_USER !== 'root' ? process.env.SUDO_USER : 'ubuntu';
-const USER_HOME = `/home/${RUN_USER}`;
+function resolveRunUser() {
+  if (process.env.CCNOW_HOST_USER) {
+    return process.env.CCNOW_HOST_USER;
+  }
+  if (process.env.SUDO_USER && process.env.SUDO_USER !== 'root') {
+    return process.env.SUDO_USER;
+  }
+  // If deployed under /root or running directly as root without /home/ubuntu, run as root
+  if (PROJECT_ROOT === '/root' || PROJECT_ROOT.startsWith('/root/') || !fs.existsSync('/home/ubuntu')) {
+    return 'root';
+  }
+  return 'ubuntu';
+}
+
+function resolveUserHome(username) {
+  if (username === 'root') return '/root';
+  try {
+    const passwd = fs.readFileSync('/etc/passwd', 'utf8');
+    const line = passwd.split('\n').find(l => l.startsWith(`${username}:`));
+    if (line) {
+      const homeDir = line.split(':')[5];
+      if (homeDir) return homeDir;
+    }
+  } catch (_) {}
+  return `/home/${username}`;
+}
+
+if (process.getuid && process.getuid() !== 0) {
+  console.error('❌ This script must be run with root privileges to configure systemd and SQLite.');
+  console.error('   Run: sudo "$(which node)" scripts/setup-host-admin-agent.js');
+  process.exit(1);
+}
+
+const RUN_USER = resolveRunUser();
+const USER_HOME = resolveUserHome(RUN_USER);
 const CONFIG_DIR = path.join(USER_HOME, '.ccnow-host-agent');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'device.json');
 const WORKSPACES_FILE = path.join(CONFIG_DIR, 'workspaces.json');
-const TMUX_SOCKET = process.env.CCNOW_TMUX_SOCKET || path.join(PROJECT_ROOT, 'user_data', 'admin', 'tmux.sock');
+const rawTmuxSocket = process.env.CCNOW_TMUX_SOCKET;
+const TMUX_SOCKET = (rawTmuxSocket === 'default' || rawTmuxSocket === 'none')
+  ? ''
+  : (rawTmuxSocket || path.join(PROJECT_ROOT, 'user_data', 'admin', 'tmux.sock'));
 const SERVICE_NAME = 'ccnow-host-agent.service';
 const SERVICE_PATH = `/etc/systemd/system/${SERVICE_NAME}`;
 const NODE_BIN = process.execPath;
@@ -105,22 +141,40 @@ function main() {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), { encoding: 'utf8', mode: 0o600 });
 
   if (!fs.existsSync(WORKSPACES_FILE)) {
-    const defaultWorkspaces = {
-      'tmux-agent-deck': PROJECT_ROOT
-    };
-    fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(defaultWorkspaces, null, 2), 'utf8');
+    const seedList = [];
+    const seenPaths = new Set();
+    const legacyWsFile = path.join(PROJECT_ROOT, 'workspaces.json');
+    if (fs.existsSync(legacyWsFile)) {
+      try {
+        const legacyRaw = JSON.parse(fs.readFileSync(legacyWsFile, 'utf8'));
+        const entries = Array.isArray(legacyRaw)
+          ? legacyRaw
+          : Object.entries(legacyRaw || {}).map(([name, wsPath]) => ({ name, path: wsPath }));
+        for (const item of entries) {
+          if (item && item.path && !seenPaths.has(item.path)) {
+            seenPaths.add(item.path);
+            seedList.push({ name: item.name || path.basename(item.path), path: item.path });
+          }
+        }
+      } catch (_) {}
+    }
+    if (!seenPaths.has(PROJECT_ROOT)) {
+      seedList.push({ name: 'tmux-agent-deck', path: PROJECT_ROOT });
+    }
+    fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(seedList, null, 2), 'utf8');
   }
 
   const settings = db.getSettings();
   const claudeOAuthMode = Boolean(settings && settings.claudeOAuthMode);
   syncHostCliGatewayConfig(claudeOAuthMode);
 
-  // Ensure ubuntu owns the config dir
+  // Ensure RUN_USER owns the config dir
   if (process.getuid && process.getuid() === 0) {
     execSync(`chown -R ${RUN_USER}:${RUN_USER} "${CONFIG_DIR}"`);
   }
 
   const oauthEnvLine = claudeOAuthMode ? 'Environment=CCNOW_CLAUDE_OAUTH_MODE=1\n' : '';
+  const tmuxSocketLine = TMUX_SOCKET ? `Environment=CCNOW_TMUX_SOCKET=${TMUX_SOCKET}\n` : '';
   const unitContent = `[Unit]
 Description=CCNOW Host Admin Edge Agent (Independent of server.js)
 After=network.target
@@ -134,8 +188,7 @@ Environment=HOME=${USER_HOME}
 Environment=PATH=${path.dirname(NODE_BIN)}:${USER_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=CCNOW_CONFIG_DIR=${CONFIG_DIR}
 Environment=CCNOW_SERVER_URL=${SERVER_URL}
-Environment=CCNOW_TMUX_SOCKET=${TMUX_SOCKET}
-Environment=CCNOW_MANAGED_LLM_GATEWAY=1
+${tmuxSocketLine}Environment=CCNOW_MANAGED_LLM_GATEWAY=1
 ${oauthEnvLine}ExecStart=${NODE_BIN} ${AGENT_SCRIPT} start
 KillMode=process
 Restart=always
@@ -153,9 +206,11 @@ WantedBy=multi-user.target
   execSync(`systemctl restart ${SERVICE_NAME}`);
 
   console.log(`✅ Host Admin Agent installed and running!`);
+  console.log(`   Run User:  ${RUN_USER} (HOME=${USER_HOME})`);
   console.log(`   Device ID: ${managed.deviceId}`);
   console.log(`   Name:      ${managed.device.name}`);
   console.log(`   Server:    ${SERVER_URL}`);
+  console.log(`   Tmux Sock: ${TMUX_SOCKET || '(default system socket)'}`);
   console.log(`   Unit:      ${SERVICE_NAME}`);
 }
 

@@ -178,12 +178,14 @@ tail -n 40 server.log
 
 ### Step 7：注册 / 升级宿主机常驻 Agent（`host-admin`）
 
-在当前非 root 运维用户下使用 `sudo` 执行（脚本会自动识别 `SUDO_USER` 为运行用户，若直接以 root 登录请显式指定 `SUDO_USER=<你的用户名>`）：
+在当前非 root 运维用户下使用 `sudo` 配合 `$(which node)` 执行（可避免 NVM 环境下 `sudo node` 找不到或命中系统旧版 Node；若部署在 `/root/` 下以 root 身份直接运行，脚本会自动识别为 `root`）：
 
 ```bash
-sudo node scripts/setup-host-admin-agent.js
-# 若当前就是 root shell 且业务用户是 ubuntu（或其他用户名）：
-# SUDO_USER=ubuntu node scripts/setup-host-admin-agent.js
+sudo "$(which node)" scripts/setup-host-admin-agent.js
+# 若希望复用宿主机默认 tmux socket（接管升级前已有的 tmux 会话）：
+# sudo CCNOW_TMUX_SOCKET=default "$(which node)" scripts/setup-host-admin-agent.js
+# 若当前是 root shell 但希望指定其他业务用户：
+# CCNOW_HOST_USER=ubuntu "$(which node)" scripts/setup-host-admin-agent.js
 ```
 
 该脚本是**完全幂等**的（首次安装与后续版本升级均执行同一条命令），它会自动完成：
@@ -292,6 +294,10 @@ systemctl is-active ccnow-server.service ccnow-host-agent.service
 - **原因**：当前运行 `server.js` 的 Node.js 版本低于 `v22.5.0`。
 - **解决**：使用 NVM 安装 Node.js ≥ v22.13（推荐 `v26.4.0`），确认 `start.sh` 探测到的 `NODE_BIN` 是新版本，并执行 `rm -rf node_modules && npm install`。
 
+### Q1.5：运行 `setup-host-admin-agent.js` 报错 `ERR_SQLITE_ERROR: attempt to write a readonly database`
+- **原因**：未以 `sudo` 运行脚本，且 `data/ccnow.db`（或其 `-wal`/`-shm` 文件）属主为 `root:root`。
+- **解决**：使用 `sudo "$(which node)" scripts/setup-host-admin-agent.js` 执行；如需让普通用户读写数据库，同时执行 `sudo chown -R "$USER:$USER" data/`。
+
 ### Q2：升级后登录控制台直接进入“离线设备引导页”，看不到原工作区
 - **原因**：尚未注册宿主机 `host-admin` Agent，或 `ccnow-host-agent.service` 启动失败。
 - **解决**：
@@ -364,7 +370,7 @@ npm run build
 
 # 3. 启动控制面 + 注册/升级宿主机 Agent
 sudo ./start.sh
-sudo node scripts/setup-host-admin-agent.js
+sudo "$(which node)" scripts/setup-host-admin-agent.js
 
 # 4. （可选，如需云电脑）构建 Docker 沙箱镜像
 # npm run build:sandbox
