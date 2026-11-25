@@ -1156,6 +1156,21 @@ function createDeviceOarManager(options = {}) {
         if (typeof runtime.listModels !== 'function') {
           return { runtimeId, kind: 'unsupported', models: [], reason: `运行时 "${runtimeId}" 未提供模型枚举接口` };
         }
+        // Claude CLI's list_models control request returns a hardcoded static catalog even when logged out.
+        // Verify authStatus first so unauthenticated Claude instances report 'unauthenticated' instead of fake models.
+        if (runtimeId === 'claude' && typeof runtime.authStatus === 'function') {
+          try {
+            const auth = await runtime.authStatus(installation, { env, timeoutMs: 8000 });
+            if (auth && auth.kind === 'logged_out') {
+              return {
+                runtimeId,
+                kind: 'unauthenticated',
+                models: [],
+                detail: 'Claude Code 尚未登录（且未配置 ANTHROPIC_API_KEY）'
+              };
+            }
+          } catch (_) {}
+        }
         const res = await runtime.listModels(installation, {
           cwd,
           env,

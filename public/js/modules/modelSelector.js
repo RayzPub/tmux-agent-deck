@@ -7,10 +7,20 @@
 import { state } from './state.js';
 
 const MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h persistent localStorage + memory cache
-const MODEL_STORAGE_PREFIX = 'ccnow_oar_models_v1::';
+const MODEL_STORAGE_PREFIX = 'ccnow_oar_models_v2::';
 const modelCatalogCache = new Map(); // `${deviceId}::${agent}` -> { fetchedAt, data }
 const inFlightRequests = new Map();
 let modalRenderSeq = 0;
+
+// Purge legacy v1 model cache entries so stale unauthenticated Claude aliases are cleared immediately
+try {
+  const legacyKeys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('ccnow_oar_models_v1::')) legacyKeys.push(k);
+  }
+  legacyKeys.forEach(k => localStorage.removeItem(k));
+} catch (_) {}
 
 function readCachedModelsEntry(cacheKey) {
   const mem = modelCatalogCache.get(cacheKey);
@@ -333,7 +343,7 @@ export async function renderSessionModelPicker({
   const items = Array.isArray(result.models) ? result.models : [];
   if (items.length === 0) {
     const reasonText = result.runtimeKind === 'unauthenticated'
-      ? '当前智能体尚未登录，将使用 CLI 默认配置启动'
+      ? (result.runtimeDetail || '当前智能体尚未登录，请先完成登录或配置 API Key')
       : '未探测到可选模型，将使用智能体默认模型启动';
     container.innerHTML = `
       <div class="model-cards-empty">
