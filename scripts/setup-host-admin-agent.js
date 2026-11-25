@@ -11,6 +11,7 @@ const { execSync } = require('child_process');
 const { PROJECT_ROOT, PORT } = require('../config');
 const deviceService = require('../services/deviceService');
 const db = require('../services/dbService');
+const llmGatewayService = require('../services/llmGatewayService');
 const { ensureCodexConfig } = require('../services/fileService');
 
 function resolveRunUser() {
@@ -173,7 +174,13 @@ function main() {
     execSync(`chown -R ${RUN_USER}:${RUN_USER} "${CONFIG_DIR}"`);
   }
 
+  const gwConfig = llmGatewayService.loadConfig();
+  const defaultAnthropicModel = (gwConfig && gwConfig.enabled && gwConfig.defaults?.anthropicModel) ? String(gwConfig.defaults.anthropicModel).trim() : '';
+  const defaultOpenaiModel = (gwConfig && gwConfig.enabled && gwConfig.defaults?.openaiModel) ? String(gwConfig.defaults.openaiModel).trim() : '';
+
   const oauthEnvLine = claudeOAuthMode ? 'Environment=CCNOW_CLAUDE_OAUTH_MODE=1\n' : '';
+  const defaultAnthropicLine = (!claudeOAuthMode && defaultAnthropicModel) ? `Environment=CCNOW_DEFAULT_ANTHROPIC_MODEL=${defaultAnthropicModel}\n` : '';
+  const defaultOpenaiLine = defaultOpenaiModel ? `Environment=CCNOW_DEFAULT_OPENAI_MODEL=${defaultOpenaiModel}\n` : '';
   const tmuxSocketLine = TMUX_SOCKET ? `Environment=CCNOW_TMUX_SOCKET=${TMUX_SOCKET}\n` : '';
   const unitContent = `[Unit]
 Description=CCNOW Host Admin Edge Agent (Independent of server.js)
@@ -189,7 +196,7 @@ Environment=PATH=${path.dirname(NODE_BIN)}:${USER_HOME}/.local/bin:/usr/local/sb
 Environment=CCNOW_CONFIG_DIR=${CONFIG_DIR}
 Environment=CCNOW_SERVER_URL=${SERVER_URL}
 ${tmuxSocketLine}Environment=CCNOW_MANAGED_LLM_GATEWAY=1
-${oauthEnvLine}ExecStart=${NODE_BIN} ${AGENT_SCRIPT} start
+${defaultAnthropicLine}${defaultOpenaiLine}${oauthEnvLine}ExecStart=${NODE_BIN} ${AGENT_SCRIPT} start
 KillMode=process
 Restart=always
 RestartSec=3

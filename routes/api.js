@@ -601,6 +601,31 @@ router.get('/sessions', requireAuth, (req, res) => {
   });
 });
 
+// Helper: resolve empty ("gateway default") model selection to the concrete default gateway model
+// for managed devices (host-admin / docker-sandbox) so Claude/Codex never fall back to undeclared built-in aliases.
+function resolveManagedDefaultModel(deviceId, agentType, requestedModel) {
+  const cleanReq = typeof requestedModel === 'string' ? requestedModel.trim() : '';
+  if (cleanReq) return cleanReq;
+  const normAgent = String(agentType || '').trim().toLowerCase();
+  if (normAgent !== 'claude' && normAgent !== 'codex') return '';
+  try {
+    const dev = deviceId ? deviceService.getDeviceById(deviceId) : null;
+    const isManaged = !dev || dev.deviceKind === 'host-admin' || dev.deviceKind === 'docker-sandbox';
+    if (!isManaged) return '';
+    const gwConfig = llmGatewayService.loadConfig();
+    if (!gwConfig || !gwConfig.enabled) return '';
+    const settings = db.getSettings();
+    const claudeOAuthMode = Boolean(settings && settings.claudeOAuthMode);
+    if (normAgent === 'claude' && !claudeOAuthMode) {
+      return (gwConfig.defaults && gwConfig.defaults.anthropicModel) || '';
+    }
+    if (normAgent === 'codex') {
+      return (gwConfig.defaults && gwConfig.defaults.openaiModel) || '';
+    }
+  } catch (_) {}
+  return '';
+}
+
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
   const { name, title, autoTitle, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, modelEffort, sessionMode } = req.body;
@@ -646,6 +671,8 @@ router.post('/sessions', requireAuth, async (req, res) => {
       sessionName: requestedTechName
     });
 
+  const effectiveModelName = resolveManagedDefaultModel(targetDeviceId, reqAgent, modelName);
+
   try {
     const result = await deviceService.remoteTmuxNewSession(targetDeviceId, {
       sessionName: requestedTechName,
@@ -655,8 +682,8 @@ router.post('/sessions', requireAuth, async (req, res) => {
       workspaceName: workspaceName || '',
       sessionMode: targetMode,
       agentType: reqAgent,
-      agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || modelName || '',
-      modelName: modelName || '',
+      agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || effectiveModelName || '',
+      modelName: effectiveModelName,
       modelEffort: modelEffort || ''
     });
     if (result && result.error) {
@@ -1605,9 +1632,18 @@ router.get('/oar/models', requireAuth, async (req, res) => {
   const targetDeviceId = resolveComputeDeviceId(req);
   const deviceRecord = targetDeviceId ? deviceService.getDeviceById(targetDeviceId) : null;
   const isManagedDevice = !deviceRecord || deviceRecord.deviceKind === 'host-admin' || deviceRecord.deviceKind === 'docker-sandbox';
+  const globalSettings = db.getSettings();
+  const claudeOAuthMode = Boolean(globalSettings && globalSettings.claudeOAuthMode);
+  const gwConfig = llmGatewayService.loadConfig();
+  const gatewayEnabled = Boolean(gwConfig && gwConfig.enabled);
+
+  // Managed devices in Gateway mode route Claude/Codex strictly through llm_gateway.json:
+  // skip probing Claude CLI's hardcoded local catalog (which returns opus/sonnet/haiku even when logged out).
+  const useGatewayOnlyForClaude = normAgent === 'claude' && isManagedDevice && gatewayEnabled && !claudeOAuthMode;
+  const useGatewayOnlyForCodex = normAgent === 'codex' && isManagedDevice && gatewayEnabled;
 
   let runtimeResult = { kind: 'unavailable', models: [] };
-  if (targetDeviceId) {
+  if (targetDeviceId && !useGatewayOnlyForClaude && !useGatewayOnlyForCodex) {
     try {
       const rpcRes = await deviceService.remoteOarListModels(targetDeviceId, {
         agentType: normAgent,
@@ -1622,6 +1658,8 @@ router.get('/oar/models', requireAuth, async (req, res) => {
     } catch (err) {
       runtimeResult = { kind: 'error', models: [], error: err.message };
     }
+  } else if (useGatewayOnlyForClaude || useGatewayOnlyForCodex) {
+    runtimeResult = { kind: 'gateway', models: [] };
   }
 
   const agentProviderLabel = {
@@ -1731,8 +1769,6 @@ router.get('/oar/models', requireAuth, async (req, res) => {
   };
 
   const runtimeModels = normalizeRuntimeModels(runtimeResult.models);
-  const globalSettings = db.getSettings();
-  const claudeOAuthMode = Boolean(globalSettings && globalSettings.claudeOAuthMode);
 
   let finalModels = [];
   const seenIds = new Set();
@@ -1744,27 +1780,18 @@ router.get('/oar/models', requireAuth, async (req, res) => {
   };
 
   if (normAgent === 'claude') {
-    if (isManagedDevice && !claudeOAuthMode) {
-      // Gateway mode: prioritize gateway models, then append native Claude CLI aliases (opus/sonnet/haiku)
+    if (useGatewayOnlyForClaude) {
+      // Gateway mode on managed device: strictly show declared LLM Gateway Anthropic models only
       for (const gm of buildGatewayModels('anthropic')) pushUnique(gm);
-      for (const rm of runtimeModels) {
-        if (rm.id === '') continue; // Avoid duplicating default slot
-        pushUnique({ ...rm, isDefault: false });
-      }
     } else {
-      // OAuth direct or external BYOK device: native Claude CLI models first
+      // OAuth direct or external BYOK device: strictly show authenticated Claude CLI runtime models
       for (const rm of runtimeModels) pushUnique(rm);
-      if (finalModels.length === 0 && isManagedDevice) {
-        for (const gm of buildGatewayModels('anthropic')) pushUnique(gm);
-      }
     }
   } else if (normAgent === 'codex') {
-    for (const rm of runtimeModels) pushUnique(rm);
-    if (isManagedDevice || finalModels.length === 0) {
-      for (const gm of buildGatewayModels('openai')) {
-        if (gm.id === '' && finalModels.some(m => m.isDefault)) continue;
-        pushUnique(gm);
-      }
+    if (useGatewayOnlyForCodex) {
+      for (const gm of buildGatewayModels('openai')) pushUnique(gm);
+    } else {
+      for (const rm of runtimeModels) pushUnique(rm);
     }
   } else {
     // Antigravity (agy), Kimi, and other OAR native runtimes
@@ -1787,8 +1814,11 @@ router.post('/sessions/:name/oar-model', requireAuth, async (req, res) => {
   const targetDeviceId = resolveComputeDeviceId(req);
   if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
   try {
+    const sessMeta = sessionMetaService.getSessionMeta(targetDeviceId, name);
+    const inferredAgent = sessMeta?.agentType || (name.startsWith('oar-codex') ? 'codex' : (name.startsWith('oar-claude') ? 'claude' : ''));
+    const effectiveModel = resolveManagedDefaultModel(targetDeviceId, inferredAgent, model);
     const result = await deviceService.remoteOarSetModel(targetDeviceId, name, {
-      model: typeof model === 'string' ? model.trim() : '',
+      model: effectiveModel,
       effort: typeof effort === 'string' ? effort.trim() : '',
       modelLabel: typeof modelLabel === 'string' ? modelLabel.trim() : ''
     });

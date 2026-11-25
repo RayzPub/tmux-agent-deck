@@ -234,10 +234,16 @@ else
     "$NODE_BIN" bin/build.js
 fi
 
-# 7. Start server in the background (isolated systemd cgroup when available so caller restarts never kill server.js)
+# 7. Start server in the background (persistent systemd unit if installed, else isolated transient systemd-run unit)
 echo -e "${GREEN}[*] Starting CCNOW in the background...${NC}"
 USE_SYSTEMD_RUN=false
-if [ "$EUID" -eq 0 ] && [ -d /run/systemd/system ] && command -v systemd-run >/dev/null 2>&1; then
+if [ "$EUID" -eq 0 ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 && [ -f "/etc/systemd/system/${SYSTEMD_UNIT}" ]; then
+    USE_SYSTEMD_RUN=true
+    systemctl reset-failed "$SYSTEMD_UNIT" 2>/dev/null || true
+    systemctl start "$SYSTEMD_UNIT"
+    sleep 1.5
+    NEW_PID=$(systemctl show -p MainPID --value "$SYSTEMD_UNIT" 2>/dev/null)
+elif [ "$EUID" -eq 0 ] && [ -d /run/systemd/system ] && command -v systemd-run >/dev/null 2>&1; then
     USE_SYSTEMD_RUN=true
     systemctl reset-failed "$SYSTEMD_UNIT" 2>/dev/null || true
     SYSTEMD_RUN_ARGS=(

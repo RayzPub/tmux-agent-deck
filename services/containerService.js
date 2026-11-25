@@ -427,6 +427,18 @@ async function ensureUserSandbox(username, options = {}) {
     };
   }
 
+  // Read default gateway models so Claude Code & Codex inside the sandbox default to declared proxy models
+  let defaultAnthropicModel = '';
+  let defaultOpenaiModel = '';
+  try {
+    const llmGatewayService = require('./llmGatewayService');
+    const gwConfig = llmGatewayService.loadConfig();
+    if (gwConfig && gwConfig.enabled && gwConfig.defaults) {
+      defaultAnthropicModel = String(gwConfig.defaults.anthropicModel || '').trim();
+      defaultOpenaiModel = String(gwConfig.defaults.openaiModel || '').trim();
+    }
+  } catch (_) {}
+
   // Create fresh hardened container
   const runArgs = [
     'run', '-d',
@@ -458,9 +470,27 @@ async function ensureUserSandbox(username, options = {}) {
     '-e', `OPENAI_API_BASE=${serverUrl}/v1`,
     '-e', `OPENAI_API_KEY=${virtualKey}`,
     '-e', 'CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1',
-    '-e', 'COLORTERM=truecolor',
-    DOCKER_SANDBOX_IMAGE
+    '-e', 'COLORTERM=truecolor'
   ];
+
+  if (defaultAnthropicModel) {
+    runArgs.push(
+      '-e', `CCNOW_DEFAULT_ANTHROPIC_MODEL=${defaultAnthropicModel}`,
+      '-e', `ANTHROPIC_MODEL=${defaultAnthropicModel}`,
+      '-e', `ANTHROPIC_SMALL_FAST_MODEL=${defaultAnthropicModel}`,
+      '-e', `ANTHROPIC_DEFAULT_SONNET_MODEL=${defaultAnthropicModel}`,
+      '-e', `ANTHROPIC_DEFAULT_OPUS_MODEL=${defaultAnthropicModel}`,
+      '-e', `ANTHROPIC_DEFAULT_HAIKU_MODEL=${defaultAnthropicModel}`
+    );
+  }
+  if (defaultOpenaiModel) {
+    runArgs.push(
+      '-e', `CCNOW_DEFAULT_OPENAI_MODEL=${defaultOpenaiModel}`,
+      '-e', `OPENAI_MODEL=${defaultOpenaiModel}`,
+      '-e', `CODEX_MODEL=${defaultOpenaiModel}`
+    );
+  }
+  runArgs.push(DOCKER_SANDBOX_IMAGE);
 
   const { stdout: containerId } = await runDocker(runArgs, 30000);
   touchSandboxActivity(safeUser);

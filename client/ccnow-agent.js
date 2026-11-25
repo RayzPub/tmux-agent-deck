@@ -139,20 +139,38 @@ var require_config = __commonJS({
       const baseUrl = String(server).trim().replace(/\/+$/, "");
       const virtualKey = `sk-ccnow-${deviceId}.${deviceSecret}`;
       const claudeOAuthMode = process.env.CCNOW_CLAUDE_OAUTH_MODE === "1";
+      const defaultAnthropicModel = (process.env.CCNOW_DEFAULT_ANTHROPIC_MODEL || "").trim();
+      const defaultOpenaiModel = (process.env.CCNOW_DEFAULT_OPENAI_MODEL || "").trim();
       const envMap = {
         OPENAI_BASE_URL: `${baseUrl}/v1`,
         OPENAI_API_BASE: `${baseUrl}/v1`,
         OPENAI_API_KEY: virtualKey,
         CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1"
       };
+      if (defaultOpenaiModel) {
+        envMap.OPENAI_MODEL = defaultOpenaiModel;
+        envMap.CODEX_MODEL = defaultOpenaiModel;
+      }
       if (claudeOAuthMode) {
         delete process.env.ANTHROPIC_BASE_URL;
         delete process.env.ANTHROPIC_API_KEY;
         delete process.env.ANTHROPIC_AUTH_TOKEN;
+        delete process.env.ANTHROPIC_MODEL;
+        delete process.env.ANTHROPIC_SMALL_FAST_MODEL;
+        delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+        delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+        delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
       } else {
         envMap.ANTHROPIC_BASE_URL = baseUrl;
         envMap.ANTHROPIC_API_KEY = virtualKey;
         delete process.env.ANTHROPIC_AUTH_TOKEN;
+        if (defaultAnthropicModel) {
+          envMap.ANTHROPIC_MODEL = defaultAnthropicModel;
+          envMap.ANTHROPIC_SMALL_FAST_MODEL = defaultAnthropicModel;
+          envMap.ANTHROPIC_DEFAULT_SONNET_MODEL = defaultAnthropicModel;
+          envMap.ANTHROPIC_DEFAULT_OPUS_MODEL = defaultAnthropicModel;
+          envMap.ANTHROPIC_DEFAULT_HAIKU_MODEL = defaultAnthropicModel;
+        }
       }
       for (const [k, v] of Object.entries(envMap)) {
         process.env[k] = v;
@@ -165,7 +183,16 @@ var require_config = __commonJS({
           }
         }
         if (claudeOAuthMode) {
-          for (const k of ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {
+          for (const k of [
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_MODEL",
+            "ANTHROPIC_SMALL_FAST_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+          ]) {
             try {
               execFileSync("tmux", tmuxArgs(["set-environment", "-gu", k]), { stdio: "ignore" });
             } catch (_) {
@@ -3245,6 +3272,20 @@ var require_oar_runtime = __commonJS({
             }
             if (typeof runtime.listModels !== "function") {
               return { runtimeId, kind: "unsupported", models: [], reason: `\u8FD0\u884C\u65F6 "${runtimeId}" \u672A\u63D0\u4F9B\u6A21\u578B\u679A\u4E3E\u63A5\u53E3` };
+            }
+            if (runtimeId === "claude" && typeof runtime.authStatus === "function") {
+              try {
+                const auth = await runtime.authStatus(installation, { env, timeoutMs: 8e3 });
+                if (auth && auth.kind === "logged_out") {
+                  return {
+                    runtimeId,
+                    kind: "unauthenticated",
+                    models: [],
+                    detail: "Claude Code \u5C1A\u672A\u767B\u5F55\uFF08\u4E14\u672A\u914D\u7F6E ANTHROPIC_API_KEY\uFF09"
+                  };
+                }
+              } catch (_) {
+              }
             }
             const res = await runtime.listModels(installation, {
               cwd,
