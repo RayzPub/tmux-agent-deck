@@ -764,6 +764,14 @@ function remoteOarRuntimes(deviceId) {
   return sendDeviceRpc(deviceId, 'oar:runtimes', {}, 15000);
 }
 
+function remoteOarListModels(deviceId, payload = {}) {
+  return sendDeviceRpc(deviceId, 'oar:list_models', payload, 15000);
+}
+
+function remoteOarSetModel(deviceId, sessionName, payload = {}) {
+  return sendDeviceRpc(deviceId, 'oar:set_model', { sessionName, ...payload }, 10000);
+}
+
 function remoteOarMessage(deviceId, sessionName, payload = {}) {
   return sendDeviceRpc(deviceId, 'oar:message', { sessionName, ...payload }, 30000);
 }
@@ -899,6 +907,8 @@ module.exports = {
   remoteGitCheckout,
   remoteChatHistory,
   remoteOarRuntimes,
+  remoteOarListModels,
+  remoteOarSetModel,
   remoteOarMessage,
   remoteOarCompact,
   remoteOarAbort,

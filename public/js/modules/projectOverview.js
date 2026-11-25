@@ -484,6 +484,10 @@ function buildBoardDOM(container, data) {
     }
   }
 
+  const prevScrollTop = container.scrollTop;
+  const prevPillsEl = container.querySelector('.tb-ws-pills');
+  const prevPillsScrollLeft = prevPillsEl ? prevPillsEl.scrollLeft : 0;
+
   container.innerHTML = `
     <div class="tb-root">
       <!-- 1. Minimal Borderless Top Bar -->
@@ -551,6 +555,14 @@ function buildBoardDOM(container, data) {
 
   if (window.lucide) {
     window.lucide.createIcons();
+  }
+
+  if (prevPillsScrollLeft > 0) {
+    const nextPillsEl = container.querySelector('.tb-ws-pills');
+    if (nextPillsEl) nextPillsEl.scrollLeft = prevPillsScrollLeft;
+  }
+  if (prevScrollTop > 0) {
+    container.scrollTop = prevScrollTop;
   }
 
   bindBoardEvents(container, data);

@@ -4,7 +4,7 @@ const path = require('path');
 const { execSync, execFileSync } = require('child_process');
 
 // Client Version (kept as literal string for self-update version regex detection)
-const CLIENT_VERSION = '1.7.5';
+const CLIENT_VERSION = '1.7.6';
 
 // Configuration directory & files (supports env override for managed host/container agents)
 const CONFIG_DIR = process.env.CCNOW_CONFIG_DIR || path.join(os.homedir(), '.ccnow');

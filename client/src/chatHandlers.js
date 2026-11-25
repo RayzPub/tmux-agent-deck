@@ -61,6 +61,49 @@ async function handleOarRuntimes(send, reqId) {
   }
 }
 
+async function handleOarListModels(send, reqId, msg = {}) {
+  const oarMgr = getDeviceOarManager();
+  if (!oarMgr || typeof oarMgr.listRuntimeModels !== 'function') {
+    return send({ action: 'oar:list_models_result', reqId, kind: 'unavailable', models: [], error: 'OAR runtime unavailable' });
+  }
+  try {
+    const result = await oarMgr.listRuntimeModels(msg.agentType || 'claude', {
+      workspacePath: msg.workspacePath || '',
+      refresh: Boolean(msg.refresh)
+    });
+    send({ action: 'oar:list_models_result', reqId, ...result });
+  } catch (err) {
+    send({ action: 'oar:list_models_result', reqId, kind: 'error', models: [], error: err.message });
+  }
+}
+
+async function handleOarSetModel(send, reqId, msg = {}) {
+  const { sessionName, model, effort, modelLabel } = msg;
+  const oarMgr = getDeviceOarManager();
+  if (!oarMgr || typeof oarMgr.setSessionModel !== 'function') {
+    return send({ action: 'oar:set_model_result', reqId, ok: false, error: '当前设备未加载 OAR 纯会话引擎' });
+  }
+  try {
+    const meta = readTmuxSessionMeta(sessionName);
+    const result = await oarMgr.setSessionModel(sessionName, {
+      model: model || '',
+      effort: effort || '',
+      agentType: meta.agentType,
+      workspacePath: meta.workspacePath
+    });
+    if (result && result.ok && sessionRegistry.getPureChatSession(sessionName)) {
+      sessionRegistry.upsertPureChatSession(sessionName, {
+        modelName: result.model || '',
+        agentModel: modelLabel || result.model || '',
+        modelEffort: result.effort || ''
+      });
+    }
+    send({ action: 'oar:set_model_result', reqId, ...result });
+  } catch (err) {
+    send({ action: 'oar:set_model_result', reqId, ok: false, error: err.message });
+  }
+}
+
 async function handleOarMessage(send, reqId, msg) {
   const { sessionName, content, images } = msg;
   const oarMgr = getDeviceOarManager();
@@ -73,6 +116,7 @@ async function handleOarMessage(send, reqId, msg) {
       agentType: meta.agentType,
       workspacePath: meta.workspacePath,
       model: meta.model,
+      effort: meta.effort,
       images: Array.isArray(images) ? images : []
     });
     send({ action: 'oar:message_result', reqId, ...result });
@@ -91,7 +135,8 @@ async function handleOarCompact(send, reqId, sessionName) {
     const result = await oarMgr.compactSession(sessionName, {
       agentType: meta.agentType,
       workspacePath: meta.workspacePath,
-      model: meta.model
+      model: meta.model,
+      effort: meta.effort
     });
     send({ action: 'oar:compact_result', reqId, ...result });
   } catch (err) {
@@ -124,7 +169,8 @@ async function handleChatHistory(send, reqId, sessionName, since) {
         const snapshot = oarMgr.getHistorySnapshot(sessionName, {
           agentType: pureChat.agentType || 'claude',
           workspacePath: pureChat.workspacePath || process.cwd(),
-          model: pureChat.modelName || ''
+          model: pureChat.modelName || '',
+          effort: pureChat.modelEffort || ''
         });
         if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
           return send({
@@ -136,6 +182,10 @@ async function handleChatHistory(send, reqId, sessionName, since) {
             supported: true,
             notModified: true,
             isGenerating: false,
+            model: snapshot.model || '',
+            effort: snapshot.effort || '',
+            activeModel: snapshot.activeModel || null,
+            activeEffort: snapshot.activeEffort || null,
             lastUpdated: snapshot.lastUpdated
           });
         }
@@ -410,6 +460,8 @@ module.exports = {
   getDeviceOarManager,
   handleClearContext,
   handleOarRuntimes,
+  handleOarListModels,
+  handleOarSetModel,
   handleOarMessage,
   handleOarCompact,
   handleOarAbort,

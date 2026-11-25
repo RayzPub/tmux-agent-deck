@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ccnow-agent CLIENT_VERSION = '1.7.5'
+// ccnow-agent CLIENT_VERSION = '1.7.6'
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
   try {
@@ -16,7 +16,7 @@ var require_config = __commonJS({
     var fs2 = require("fs");
     var path2 = require("path");
     var { execSync, execFileSync } = require("child_process");
-    var CLIENT_VERSION2 = "1.7.5";
+    var CLIENT_VERSION2 = "1.7.6";
     var CONFIG_DIR2 = process.env.CCNOW_CONFIG_DIR || path2.join(os.homedir(), ".ccnow");
     var CONFIG_FILE2 = path2.join(CONFIG_DIR2, "device.json");
     var WORKSPACES_FILE2 = path2.join(CONFIG_DIR2, "workspaces.json");
@@ -881,6 +881,8 @@ var require_sessionRegistry = __commonJS({
         workspaceName: s.workspaceName || "",
         agentType: s.agentType || "claude",
         agentModel: s.agentModel || s.modelName || "",
+        modelName: s.modelName || "",
+        modelEffort: s.modelEffort || "",
         sessionMode: "chat_only",
         agentSessionId: "",
         isRemote: true
@@ -903,6 +905,7 @@ var require_sessionRegistry = __commonJS({
         agentType: meta.agentType || prev.agentType || "claude",
         agentModel: meta.agentModel !== void 0 ? meta.agentModel : prev.agentModel || "",
         modelName: meta.modelName !== void 0 ? meta.modelName : prev.modelName || "",
+        modelEffort: meta.modelEffort !== void 0 ? meta.modelEffort : prev.modelEffort || "",
         sessionMode: "chat_only",
         created: prev.created || meta.created || Date.now()
       };
@@ -951,6 +954,13 @@ var require_tmuxHandlers = __commonJS({
       }
       activeTerminals.clear();
     }
+    function sanitizeCliToken(val) {
+      if (typeof val !== "string") return "";
+      const trimmed = val.trim();
+      if (!trimmed || trimmed === "default") return "";
+      if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return "";
+      return trimmed;
+    }
     function readTmuxSessionMeta(sessionName) {
       const pureChat = sessionRegistry.getPureChatSession(sessionName);
       if (pureChat) {
@@ -958,7 +968,8 @@ var require_tmuxHandlers = __commonJS({
           workspacePath: pureChat.workspacePath && fs2.existsSync(pureChat.workspacePath) ? pureChat.workspacePath : process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd(),
           agentType: pureChat.agentType || "claude",
           sessionMode: "chat_only",
-          model: pureChat.modelName || pureChat.agentModel || ""
+          model: sanitizeCliToken(pureChat.modelName || ""),
+          effort: sanitizeCliToken(pureChat.modelEffort || "")
         };
       }
       let workspacePath = process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd();
@@ -980,7 +991,7 @@ var require_tmuxHandlers = __commonJS({
         } catch (_) {
         }
       }
-      return { workspacePath, agentType, sessionMode, model };
+      return { workspacePath, agentType, sessionMode, model, effort: "" };
     }
     function detectPaneLiveStatus(paneOutput) {
       const nonBlankLines = (paneOutput || "").split("\n").map((l) => l.trim()).filter(Boolean);
@@ -1073,13 +1084,16 @@ var require_tmuxHandlers = __commonJS({
               const snap = oarMgr.getHistorySnapshot(s.name, {
                 agentType: s.agentType || "claude",
                 workspacePath: s.path || s.workspacePath || process.cwd(),
-                model: s.agentModel || s.modelName || ""
+                model: sanitizeCliToken(s.modelName || ""),
+                effort: sanitizeCliToken(s.modelEffort || "")
               });
               if (snap) {
                 s.isGenerating = Boolean(snap.isGenerating);
                 s.hasPendingAction = Boolean(snap.pendingAction);
                 s.liveStatus = snap.pendingAction ? "waiting" : snap.isGenerating ? "busy" : "idle";
                 s.statusText = snap.statusText || "";
+                if (snap.activeModel) s.activeModel = snap.activeModel;
+                if (snap.activeEffort) s.activeEffort = snap.activeEffort;
                 if (snap.lastUpdated) {
                   s.lastActiveAt = Math.max(s.lastActiveAt || 0, Number(snap.lastUpdated) || 0);
                 }
@@ -1119,7 +1133,9 @@ var require_tmuxHandlers = __commonJS({
       send({ action: "tmux:sessions_list", reqId, sessions });
     }
     function handleNewSession(send, reqId, msg, getDeviceOarManager) {
-      const { sessionName, seqId, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
+      const { sessionName, seqId, workspace, workspaceName, sessionMode, agentModel, modelName, modelEffort } = msg;
+      const safeModel = sanitizeCliToken(modelName || "");
+      const safeEffort = sanitizeCliToken(modelEffort || "");
       const agent = msg.agent || msg.agentType || "default";
       const targetMode = sessionMode || (agent === "default" ? "terminal_only" : "hybrid");
       const hasTmux = hasCommand("tmux");
@@ -1155,8 +1171,9 @@ var require_tmuxHandlers = __commonJS({
             workspacePath: targetDir,
             workspaceName: workspaceName ? String(workspaceName) : "",
             agentType: effectiveAgent,
-            agentModel: agentModel ? String(agentModel) : "",
-            modelName: modelName ? String(modelName) : "",
+            agentModel: agentModel ? String(agentModel) : safeModel,
+            modelName: safeModel,
+            modelEffort: safeEffort,
             created: Date.now()
           });
           const oarMgr = getDeviceOarManager();
@@ -1165,7 +1182,9 @@ var require_tmuxHandlers = __commonJS({
             oarMgr.getOrCreateSession(finalName, {
               agentType: effectiveAgent,
               workspacePath: targetDir,
-              model: modelName || agentModel || ""
+              model: safeModel,
+              effort: safeEffort,
+              forceModelUpdate: true
             });
           }
           send({ action: "tmux:new_session_result", reqId, success: true, sessionName: finalName });
@@ -1201,7 +1220,10 @@ var require_tmuxHandlers = __commonJS({
           if (agent && agent !== "default" && agent !== "terminal") {
             let agentCmd = String(agent).replace(/"/g, "");
             if (agent === "agy") {
-              agentCmd = "agy --dangerously-skip-permissions";
+              const parts = ["agy", "--dangerously-skip-permissions"];
+              if (safeModel) parts.push("--model", safeModel);
+              if (safeEffort) parts.push("--effort", safeEffort);
+              agentCmd = parts.join(" ");
             } else if (agent === "claude") {
               const parts = [
                 "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1",
@@ -1211,11 +1233,16 @@ var require_tmuxHandlers = __commonJS({
                 "--permission-mode",
                 "auto"
               ];
-              if (modelName) parts.push("--model", String(modelName));
+              if (safeModel) parts.push("--model", safeModel);
+              if (safeEffort) parts.push("--effort", safeEffort);
               agentCmd = parts.join(" ");
             } else if (agent === "codex") {
               const parts = ["codex", "-c", "check_for_update=false", "-c", "update_on_startup=false"];
-              if (modelName) parts.push("--model", String(modelName));
+              if (safeModel) parts.push("--model", safeModel);
+              agentCmd = parts.join(" ");
+            } else if (agent === "kimi") {
+              const parts = ["kimi"];
+              if (safeModel) parts.push("--model", safeModel);
               agentCmd = parts.join(" ");
             }
             try {
@@ -2204,12 +2231,55 @@ var require_oar_runtime = __commonJS({
       factory: "factoryRuntime"
     };
     var OAR_RETAINED_BYTES = 8 * 1024 * 1024;
+    var MODEL_LIST_TTL_MS = 12 * 60 * 60 * 1e3;
     var SUPPORTED_IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+    function resolveLaunchModel(rawModel) {
+      if (typeof rawModel !== "string") return null;
+      const trimmed = rawModel.trim();
+      if (!trimmed || trimmed === "default") return null;
+      if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return null;
+      return trimmed;
+    }
+    function resolveLaunchEffort(rawEffort) {
+      if (typeof rawEffort !== "string") return null;
+      const trimmed = rawEffort.trim();
+      if (!trimmed || trimmed === "default") return null;
+      if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) return null;
+      return trimmed;
+    }
+    function settleRunningToolsInMessage(msg, targetStatus = "interrupted") {
+      if (!msg || !Array.isArray(msg.tools)) return false;
+      let changed = false;
+      for (const t of msg.tools) {
+        if (!t || typeof t !== "object") continue;
+        if ("_rawInputBuffer" in t) {
+          delete t._rawInputBuffer;
+          changed = true;
+        }
+        if (t.status === "running") {
+          t.status = targetStatus;
+          changed = true;
+        }
+      }
+      return changed;
+    }
+    function settleRunningToolsInMessages(messages, targetStatus = "interrupted") {
+      if (!Array.isArray(messages)) return false;
+      let changed = false;
+      for (const m of messages) {
+        if (settleRunningToolsInMessage(m, targetStatus)) {
+          changed = true;
+        }
+      }
+      return changed;
+    }
     function createDeviceOarManager(options = {}) {
       const storageDir = options.storageDir || path2.join(os.homedir(), ".ccnow", "oar_sessions");
       const resolveEsmUrl = typeof options.resolveEsmUrl === "function" ? options.resolveEsmUrl : null;
       const activeSessions = /* @__PURE__ */ new Map();
       const runtimeCache = /* @__PURE__ */ new Map();
+      const modelListCache = /* @__PURE__ */ new Map();
+      const inFlightModelLists = /* @__PURE__ */ new Map();
       let rootOarPromise = null;
       let capsModulePromise = null;
       async function importOarSpecifier(specifier) {
@@ -2320,7 +2390,9 @@ var require_oar_runtime = __commonJS({
             agentType: sess.agentType,
             workspacePath: sess.workspacePath,
             model: sess.model || "",
+            effort: sess.effort || "",
             activeModel: sess.activeModel || null,
+            activeEffort: sess.activeEffort || null,
             oarSessionId: sess.oarSessionId || null,
             usage: sess.usage || null,
             contextUsage: sess.contextUsage || null,
@@ -2529,6 +2601,12 @@ var require_oar_runtime = __commonJS({
                 touchSession(sess);
               }
               break;
+            case "effort":
+              if (isRoot && event.effort) {
+                sess.activeEffort = event.effort;
+                touchSession(sess);
+              }
+              break;
             case "compaction_started":
               if (isRoot) {
                 sess.statusText = "\u6B63\u5728\u538B\u7F29\u4E0A\u4E0B\u6587...";
@@ -2593,8 +2671,11 @@ var require_oar_runtime = __commonJS({
                 if (sess.isGenerating) {
                   sess.isGenerating = false;
                   sess.statusText = "\u5C31\u7EEA";
-                  if (sess.activeAssistantMsg && !sess.activeAssistantMsg.content) {
-                    sess.activeAssistantMsg.content = "*(\u5E95\u5C42\u8FD0\u884C\u65F6\u8FDB\u7A0B\u5DF2\u9000\u51FA\uFF0C\u4E0B\u6B21\u53D1\u9001\u6D88\u606F\u5C06\u81EA\u52A8\u6062\u590D\u4F1A\u8BDD)*";
+                  if (sess.activeAssistantMsg) {
+                    settleRunningToolsInMessage(sess.activeAssistantMsg, "interrupted");
+                    if (!sess.activeAssistantMsg.content) {
+                      sess.activeAssistantMsg.content = "*(\u5E95\u5C42\u8FD0\u884C\u65F6\u8FDB\u7A0B\u5DF2\u9000\u51FA\uFF0C\u4E0B\u6B21\u53D1\u9001\u6D88\u606F\u5C06\u81EA\u52A8\u6062\u590D\u4F1A\u8BDD)*";
+                    }
                   }
                   sess.activeAssistantMsg = null;
                   touchSession(sess);
@@ -2619,6 +2700,8 @@ var require_oar_runtime = __commonJS({
         const live = sess.liveSession;
         sess.liveSession = null;
         sess.liveRuntimeId = null;
+        sess.liveModel = "";
+        sess.liveEffort = "";
         if (live && typeof live.dispose === "function") {
           try {
             await live.dispose();
@@ -2629,7 +2712,9 @@ var require_oar_runtime = __commonJS({
       async function ensureLiveSession(sess) {
         const runtimeId = resolveRuntimeId(sess.agentType);
         if (!runtimeId) return { session: null, error: `\u4E0D\u652F\u6301\u7684 OAR \u8FD0\u884C\u65F6\u7C7B\u578B: ${sess.agentType}` };
-        if (sess.liveSession && sess.liveRuntimeId === runtimeId) {
+        const resolvedModel = resolveLaunchModel(sess.model);
+        const resolvedEffort = resolveLaunchEffort(sess.effort);
+        if (sess.liveSession && sess.liveRuntimeId === runtimeId && (sess.liveModel || "") === (resolvedModel || "") && (sess.liveEffort || "") === (resolvedEffort || "")) {
           return { session: sess.liveSession, error: null };
         }
         if (sess.liveSession) {
@@ -2659,15 +2744,7 @@ var require_oar_runtime = __commonJS({
         const preCaps = capsMod?.installedSessionCapabilities ? capsMod.installedSessionCapabilities(runtime, installation) : {};
         const refused = preCaps?.refusedSessionOptions || runtime.refusedSessionOptions || {};
         const cwd = sess.workspacePath && fs2.existsSync(sess.workspacePath) ? sess.workspacePath : process.cwd();
-        const resolveLaunchModel = (rawModel) => {
-          if (typeof rawModel !== "string") return null;
-          const trimmed = rawModel.trim();
-          if (!trimmed || trimmed === "default") return null;
-          if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return null;
-          return trimmed;
-        };
-        const resolvedModel = resolveLaunchModel(sess.model);
-        const buildOpts = ({ includeResume = true, includeModel = true } = {}) => {
+        const buildOpts = ({ includeResume = true, includeModel = true, includeEffort = true } = {}) => {
           const opts = { cwd, retainedBytes: OAR_RETAINED_BYTES };
           const sessionEnv = { ...env };
           if (includeModel && resolvedModel) {
@@ -2679,23 +2756,29 @@ var require_oar_runtime = __commonJS({
               sessionEnv.CODEX_MODEL = resolvedModel;
             }
           }
+          if (includeEffort && resolvedEffort) {
+            opts.effort = resolvedEffort;
+          }
           if (!refused.env) opts.env = sessionEnv;
           if (includeResume && sess.oarSessionId) opts.resume = sess.oarSessionId;
           return opts;
         };
         let liveSession = null;
         try {
-          liveSession = await runtime.session(installation, buildOpts({ includeResume: true, includeModel: true }));
+          liveSession = await runtime.session(installation, buildOpts({ includeResume: true, includeModel: true, includeEffort: true }));
         } catch (err) {
           const errName = err?.name || "";
+          const errMsg = String(err?.message || "");
           const isResumeErr = errName === "SessionNotFoundError" || errName === "SessionUnavailableError" || errName === "ResumeCwdError" || errName === "UnsupportedOptionError" && err?.option === "cwd";
           const isModelErr = errName === "ModelConfirmationError" || errName === "UnsupportedOptionError" && err?.option === "model";
-          if (isResumeErr || isModelErr) {
+          const isEffortErr = errName === "UnsupportedOptionError" && err?.option === "effort" || /\beffort\b/i.test(errMsg);
+          if (isResumeErr || isModelErr || isEffortErr) {
             if (isResumeErr) sess.oarSessionId = null;
             try {
               liveSession = await runtime.session(installation, buildOpts({
                 includeResume: !isResumeErr,
-                includeModel: !isModelErr
+                includeModel: !isModelErr,
+                includeEffort: !isEffortErr && !isModelErr
               }));
             } catch (retryErr) {
               return { session: null, error: `\u542F\u52A8 "${runtimeId}" \u4F1A\u8BDD\u5931\u8D25: ${retryErr.message}` };
@@ -2706,6 +2789,8 @@ var require_oar_runtime = __commonJS({
         }
         sess.liveSession = liveSession;
         sess.liveRuntimeId = runtimeId;
+        sess.liveModel = resolvedModel || "";
+        sess.liveEffort = resolvedEffort || "";
         sess.oarSessionId = liveSession.id || sess.oarSessionId;
         sess.oarCapabilities = {
           runtimeId,
@@ -2719,6 +2804,8 @@ var require_oar_runtime = __commonJS({
         };
         const reportedModel = liveSession.model?.()?.value;
         if (reportedModel) sess.activeModel = reportedModel;
+        const reportedEffort = liveSession.effort?.()?.value;
+        if (reportedEffort) sess.activeEffort = reportedEffort;
         attachEvents(sess, liveSession);
         touchSession(sess);
         persistSession(sess);
@@ -2729,33 +2816,57 @@ var require_oar_runtime = __commonJS({
           const existing = activeSessions.get(sessionName);
           if (opts.workspacePath) existing.workspacePath = opts.workspacePath;
           if (opts.agentType) existing.agentType = opts.agentType;
-          if (opts.model) existing.model = opts.model;
+          if (opts.forceModelUpdate) {
+            if (opts.model !== void 0) existing.model = resolveLaunchModel(opts.model) || "";
+            if (opts.effort !== void 0) existing.effort = resolveLaunchEffort(opts.effort) || "";
+          } else {
+            if (!existing.model && opts.model) {
+              const cleanM = resolveLaunchModel(opts.model);
+              if (cleanM) existing.model = cleanM;
+            }
+            if (!existing.effort && opts.effort) {
+              const cleanE = resolveLaunchEffort(opts.effort);
+              if (cleanE) existing.effort = cleanE;
+            }
+          }
           return existing;
         }
         const persisted = loadPersisted(sessionName);
         const agentType = opts.agentType || persisted && persisted.agentType || "claude";
         const workspacePath = opts.workspacePath || persisted && persisted.workspacePath || process.cwd();
+        const initialModel = resolveLaunchModel(opts.model) || resolveLaunchModel(persisted && persisted.model) || "";
+        const initialEffort = resolveLaunchEffort(opts.effort) || resolveLaunchEffort(persisted && persisted.effort) || "";
+        const loadedMessages = persisted && Array.isArray(persisted.messages) ? persisted.messages.filter((m) => m && m.id !== "msg-welcome") : [];
+        const healedStaleTools = settleRunningToolsInMessages(loadedMessages, "interrupted");
         const sess = {
           sessionName,
           agentType,
           workspacePath,
-          model: opts.model || persisted && persisted.model || "",
-          activeModel: persisted && persisted.activeModel || null,
+          model: initialModel,
+          effort: initialEffort,
+          activeModel: persisted && persisted.activeModel || initialModel || null,
+          activeEffort: persisted && persisted.activeEffort || initialEffort || null,
           oarSessionId: persisted && persisted.oarSessionId || null,
           usage: persisted && persisted.usage || null,
           contextUsage: persisted && persisted.contextUsage || null,
           createdAt: persisted && persisted.createdAt || Date.now(),
           lastUpdated: persisted && persisted.lastUpdated || Date.now(),
-          messages: persisted && Array.isArray(persisted.messages) ? persisted.messages.filter((m) => m && m.id !== "msg-welcome") : [],
+          messages: loadedMessages,
           isGenerating: false,
           statusText: "\u5C31\u7EEA",
           liveSession: null,
           liveRuntimeId: null,
+          liveModel: "",
+          liveEffort: "",
           unsubscribeEvents: null,
           activeAssistantMsg: null,
           oarCapabilities: null
         };
         activeSessions.set(sessionName, sess);
+        if (healedStaleTools) {
+          touchSession(sess);
+          persistSession(sess);
+        }
         return sess;
       }
       function getHistorySnapshot(sessionName, opts = {}) {
@@ -2771,7 +2882,10 @@ var require_oar_runtime = __commonJS({
           pendingAction: null,
           isGenerating: Boolean(sess.isGenerating),
           statusText: sess.statusText || (sess.isGenerating ? "OAR \u667A\u80FD\u4F53\u601D\u8003\u4E2D..." : "\u5C31\u7EEA"),
+          model: sess.model || "",
+          effort: sess.effort || "",
           activeModel: sess.activeModel || sess.model || null,
+          activeEffort: sess.activeEffort || sess.effort || null,
           usage: sess.usage || null,
           contextUsage: sess.contextUsage || null,
           oarCapabilities: sess.oarCapabilities || null,
@@ -2784,6 +2898,9 @@ var require_oar_runtime = __commonJS({
         const nativeImages = validateWorkspaceImages(sess.workspacePath, opts.images);
         if (!trimmedText && nativeImages.length === 0) {
           throw new Error("Message content or images required");
+        }
+        if (!sess.isGenerating) {
+          settleRunningToolsInMessages(sess.messages, "interrupted");
         }
         const userMsg = {
           id: `msg-user-${Date.now()}`,
@@ -2852,6 +2969,8 @@ var require_oar_runtime = __commonJS({
             }
             const latestModel = liveSession.model?.()?.value;
             if (latestModel) sess.activeModel = latestModel;
+            const latestEffort = liveSession.effort?.()?.value;
+            if (latestEffort) sess.activeEffort = latestEffort;
             const latestUsage = liveSession.usage?.()?.value?.total;
             if (latestUsage) {
               sess.usage = latestUsage;
@@ -2867,6 +2986,7 @@ var require_oar_runtime = __commonJS({
               assistantMsg.content = `\u274C [OAR \u8FD0\u884C\u65F6\u5F02\u5E38]: ${err.message}`;
             }
           } finally {
+            settleRunningToolsInMessage(assistantMsg, "ok");
             sess.isGenerating = false;
             sess.statusText = "\u5C31\u7EEA";
             sess.activeAssistantMsg = null;
@@ -2888,12 +3008,38 @@ var require_oar_runtime = __commonJS({
           }
         }
         if (aborted) {
+          settleRunningToolsInMessage(sess.activeAssistantMsg, "aborted");
           sess.isGenerating = false;
           sess.statusText = "\u5DF2\u4E2D\u6B62";
           touchSession(sess);
           persistSession(sess);
         }
         return aborted;
+      }
+      function shutdownAll() {
+        for (const sess of activeSessions.values()) {
+          const settledTools = settleRunningToolsInMessages(sess.messages, "interrupted");
+          const hadActive = Boolean(sess.isGenerating) || settledTools;
+          if (hadActive) {
+            if (sess.activeAssistantMsg && !sess.activeAssistantMsg.content) {
+              sess.activeAssistantMsg.content = "*(\u670D\u52A1\u91CD\u542F\u5BFC\u81F4\u672C\u8F6E\u6267\u884C\u4E2D\u65AD\uFF0C\u53EF\u7EE7\u7EED\u5BF9\u8BDD\u6062\u590D\u4E0A\u4E0B\u6587)*";
+            }
+            sess.isGenerating = false;
+            sess.statusText = "\u5C31\u7EEA";
+            sess.activeAssistantMsg = null;
+            touchSession(sess);
+            persistSession(sess);
+          }
+          if (typeof sess.unsubscribeEvents === "function") {
+            try {
+              sess.unsubscribeEvents();
+            } catch (_) {
+            }
+            sess.unsubscribeEvents = null;
+          }
+          sess.liveSession = null;
+          sess.liveRuntimeId = null;
+        }
       }
       async function compactSession(sessionName, opts = {}) {
         const sess = getOrCreateSession(sessionName, opts);
@@ -3005,14 +3151,150 @@ var require_oar_runtime = __commonJS({
         }
         return results;
       }
+      async function setSessionModel(sessionName, opts = {}) {
+        const sess = getOrCreateSession(sessionName, {
+          agentType: opts.agentType,
+          workspacePath: opts.workspacePath
+        });
+        if (sess.isGenerating) {
+          return {
+            ok: false,
+            busy: true,
+            error: "\u667A\u80FD\u4F53\u6B63\u5728\u751F\u6210\u4E2D\uFF0C\u8BF7\u7B49\u5F85\u5F53\u524D\u8F6E\u6B21\u5B8C\u6210\u6216\u4E2D\u6B62\u540E\u518D\u5207\u6362\u6A21\u578B\u3002"
+          };
+        }
+        const nextModel = resolveLaunchModel(opts.model) || "";
+        const nextEffort = resolveLaunchEffort(opts.effort) || "";
+        const changed = (sess.model || "") !== nextModel || (sess.effort || "") !== nextEffort;
+        sess.model = nextModel;
+        sess.effort = nextEffort;
+        sess.activeModel = nextModel || null;
+        sess.activeEffort = nextEffort || null;
+        if (changed && sess.liveSession) {
+          await disposeLive(sess);
+        }
+        touchSession(sess);
+        persistSession(sess);
+        return {
+          ok: true,
+          sessionName: sess.sessionName,
+          model: sess.model,
+          effort: sess.effort,
+          activeModel: sess.activeModel,
+          activeEffort: sess.activeEffort,
+          willResume: Boolean(sess.oarSessionId),
+          lastUpdated: sess.lastUpdated
+        };
+      }
+      function getModelCacheFile() {
+        return path2.join(ensureStorageDir(), "_models_cache.json");
+      }
+      function loadDiskModelCache() {
+        try {
+          const file = getModelCacheFile();
+          if (!fs2.existsSync(file)) return {};
+          const parsed2 = JSON.parse(fs2.readFileSync(file, "utf8"));
+          return parsed2 && typeof parsed2 === "object" && !Array.isArray(parsed2) ? parsed2 : {};
+        } catch (_) {
+          return {};
+        }
+      }
+      function saveDiskModelCacheEntry(cacheKey, entry) {
+        try {
+          const all = loadDiskModelCache();
+          all[cacheKey] = entry;
+          fs2.writeFileSync(getModelCacheFile(), JSON.stringify(all, null, 2), "utf8");
+        } catch (_) {
+        }
+      }
+      async function listRuntimeModels(agentType, opts = {}) {
+        const runtimeId = resolveRuntimeId(agentType);
+        if (!runtimeId) {
+          return { runtimeId: null, kind: "unsupported", models: [], reason: `\u4E0D\u652F\u6301\u7684\u8FD0\u884C\u65F6\u7C7B\u578B: ${agentType}` };
+        }
+        const cwd = opts.workspacePath && fs2.existsSync(opts.workspacePath) ? opts.workspacePath : process.cwd();
+        const cacheKey = `${runtimeId}::${cwd}`;
+        const forceRefresh = Boolean(opts.refresh);
+        if (!forceRefresh) {
+          const memCached = modelListCache.get(cacheKey);
+          if (memCached && Date.now() - memCached.fetchedAt < MODEL_LIST_TTL_MS) {
+            return memCached.data;
+          }
+          const diskAll = loadDiskModelCache();
+          const diskEntry = diskAll[cacheKey] || Object.values(diskAll).find(
+            (e) => e && e.data && e.data.runtimeId === runtimeId && Date.now() - (e.fetchedAt || 0) < MODEL_LIST_TTL_MS
+          );
+          if (diskEntry && diskEntry.data && Date.now() - (diskEntry.fetchedAt || 0) < MODEL_LIST_TTL_MS) {
+            modelListCache.set(cacheKey, diskEntry);
+            return diskEntry.data;
+          }
+        }
+        if (inFlightModelLists.has(cacheKey)) {
+          return inFlightModelLists.get(cacheKey);
+        }
+        const task = (async () => {
+          try {
+            const runtime = await loadBuiltinRuntime(runtimeId);
+            if (!runtime) {
+              return { runtimeId, kind: "unavailable", models: [], reason: `\u5F53\u524D\u8BBE\u5907\u672A\u52A0\u8F7D "${runtimeId}" \u8FD0\u884C\u65F6` };
+            }
+            const env = buildDeviceEnv();
+            const installation = await runtime.installation?.();
+            if (!installation || installation.kind !== "available") {
+              return { runtimeId, kind: "unavailable", models: [], reason: `\u672A\u68C0\u6D4B\u5230\u53EF\u7528\u7684 "${runtimeId}" CLI` };
+            }
+            if (typeof runtime.listModels !== "function") {
+              return { runtimeId, kind: "unsupported", models: [], reason: `\u8FD0\u884C\u65F6 "${runtimeId}" \u672A\u63D0\u4F9B\u6A21\u578B\u679A\u4E3E\u63A5\u53E3` };
+            }
+            const res = await runtime.listModels(installation, {
+              cwd,
+              env,
+              timeoutMs: 12e3
+            });
+            if (!res || res.kind !== "ok") {
+              const out2 = {
+                runtimeId,
+                kind: res?.kind || "error",
+                models: [],
+                detail: res?.detail || res?.reason || void 0
+              };
+              return out2;
+            }
+            const models = (Array.isArray(res.models) ? res.models : []).map((m) => ({
+              id: m.id,
+              resolvedId: m.resolvedId || void 0,
+              displayName: m.displayName || m.id,
+              default: Boolean(m.default),
+              effortLevels: Array.isArray(m.effortLevels) ? [...m.effortLevels] : [],
+              defaultEffort: m.defaultEffort || void 0,
+              disabled: m.disabled || void 0,
+              provider: m.provider || void 0
+            }));
+            const out = { runtimeId, kind: "ok", models };
+            const cacheEntry = { fetchedAt: Date.now(), data: out };
+            modelListCache.set(cacheKey, cacheEntry);
+            saveDiskModelCacheEntry(cacheKey, cacheEntry);
+            return out;
+          } catch (err) {
+            return { runtimeId, kind: "error", models: [], error: err.message };
+          } finally {
+            inFlightModelLists.delete(cacheKey);
+          }
+        })();
+        inFlightModelLists.set(cacheKey, task);
+        return task;
+      }
       return {
         getOrCreateSession,
         getHistorySnapshot,
         sendMessage,
+        setSessionModel,
+        listRuntimeModels,
         abortSession,
         compactSession,
         clearSession,
         deleteSession,
+        shutdownAll,
         listAvailableRuntimes
       };
     }
@@ -3087,6 +3369,47 @@ var require_chatHandlers = __commonJS({
         send({ action: "oar:runtimes_result", reqId, runtimes: [], error: err.message });
       }
     }
+    async function handleOarListModels(send, reqId, msg = {}) {
+      const oarMgr = getDeviceOarManager();
+      if (!oarMgr || typeof oarMgr.listRuntimeModels !== "function") {
+        return send({ action: "oar:list_models_result", reqId, kind: "unavailable", models: [], error: "OAR runtime unavailable" });
+      }
+      try {
+        const result = await oarMgr.listRuntimeModels(msg.agentType || "claude", {
+          workspacePath: msg.workspacePath || "",
+          refresh: Boolean(msg.refresh)
+        });
+        send({ action: "oar:list_models_result", reqId, ...result });
+      } catch (err) {
+        send({ action: "oar:list_models_result", reqId, kind: "error", models: [], error: err.message });
+      }
+    }
+    async function handleOarSetModel(send, reqId, msg = {}) {
+      const { sessionName, model, effort, modelLabel } = msg;
+      const oarMgr = getDeviceOarManager();
+      if (!oarMgr || typeof oarMgr.setSessionModel !== "function") {
+        return send({ action: "oar:set_model_result", reqId, ok: false, error: "\u5F53\u524D\u8BBE\u5907\u672A\u52A0\u8F7D OAR \u7EAF\u4F1A\u8BDD\u5F15\u64CE" });
+      }
+      try {
+        const meta = readTmuxSessionMeta(sessionName);
+        const result = await oarMgr.setSessionModel(sessionName, {
+          model: model || "",
+          effort: effort || "",
+          agentType: meta.agentType,
+          workspacePath: meta.workspacePath
+        });
+        if (result && result.ok && sessionRegistry.getPureChatSession(sessionName)) {
+          sessionRegistry.upsertPureChatSession(sessionName, {
+            modelName: result.model || "",
+            agentModel: modelLabel || result.model || "",
+            modelEffort: result.effort || ""
+          });
+        }
+        send({ action: "oar:set_model_result", reqId, ...result });
+      } catch (err) {
+        send({ action: "oar:set_model_result", reqId, ok: false, error: err.message });
+      }
+    }
     async function handleOarMessage(send, reqId, msg) {
       const { sessionName, content, images } = msg;
       const oarMgr = getDeviceOarManager();
@@ -3099,6 +3422,7 @@ var require_chatHandlers = __commonJS({
           agentType: meta.agentType,
           workspacePath: meta.workspacePath,
           model: meta.model,
+          effort: meta.effort,
           images: Array.isArray(images) ? images : []
         });
         send({ action: "oar:message_result", reqId, ...result });
@@ -3116,7 +3440,8 @@ var require_chatHandlers = __commonJS({
         const result = await oarMgr.compactSession(sessionName, {
           agentType: meta.agentType,
           workspacePath: meta.workspacePath,
-          model: meta.model
+          model: meta.model,
+          effort: meta.effort
         });
         send({ action: "oar:compact_result", reqId, ...result });
       } catch (err) {
@@ -3145,7 +3470,8 @@ var require_chatHandlers = __commonJS({
             const snapshot = oarMgr.getHistorySnapshot(sessionName, {
               agentType: pureChat.agentType || "claude",
               workspacePath: pureChat.workspacePath || process.cwd(),
-              model: pureChat.modelName || ""
+              model: pureChat.modelName || "",
+              effort: pureChat.modelEffort || ""
             });
             if (sinceNum && snapshot.lastUpdated === sinceNum && !snapshot.isGenerating && !snapshot.pendingAction) {
               return send({
@@ -3157,6 +3483,10 @@ var require_chatHandlers = __commonJS({
                 supported: true,
                 notModified: true,
                 isGenerating: false,
+                model: snapshot.model || "",
+                effort: snapshot.effort || "",
+                activeModel: snapshot.activeModel || null,
+                activeEffort: snapshot.activeEffort || null,
                 lastUpdated: snapshot.lastUpdated
               });
             }
@@ -3423,6 +3753,8 @@ Running prompt as test command:"; echo "Prompt received: ${prompt.replace(/"/g, 
       getDeviceOarManager,
       handleClearContext,
       handleOarRuntimes,
+      handleOarListModels,
+      handleOarSetModel,
       handleOarMessage,
       handleOarCompact,
       handleOarAbort,
@@ -4043,6 +4375,13 @@ var require_client = __commonJS({
           }
         }
         tmuxHandlers.cleanupAllTerminals();
+        try {
+          const oarMgr = chatHandlers.getDeviceOarManager();
+          if (oarMgr && typeof oarMgr.shutdownAll === "function") {
+            oarMgr.shutdownAll();
+          }
+        } catch (_) {
+        }
       }
       connect() {
         if (this.isStopped) return;
@@ -4320,6 +4659,12 @@ var require_client = __commonJS({
             return;
           case "oar:runtimes":
             chatHandlers.handleOarRuntimes(this.send, msg.reqId);
+            return;
+          case "oar:list_models":
+            chatHandlers.handleOarListModels(this.send, msg.reqId, msg);
+            return;
+          case "oar:set_model":
+            chatHandlers.handleOarSetModel(this.send, msg.reqId, msg);
             return;
           case "oar:message":
             chatHandlers.handleOarMessage(this.send, msg.reqId, msg);

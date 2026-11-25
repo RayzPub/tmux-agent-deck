@@ -45,6 +45,8 @@ function listPureChatSessions() {
       workspaceName: s.workspaceName || '',
       agentType: s.agentType || 'claude',
       agentModel: s.agentModel || s.modelName || '',
+      modelName: s.modelName || '',
+      modelEffort: s.modelEffort || '',
       sessionMode: 'chat_only',
       agentSessionId: '',
       isRemote: true
@@ -69,6 +71,7 @@ function upsertPureChatSession(sessionName, meta = {}) {
     agentType: meta.agentType || prev.agentType || 'claude',
     agentModel: meta.agentModel !== undefined ? meta.agentModel : (prev.agentModel || ''),
     modelName: meta.modelName !== undefined ? meta.modelName : (prev.modelName || ''),
+    modelEffort: meta.modelEffort !== undefined ? meta.modelEffort : (prev.modelEffort || ''),
     sessionMode: 'chat_only',
     created: prev.created || meta.created || Date.now()
   };

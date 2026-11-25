@@ -45,6 +45,12 @@ class AgentClient {
       try { this.ws.close(); } catch (e) {}
     }
     tmuxHandlers.cleanupAllTerminals();
+    try {
+      const oarMgr = chatHandlers.getDeviceOarManager();
+      if (oarMgr && typeof oarMgr.shutdownAll === 'function') {
+        oarMgr.shutdownAll();
+      }
+    } catch (_) {}
   }
 
   connect() {
@@ -352,6 +358,12 @@ class AgentClient {
         return;
       case 'oar:runtimes':
         chatHandlers.handleOarRuntimes(this.send, msg.reqId);
+        return;
+      case 'oar:list_models':
+        chatHandlers.handleOarListModels(this.send, msg.reqId, msg);
+        return;
+      case 'oar:set_model':
+        chatHandlers.handleOarSetModel(this.send, msg.reqId, msg);
         return;
       case 'oar:message':
         chatHandlers.handleOarMessage(this.send, msg.reqId, msg);

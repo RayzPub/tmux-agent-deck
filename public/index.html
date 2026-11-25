@@ -317,7 +317,7 @@
         <div class="tech-corner bottom-left"></div>
         <div class="tech-corner bottom-right"></div>
         
-        <div class="welcome-content">
+        <div class="welcome-content" id="welcomeReadyState">
           <div class="welcome-orb-wrap" id="welcomeOrbSlot" aria-hidden="true"></div>
           <h2>终端工作区已就绪</h2>
           <p class="slogan-title">
@@ -337,11 +337,135 @@
               <span class="btn-text-full">选择已有会话</span>
               <span class="btn-text-mobile">选择会话</span>
             </button>
-            <button id="welcomeHelpDocBtn" class="highlight-text-btn secondary" title="查看新手快速上手指南">
-              <i data-lucide="book-open" style="width: 16px; height: 16px;"></i>
-              <span class="btn-text-full">新手使用指南</span>
-              <span class="btn-text-mobile">新手指南</span>
+            <button id="welcomeManageDeviceBtn" class="highlight-text-btn secondary" title="管理云电脑或接入更多设备">
+              <i data-lucide="laptop" style="width: 16px; height: 16px;"></i>
+              <span class="btn-text-full">设备管理</span>
+              <span class="btn-text-mobile">设备管理</span>
             </button>
+          </div>
+        </div>
+
+        <!-- No-Device / Offline Device Onboarding State -->
+        <div class="welcome-onboarding hidden" id="welcomeOnboardingState" aria-live="polite">
+          <div class="ob-hero">
+            <div class="ob-steps-track" aria-label="上手步骤">
+              <span class="ob-step-pill active"><span class="ob-step-num">1</span>接入设备</span>
+              <i data-lucide="chevron-right" class="ob-step-arrow"></i>
+              <span class="ob-step-pill"><span class="ob-step-num">2</span>选择工作区</span>
+              <i data-lucide="chevron-right" class="ob-step-arrow"></i>
+              <span class="ob-step-pill"><span class="ob-step-num">3</span>启动 AI 会话</span>
+            </div>
+            <h2 id="obTitle">接入你的第一台算力设备</h2>
+            <p class="ob-subtitle" id="obSubtitle">选择启动云端隔离沙箱，或一行命令接入你自己的 Mac / Linux / Windows，上线后将自动进入工作台。</p>
+          </div>
+
+          <div class="ob-cards-grid">
+            <!-- Card 1: Managed Docker Sandbox -->
+            <div class="ob-card ob-card-sandbox" id="obSandboxCard">
+              <div class="ob-card-head">
+                <div class="ob-card-icon sandbox">
+                  <i data-lucide="box"></i>
+                </div>
+                <div class="ob-card-heading">
+                  <div class="ob-card-title-row">
+                    <h3>我的云电脑</h3>
+                    <span class="ob-badge sandbox" id="obSandboxBadge">检测中</span>
+                  </div>
+                  <p class="ob-card-tagline" id="obSandboxTagline">专属隔离 Docker 沙箱 · 内置云端模型代理 · 开箱即用</p>
+                </div>
+              </div>
+
+              <div class="ob-feature-list" id="obSandboxMeta">
+                <div class="ob-feature-item">
+                  <i data-lucide="shield-check"></i>
+                  <span>独立容器环境与持久工作区卷，休眠不丢数据</span>
+                </div>
+                <div class="ob-feature-item">
+                  <i data-lucide="sparkles"></i>
+                  <span>预装 Claude Code / Codex / Agy / Kimi 与终端工具链</span>
+                </div>
+                <div class="ob-feature-item">
+                  <i data-lucide="cpu"></i>
+                  <span id="obSandboxQuotaText">正在读取云电脑配额...</span>
+                </div>
+              </div>
+
+              <div class="ob-card-footer">
+                <button type="button" class="ob-primary-btn sandbox" id="obStartSandboxBtn" disabled>
+                  <i data-lucide="play"></i>
+                  <span id="obStartSandboxBtnText">检测云电脑状态...</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Card 2: Connect Local / External Computer -->
+            <div class="ob-card ob-card-local" id="obLocalCard">
+              <div class="ob-card-head">
+                <div class="ob-card-icon local">
+                  <i data-lucide="laptop"></i>
+                </div>
+                <div class="ob-card-heading">
+                  <div class="ob-card-title-row">
+                    <h3>连接我的电脑</h3>
+                    <span class="ob-badge local">自带算力</span>
+                  </div>
+                  <p class="ob-card-tagline">直连本机代码库与本地模型（BYOK）· 无需公网 IP</p>
+                </div>
+              </div>
+
+              <div class="ob-pair-mode-row">
+                <div class="ob-segmented" role="tablist" aria-label="接入运行模式">
+                  <button type="button" class="ob-seg-btn active" data-ob-pair-mode="daemon" role="tab" aria-selected="true">
+                    <i data-lucide="shield-check"></i>
+                    <span>后台常驻</span>
+                  </button>
+                  <button type="button" class="ob-seg-btn" data-ob-pair-mode="foreground" role="tab" aria-selected="false">
+                    <i data-lucide="terminal"></i>
+                    <span>前台临时</span>
+                  </button>
+                </div>
+                <span class="ob-platform-hint" id="obPlatformHint">Mac / Linux 开机自启</span>
+              </div>
+
+              <div class="ob-cmd-box">
+                <code class="ob-cmd-text" id="obPairCmdText">正在生成配对命令...</code>
+                <button type="button" class="ob-copy-btn" id="obCopyCmdBtn" title="复制接入命令">
+                  <i data-lucide="copy"></i>
+                  <span>复制</span>
+                </button>
+              </div>
+
+              <div class="ob-cmd-meta">
+                <button type="button" class="ob-ghost-link" id="obRefreshCmdBtn">
+                  <i data-lucide="refresh-cw"></i>
+                  <span>刷新命令</span>
+                </button>
+                <span class="ob-expire-text" id="obPairExpireText">10 分钟内有效</span>
+              </div>
+
+              <div class="ob-waiting-bar" id="obWaitingBar">
+                <span class="ob-pulse-dot" aria-hidden="true"></span>
+                <span>在电脑终端运行上方命令，设备上线后将自动进入工作台</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ob-footer-bar">
+            <div class="ob-offline-summary hidden" id="obOfflineSummary">
+              <i data-lucide="wifi-off"></i>
+              <span id="obOfflineSummaryText"></span>
+            </div>
+            <div class="ob-footer-actions">
+              <button type="button" class="ob-footer-link" id="obOpenDeviceModalBtn">
+                <i data-lucide="sliders-horizontal"></i>
+                <span>打开完整设备管理</span>
+              </button>
+              <span class="ob-footer-dot" aria-hidden="true">·</span>
+              <button type="button" class="ob-footer-link" id="obOpenHelpDocBtn">
+                <i data-lucide="book-open"></i>
+                <span>查看完整使用文档</span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -741,12 +865,21 @@
           </div>
 
           <div class="input-group hidden" id="sessionModelGroup">
-            <label>
-              <span class="label-tech-text">// 模型选择</span>
-            </label>
-            <div class="model-cards-container" id="sessionModelCardsContainer">
-              <!-- Dynamically populated from /api/llm-models -->
+            <div class="session-model-label-row">
+              <label>
+                <span class="label-tech-text">// 模型选择</span>
+              </label>
+              <div class="session-model-label-meta">
+                <span class="session-model-mode-hint" id="sessionModelModeHint"></span>
+                <button type="button" class="session-model-refresh-btn" id="refreshSessionModelsBtn" title="重新探测设备可用模型">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+              </div>
             </div>
+            <div class="model-cards-container" id="sessionModelCardsContainer">
+              <!-- Dynamically populated from /api/oar/models -->
+            </div>
+            <div class="session-effort-row hidden" id="sessionEffortRow"></div>
           </div>
         </div>
 

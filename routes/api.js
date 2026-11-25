@@ -585,6 +585,10 @@ router.get('/sessions', requireAuth, (req, res) => {
         workspaceName: s.workspaceName || s.workspace || '',
         agentType,
         agentModel: s.agentModel || '',
+        modelName: s.modelName || '',
+        modelEffort: s.modelEffort || '',
+        activeModel: s.activeModel || '',
+        activeEffort: s.activeEffort || '',
         sessionMode,
         isRemote: true,
         deviceId: targetDeviceId
@@ -599,7 +603,7 @@ router.get('/sessions', requireAuth, (req, res) => {
 
 // Create session
 router.post('/sessions', requireAuth, async (req, res) => {
-  const { name, title, autoTitle, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, sessionMode } = req.body;
+  const { name, title, autoTitle, agent, workspacePath, workspaceName, modelProvider, modelName, modelLabel, modelEffort, sessionMode } = req.body;
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
 
   // Validate allowed agents uniformly across all devices
@@ -652,7 +656,8 @@ router.post('/sessions', requireAuth, async (req, res) => {
       sessionMode: targetMode,
       agentType: reqAgent,
       agentModel: modelLabel || (modelProvider && modelProvider !== 'default' ? modelProvider : '') || modelName || '',
-      modelName: modelName || ''
+      modelName: modelName || '',
+      modelEffort: modelEffort || ''
     });
     if (result && result.error) {
       return res.status(400).json({ error: result.error });
@@ -1525,6 +1530,10 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
         supported: result.supported !== false,
         notModified: true,
         isGenerating: Boolean(result.isGenerating),
+        model: result.model || '',
+        effort: result.effort || '',
+        activeModel: result.activeModel || null,
+        activeEffort: result.activeEffort || null,
         lastUpdated: result.lastUpdated
       });
     }
@@ -1539,7 +1548,10 @@ router.get('/sessions/:name/chat-history', requireAuth, async (req, res) => {
       pendingAction: result?.pendingAction || null,
       isGenerating: Boolean(result?.isGenerating),
       statusText: result?.statusText || (result?.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+      model: result?.model || '',
+      effort: result?.effort || '',
       activeModel: result?.activeModel || null,
+      activeEffort: result?.activeEffort || null,
       usage: result?.usage || null,
       contextUsage: result?.contextUsage || null,
       oarCapabilities: result?.oarCapabilities || null,
@@ -1570,6 +1582,221 @@ router.get('/oar/runtimes', requireAuth, async (req, res) => {
     const result = await deviceService.remoteOarRuntimes(targetDeviceId);
     if (result && result.error) return res.status(502).json({ error: result.error });
     return res.json({ success: true, runtimes: result?.runtimes || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Dynamically list available models (and reasoning effort levels) for an agent on the target device
+router.get('/oar/models', requireAuth, async (req, res) => {
+  const rawAgent = String(req.query.agent || 'claude').trim().toLowerCase();
+  const normAgent = (rawAgent === 'antigravity') ? 'agy'
+    : (rawAgent === 'claude-code' || rawAgent === 'claudecode') ? 'claude'
+    : (rawAgent === 'codex-cli') ? 'codex'
+    : (rawAgent === 'kimi-code' || rawAgent === 'kimi-cli') ? 'kimi'
+    : rawAgent;
+  const workspacePath = typeof req.query.workspacePath === 'string' ? req.query.workspacePath : '';
+  const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+
+  if (normAgent === 'default' || normAgent === 'shell' || normAgent === 'terminal') {
+    return res.json({ success: true, agent: normAgent, runtimeKind: 'unsupported', models: [] });
+  }
+
+  const targetDeviceId = resolveComputeDeviceId(req);
+  const deviceRecord = targetDeviceId ? deviceService.getDeviceById(targetDeviceId) : null;
+  const isManagedDevice = !deviceRecord || deviceRecord.deviceKind === 'host-admin' || deviceRecord.deviceKind === 'docker-sandbox';
+
+  let runtimeResult = { kind: 'unavailable', models: [] };
+  if (targetDeviceId) {
+    try {
+      const rpcRes = await deviceService.remoteOarListModels(targetDeviceId, {
+        agentType: normAgent,
+        workspacePath,
+        refresh
+      });
+      if (rpcRes && !rpcRes.error) {
+        runtimeResult = rpcRes;
+      } else if (rpcRes && rpcRes.error) {
+        runtimeResult = { kind: 'error', models: [], error: rpcRes.error };
+      }
+    } catch (err) {
+      runtimeResult = { kind: 'error', models: [], error: err.message };
+    }
+  }
+
+  const agentProviderLabel = {
+    agy: 'Antigravity',
+    claude: 'Claude CLI',
+    codex: 'Codex CLI',
+    kimi: 'Kimi Code'
+  }[normAgent] || normAgent.toUpperCase();
+
+  const normalizeRuntimeModels = (rawList) => {
+    return (Array.isArray(rawList) ? rawList : [])
+      .filter(m => m && m.id)
+      .map(m => {
+        const isRuntimeDefaultAlias = m.id === 'default';
+        const resolved = m.resolvedId && m.resolvedId !== m.id ? m.resolvedId : '';
+        const providerName = m.provider?.displayName || m.provider?.id || agentProviderLabel;
+        const descParts = [];
+        if (m.disabled?.reason) descParts.push(m.disabled.reason);
+        else {
+          if (resolved) descParts.push(resolved);
+          if (m.default || isRuntimeDefaultAlias) descParts.push('默认推荐');
+          if (Array.isArray(m.effortLevels) && m.effortLevels.length > 0) {
+            descParts.push(`推理强度: ${m.effortLevels.join('/')}`);
+          }
+        }
+        return {
+          id: isRuntimeDefaultAlias ? '' : m.id,
+          rawId: m.id,
+          displayName: m.displayName || m.id,
+          resolvedId: resolved,
+          provider: m.provider?.id || normAgent,
+          providerName,
+          desc: descParts.join(' · ') || '设备原生可用模型',
+          isDefault: Boolean(m.default || isRuntimeDefaultAlias),
+          effortLevels: Array.isArray(m.effortLevels) ? m.effortLevels : [],
+          defaultEffort: m.defaultEffort || '',
+          disabled: m.disabled || null,
+          source: 'oar'
+        };
+      });
+  };
+
+  const buildGatewayModels = (protocol) => {
+    try {
+      const config = llmGatewayService.loadConfig();
+      if (!config || !config.enabled) return [];
+      const providers = config.providers || {};
+      const defaultModel = protocol === 'anthropic'
+        ? (config.defaults?.anthropicModel || 'glm-5.3-flash')
+        : (config.defaults?.openaiModel || 'glm-5.3-flash');
+
+      const out = [{
+        id: '',
+        rawId: 'default',
+        displayName: `默认 (${defaultModel})`,
+        resolvedId: defaultModel,
+        provider: 'default',
+        providerName: '网关默认',
+        desc: '跟随系统全局网关默认',
+        isDefault: true,
+        effortLevels: [],
+        defaultEffort: '',
+        disabled: null,
+        source: 'gateway'
+      }];
+
+      for (const [pId, prov] of Object.entries(providers)) {
+        if (!prov || !prov.enabled) continue;
+        const models = (prov.models && prov.models[protocol]) || [];
+        const provName = prov.name || pId;
+        for (const m of models) {
+          if (!m || typeof m !== 'string') continue;
+          const clean = m.trim();
+          if (!clean || clean.includes('*')) continue;
+          let title = clean;
+          let desc = 'LLM 网关托管模型';
+          if (clean === 'k3-256k') {
+            title = 'Kimi K3 (256k)';
+            desc = '超长上下文 (256k) 深度推理';
+          } else if (clean === 'glm-5.3-flash') {
+            title = 'GLM-5.3-Flash';
+            desc = '高并发低延迟响应';
+          } else if (clean === 'glm-5') {
+            title = 'GLM-5';
+            desc = '旗舰级大模型代码生成';
+          }
+          out.push({
+            id: clean,
+            rawId: clean,
+            displayName: title,
+            resolvedId: clean,
+            provider: pId,
+            providerName: provName,
+            desc,
+            isDefault: false,
+            effortLevels: [],
+            defaultEffort: '',
+            disabled: null,
+            source: 'gateway'
+          });
+        }
+      }
+      return out;
+    } catch (_) {
+      return [];
+    }
+  };
+
+  const runtimeModels = normalizeRuntimeModels(runtimeResult.models);
+  const globalSettings = db.getSettings();
+  const claudeOAuthMode = Boolean(globalSettings && globalSettings.claudeOAuthMode);
+
+  let finalModels = [];
+  const seenIds = new Set();
+  const pushUnique = (item) => {
+    const key = item.id === '' ? '__default__' : item.id.toLowerCase();
+    if (seenIds.has(key)) return;
+    seenIds.add(key);
+    finalModels.push(item);
+  };
+
+  if (normAgent === 'claude') {
+    if (isManagedDevice && !claudeOAuthMode) {
+      // Gateway mode: prioritize gateway models, then append native Claude CLI aliases (opus/sonnet/haiku)
+      for (const gm of buildGatewayModels('anthropic')) pushUnique(gm);
+      for (const rm of runtimeModels) {
+        if (rm.id === '') continue; // Avoid duplicating default slot
+        pushUnique({ ...rm, isDefault: false });
+      }
+    } else {
+      // OAuth direct or external BYOK device: native Claude CLI models first
+      for (const rm of runtimeModels) pushUnique(rm);
+      if (finalModels.length === 0 && isManagedDevice) {
+        for (const gm of buildGatewayModels('anthropic')) pushUnique(gm);
+      }
+    }
+  } else if (normAgent === 'codex') {
+    for (const rm of runtimeModels) pushUnique(rm);
+    if (isManagedDevice || finalModels.length === 0) {
+      for (const gm of buildGatewayModels('openai')) {
+        if (gm.id === '' && finalModels.some(m => m.isDefault)) continue;
+        pushUnique(gm);
+      }
+    }
+  } else {
+    // Antigravity (agy), Kimi, and other OAR native runtimes
+    for (const rm of runtimeModels) pushUnique(rm);
+  }
+
+  return res.json({
+    success: true,
+    agent: normAgent,
+    runtimeKind: runtimeResult.kind || 'ok',
+    runtimeDetail: runtimeResult.detail || runtimeResult.reason || runtimeResult.error || null,
+    models: finalModels
+  });
+});
+
+// API: Switch model & reasoning effort for an OAR Pure Chat Session (applies cleanly on next turn via resume)
+router.post('/sessions/:name/oar-model', requireAuth, async (req, res) => {
+  const { name } = req.params;
+  const { model, effort, modelLabel } = req.body || {};
+  const targetDeviceId = resolveComputeDeviceId(req);
+  if (!targetDeviceId) return res.status(400).json({ error: NO_ONLINE_DEVICE_MSG });
+  try {
+    const result = await deviceService.remoteOarSetModel(targetDeviceId, name, {
+      model: typeof model === 'string' ? model.trim() : '',
+      effort: typeof effort === 'string' ? effort.trim() : '',
+      modelLabel: typeof modelLabel === 'string' ? modelLabel.trim() : ''
+    });
+    if (!result || result.ok === false || result.error) {
+      const status = result?.busy ? 409 : 400;
+      return res.status(status).json({ error: result?.error || '切换模型失败', busy: Boolean(result?.busy) });
+    }
+    return res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

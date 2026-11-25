@@ -96,6 +96,7 @@ const AGENT_SLASH_COMMANDS = {
     { cmd: '/help', desc: '显示 Kimi CLI 帮助信息' }
   ],
   oar: [
+    { cmd: '/model', desc: '切换当前原生流 (OAR) 会话的模型与推理强度' },
     { cmd: '/clear', desc: '清空当前原生流 (OAR) 上下文并重置' },
     { cmd: '/compact', desc: '使用 OAR 原生压缩上下文，释放窗口空间' }
   ],

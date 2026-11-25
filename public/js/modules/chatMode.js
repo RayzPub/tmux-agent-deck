@@ -21,6 +21,15 @@ import {
   isClearCommandForAgent,
   filterSlashCommands
 } from './slashCommands.js';
+import {
+  fetchAgentModels,
+  getCachedAgentModels,
+  formatEffortLabel,
+  formatShortEffort,
+  findModelEntry,
+  switchOarSessionModel,
+  normalizeModelAgent
+} from './modelSelector.js';
 
 const inlineAiStatus = createInlineAiStatusController(() => document.getElementById('chatInlineAiStatus'));
 let chatEmptyOrb = null;
@@ -141,6 +150,364 @@ let slashPopoverOpen = false;
 let slashActiveIndex = 0;
 let filteredSlashCommands = [];
 let slashBlurTimer = null;
+
+// OAR Native Stream Model Picker Popover State
+let modelPopoverOpen = false;
+let modelPopoverReqSeq = 0;
+const sessionModelDisplayCache = new Map(); // sessionName -> { id, label, effort }
+
+function resolveOarSessionRuntimeAgent(sessionName) {
+  const sess = getCurrentSessionName(sessionName);
+  if (!sess) return 'claude';
+  const cached = sessionHistoryCache.get(sess);
+  const rawCached = cached?.agentType && cached.agentType !== 'oar' ? cached.agentType : '';
+  if (rawCached) return normalizeModelAgent(rawCached);
+  const meta = Array.isArray(state.sessionListCache)
+    ? state.sessionListCache.find(s => s && s.name === sess)
+    : null;
+  if (meta && meta.agentType && meta.agentType !== 'oar') {
+    return normalizeModelAgent(meta.agentType);
+  }
+  const fallback = resolveSessionAgentType(sess, '');
+  return (fallback && fallback !== 'oar' && fallback !== 'default') ? fallback : 'claude';
+}
+
+function getSessionCurrentModelInfo(sessionName, snapshotData = null) {
+  const sess = getCurrentSessionName(sessionName);
+  const cached = sess ? sessionHistoryCache.get(sess) : null;
+  const meta = (sess && Array.isArray(state.sessionListCache))
+    ? state.sessionListCache.find(s => s && s.name === sess)
+    : null;
+  const localOverride = sess ? sessionModelDisplayCache.get(sess) : null;
+
+  const modelId = (snapshotData && (snapshotData.activeModel || snapshotData.model))
+    || (cached && (cached.activeModel || cached.model))
+    || (localOverride && localOverride.id)
+    || (meta && (meta.activeModel || meta.modelName))
+    || '';
+
+  const effort = (snapshotData && (snapshotData.activeEffort || snapshotData.effort))
+    || (cached && (cached.activeEffort || cached.effort))
+    || (localOverride && localOverride.effort)
+    || (meta && (meta.activeEffort || meta.modelEffort))
+    || '';
+
+  let label = (localOverride && localOverride.id === modelId && localOverride.label)
+    ? localOverride.label
+    : '';
+  if (!label && meta && meta.agentModel && (!modelId || meta.modelName === modelId)) {
+    label = meta.agentModel;
+  }
+  if (!label) {
+    label = modelId || '';
+  }
+
+  return { modelId, effort, label };
+}
+
+function resolveEffectiveSessionMode(sessionName, snapshotData = null) {
+  const sess = getCurrentSessionName(sessionName);
+  if (!sess) return null;
+  if (snapshotData && snapshotData.sessionMode) return snapshotData.sessionMode;
+  const cachedMode = sessionModeCache.get(sess);
+  if (cachedMode) return cachedMode;
+  const meta = Array.isArray(state.sessionListCache)
+    ? state.sessionListCache.find(s => s && s.name === sess)
+    : null;
+  return meta?.sessionMode || null;
+}
+
+function syncChatModelPill(sessionName, snapshotData = null) {
+  const btn = document.getElementById('chatModelSelectorBtn');
+  const labelEl = document.getElementById('chatModelSelectorLabel');
+  if (!btn || !labelEl) return;
+
+  const sess = getCurrentSessionName(sessionName);
+  const sessMode = resolveEffectiveSessionMode(sess, snapshotData);
+
+  if (!sess || sessMode !== 'chat_only') {
+    btn.classList.add('hidden');
+    closeChatModelPopover();
+    return;
+  }
+
+  btn.classList.remove('hidden');
+  const { modelId, effort, label } = getSessionCurrentModelInfo(sess, snapshotData);
+  const shortEff = effort ? formatShortEffort(effort) : '';
+  const displayText = label
+    ? (shortEff ? `${label} · ${shortEff}` : label)
+    : (shortEff ? `默认模型 · ${shortEff}` : '模型');
+  labelEl.textContent = displayText;
+  btn.title = modelId
+    ? `当前原生流模型: ${label || modelId}${effort ? ` (推理强度: ${effort})` : ''} · 点击切换`
+    : '选择或切换原生流 (OAR) 模型 (/model)';
+}
+
+function closeChatModelPopover() {
+  modelPopoverOpen = false;
+  const popover = document.getElementById('chatModelPopover');
+  const btn = document.getElementById('chatModelSelectorBtn');
+  if (popover) {
+    popover.classList.add('hidden');
+    popover.innerHTML = '';
+  }
+  if (btn) {
+    btn.classList.remove('active');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+async function applyOarModelSelection(sessionName, { modelId, effort, label, agentLabel }) {
+  const sess = getCurrentSessionName(sessionName);
+  if (!sess) return false;
+  try {
+    const res = await switchOarSessionModel(sess, {
+      model: modelId || '',
+      effort: effort || '',
+      modelLabel: label || modelId || ''
+    });
+
+    const effectiveModel = res.activeModel || res.model || modelId || '';
+    const effectiveEffort = res.activeEffort || res.effort || effort || '';
+    const effectiveLabel = label || effectiveModel || '';
+
+    sessionModelDisplayCache.set(sess, {
+      id: effectiveModel,
+      label: effectiveLabel,
+      effort: effectiveEffort
+    });
+
+    const cached = sessionHistoryCache.get(sess);
+    if (cached) {
+      cached.model = res.model || '';
+      cached.effort = res.effort || '';
+      cached.activeModel = effectiveModel || null;
+      cached.activeEffort = effectiveEffort || null;
+      if (res.lastUpdated) cached.lastUpdated = res.lastUpdated;
+    }
+
+    if (Array.isArray(state.sessionListCache)) {
+      const target = state.sessionListCache.find(s => s && s.name === sess);
+      if (target) {
+        target.modelName = res.model || '';
+        target.modelEffort = res.effort || '';
+        target.agentModel = effectiveLabel;
+        target.activeModel = effectiveModel;
+        target.activeEffort = effectiveEffort;
+      }
+    }
+
+    syncChatModelPill(sess, {
+      sessionMode: 'chat_only',
+      model: res.model || '',
+      effort: res.effort || '',
+      activeModel: effectiveModel,
+      activeEffort: effectiveEffort
+    });
+
+    const effSuffix = effectiveEffort ? ` · 推理强度 ${formatEffortLabel(effectiveEffort)}` : '';
+    const nameShown = effectiveLabel || `${agentLabel || '智能体'} 默认模型`;
+    toast.success(`已切换模型：${nameShown}${effSuffix}`, {
+      description: res.willResume ? '将在下一轮对话生效并保留上下文' : '新模型已就绪'
+    });
+    return true;
+  } catch (err) {
+    if (err.busy) {
+      toast.warning(err.message);
+    } else {
+      toast.error(`切换模型失败: ${err.message}`);
+    }
+    return false;
+  }
+}
+
+async function openChatModelPopover({ refresh = false } = {}) {
+  const popover = document.getElementById('chatModelPopover');
+  const btn = document.getElementById('chatModelSelectorBtn');
+  const sess = getCurrentSessionName();
+  if (!popover || !sess) return;
+
+  const sessMode = resolveEffectiveSessionMode(sess);
+  if (sessMode !== 'chat_only') {
+    syncChatModelPill(sess);
+    return;
+  }
+
+  updateSlashPopover(null);
+  modelPopoverOpen = true;
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+
+  const reqSeq = ++modelPopoverReqSeq;
+  const runtimeAgent = resolveOarSessionRuntimeAgent(sess);
+  const agentLabel = getAgentDisplayName(runtimeAgent);
+
+  const cachedSnap = sessionHistoryCache.get(sess);
+  const sessMeta = Array.isArray(state.sessionListCache)
+    ? state.sessionListCache.find(s => s && s.name === sess)
+    : null;
+  const workspacePath = cachedSnap?.workspacePath || sessMeta?.path || state.currentWorkspacePath || '';
+  const deviceId = state.currentDeviceId || 'cloud';
+
+  // Instant 0ms render from warm memory/localStorage cache unless user explicitly clicked refresh
+  const warmCached = !refresh ? getCachedAgentModels(runtimeAgent, { deviceId }) : null;
+  if (!warmCached) {
+    popover.innerHTML = `
+      <div class="chat-model-popover-header">
+        <span class="chat-model-popover-title">// ${escapeHtml(agentLabel)} 模型选择</span>
+        <button type="button" class="chat-model-refresh-btn is-spinning" id="chatModelRefreshBtn" title="重新探测模型">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+      </div>
+      <div class="chat-model-popover-loading">
+        <i data-lucide="loader-2" class="spin"></i>
+        <span>正在探测设备可用模型...</span>
+      </div>
+    `;
+    popover.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  const result = warmCached || await fetchAgentModels(runtimeAgent, {
+    deviceId,
+    workspacePath,
+    refresh
+  });
+
+  if (!modelPopoverOpen || reqSeq !== modelPopoverReqSeq || getCurrentSessionName() !== sess) {
+    return;
+  }
+  popover.classList.remove('hidden');
+
+  const models = Array.isArray(result.models) ? result.models : [];
+  const currentInfo = getSessionCurrentModelInfo(sess, cachedSnap);
+  const matchedActive = findModelEntry(models, currentInfo.modelId);
+  const activeKey = matchedActive ? (matchedActive.id === '' ? '__default__' : matchedActive.id.toLowerCase()) : '';
+  const currentEffort = currentInfo.effort || '';
+
+  const activeEfforts = Array.isArray(matchedActive?.effortLevels) ? matchedActive.effortLevels : [];
+  const effortBarHtml = activeEfforts.length > 0
+    ? `
+      <div class="chat-model-effort-bar">
+        <span class="chat-model-effort-title">推理强度</span>
+        <div class="chat-model-effort-pills">
+          <button type="button" class="chat-model-effort-pill${!currentEffort ? ' active' : ''}" data-effort="">
+            ${matchedActive.defaultEffort ? `默认 (${escapeHtml(formatShortEffort(matchedActive.defaultEffort))})` : '默认'}
+          </button>
+          ${activeEfforts.map(lvl => `
+            <button type="button" class="chat-model-effort-pill${currentEffort.toLowerCase() === lvl.toLowerCase() ? ' active' : ''}" data-effort="${escapeHtml(lvl)}">
+              ${escapeHtml(formatEffortLabel(lvl))}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `
+    : '';
+
+  const listHtml = models.length === 0
+    ? `<div class="chat-model-popover-empty">${escapeHtml(result.runtimeDetail || '当前设备未返回可选模型列表')}</div>`
+    : `
+      <div class="chat-model-list">
+        ${models.map((m, idx) => {
+          const itemKey = m.id === '' ? '__default__' : m.id.toLowerCase();
+          const isSelected = Boolean(activeKey && itemKey === activeKey);
+          const isDisabled = Boolean(m.disabled);
+          const subText = m.disabled?.reason || m.resolvedId || (m.id || '跟随默认配置');
+          return `
+            <button
+              type="button"
+              class="chat-model-item${isSelected ? ' active' : ''}${isDisabled ? ' disabled' : ''}"
+              data-model-idx="${idx}"
+              ${isDisabled ? 'disabled' : ''}
+            >
+              <div class="chat-model-item-main">
+                <div class="chat-model-item-name-row">
+                  <span class="chat-model-item-name">${escapeHtml(m.displayName)}</span>
+                  ${m.isDefault ? '<span class="chat-model-tag default">默认</span>' : ''}
+                  ${m.source === 'gateway' ? `<span class="chat-model-tag gateway">${escapeHtml(m.providerName)}</span>` : ''}
+                </div>
+                <div class="chat-model-item-sub">${escapeHtml(subText)}</div>
+              </div>
+              <span class="chat-model-item-check">
+                ${isSelected ? '<i data-lucide="check"></i>' : ''}
+              </span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+  popover.innerHTML = `
+    <div class="chat-model-popover-header">
+      <span class="chat-model-popover-title">// ${escapeHtml(agentLabel)} 模型选择</span>
+      <button type="button" class="chat-model-refresh-btn" id="chatModelRefreshBtn" title="重新探测模型">
+        <i data-lucide="refresh-cw"></i>
+      </button>
+    </div>
+    ${listHtml}
+    ${effortBarHtml}
+  `;
+
+  if (window.lucide) window.lucide.createIcons();
+
+  popover.onmousedown = (e) => {
+    e.preventDefault();
+  };
+
+  const refreshBtn = popover.querySelector('#chatModelRefreshBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openChatModelPopover({ refresh: true });
+    });
+  }
+
+  popover.querySelectorAll('.chat-model-item:not(.disabled)').forEach(itemBtn => {
+    itemBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = parseInt(itemBtn.dataset.modelIdx, 10);
+      const chosen = models[idx];
+      if (!chosen) return;
+
+      // Preserve current effort only if supported by the newly selected model
+      const nextEffort = (currentEffort && Array.isArray(chosen.effortLevels) && chosen.effortLevels.includes(currentEffort))
+        ? currentEffort
+        : '';
+      const displayLabel = chosen.source === 'gateway' && chosen.providerName
+        ? `${chosen.providerName} · ${chosen.displayName}`
+        : chosen.displayName;
+
+      closeChatModelPopover();
+      await applyOarModelSelection(sess, {
+        modelId: chosen.id || '',
+        effort: nextEffort,
+        label: displayLabel,
+        agentLabel
+      });
+    });
+  });
+
+  popover.querySelectorAll('.chat-model-effort-pill').forEach(effBtn => {
+    effBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const chosenEffort = effBtn.dataset.effort || '';
+      const targetModelId = matchedActive ? (matchedActive.id || '') : (currentInfo.modelId || '');
+      const targetLabel = matchedActive ? matchedActive.displayName : (currentInfo.label || targetModelId);
+      closeChatModelPopover();
+      await applyOarModelSelection(sess, {
+        modelId: targetModelId,
+        effort: chosenEffort,
+        label: targetLabel,
+        agentLabel
+      });
+    });
+  });
+}
 
 function getActiveChatAgentType(sessionName) {
   const sess = getCurrentSessionName(sessionName);
@@ -272,6 +639,9 @@ export function initChatMode() {
           <!-- Slash Command Floating Popover -->
           <div class="chat-slash-popover hidden" id="chatSlashPopover"></div>
 
+          <!-- OAR Native Stream Model & Effort Picker Popover -->
+          <div class="chat-model-popover hidden" id="chatModelPopover"></div>
+
           <div class="chat-input-row">
             <!-- Uploaded Attachment Tray -->
             <div class="chat-attachment-tray hidden" id="chatAttachmentTray"></div>
@@ -301,6 +671,11 @@ export function initChatMode() {
                 <button class="chat-ghost-pill-btn" id="chatQuickClearBtn" type="button" title="发送 /clear 清空当前对话上下文">
                   <i data-lucide="eraser"></i>
                   <span>清空上下文</span>
+                </button>
+                <button class="chat-ghost-pill-btn chat-model-pill-btn hidden" id="chatModelSelectorBtn" type="button" aria-expanded="false" title="选择或切换原生流模型 (/model)">
+                  <i data-lucide="cpu"></i>
+                  <span class="chat-model-pill-label" id="chatModelSelectorLabel">模型</span>
+                  <i data-lucide="chevron-up" class="chat-model-pill-chevron"></i>
                 </button>
               </div>
               <div class="chat-composer-actions">
@@ -508,6 +883,7 @@ export const sessionModeCache = new Map(); // sessionName -> 'chat_only' | 'hybr
 export function clearSessionChatCache(sessionName) {
   if (!sessionName) return;
   sessionHistoryCache.delete(sessionName);
+  sessionModelDisplayCache.delete(sessionName);
   sessionViewModes.delete(sessionName);
   sessionSupportCache.delete(sessionName);
   sessionModeCache.delete(sessionName);
@@ -644,6 +1020,7 @@ export async function applySessionViewMode(sessionName, forceMode) {
       terminalWrapper.style.display = 'none';
     }
     chatContainer.classList.remove('hidden');
+    syncChatModelPill(currentSess);
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
     if (mobileControls) {
@@ -728,6 +1105,7 @@ export async function applySessionViewMode(sessionName, forceMode) {
       terminalWrapper.style.display = 'none';
     }
     chatContainer.classList.remove('hidden');
+    syncChatModelPill(currentSess);
     btnChat.classList.add('active');
     btnTerminal.classList.remove('active');
 
@@ -741,11 +1119,14 @@ export async function applySessionViewMode(sessionName, forceMode) {
 
     isScrollPinned = true;
     updateSlashPopover(null);
+    closeChatModelPopover();
     syncChatQuickClearButton(currentSess);
+    syncChatModelPill(currentSess);
     loadAndRenderChatHistory(currentSess, true);
     startChatPolling(currentSess);
   } else {
     updateSlashPopover(null);
+    closeChatModelPopover();
     chatContainer.classList.add('hidden');
     terminalContainer.classList.remove('hidden');
     if (terminalWrapper) {
@@ -798,7 +1179,12 @@ function updateSlashPopover(queryText) {
 
   const agentType = getActiveChatAgentType();
   const agentLabel = getAgentDisplayName(agentType);
-  filteredSlashCommands = filterSlashCommands(agentType, queryText);
+  const currentMode = resolveEffectiveSessionMode();
+  const rawFiltered = filterSlashCommands(agentType, queryText);
+  // In Tmux Chat view, interactive TUI `/model` cannot pop open inside Chat UI (only works in Terminal view or OAR Native Stream)
+  filteredSlashCommands = currentMode === 'chat_only'
+    ? rawFiltered
+    : rawFiltered.filter(item => item.cmd !== '/model');
 
   if (filteredSlashCommands.length === 0) {
     slashPopoverOpen = false;
@@ -812,6 +1198,7 @@ function updateSlashPopover(queryText) {
   }
 
   slashPopoverOpen = true;
+  closeChatModelPopover();
   if (slashTriggerBtn) {
     slashTriggerBtn.classList.add('active');
     slashTriggerBtn.setAttribute('aria-expanded', 'true');
@@ -1259,13 +1646,43 @@ function bindComposerEvents() {
     });
   }
 
-  // Dismiss slash popover when clicking anywhere outside
+  const modelSelectorBtn = document.getElementById('chatModelSelectorBtn');
+  if (modelSelectorBtn) {
+    modelSelectorBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+    modelSelectorBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (modelPopoverOpen) {
+        closeChatModelPopover();
+      } else {
+        openChatModelPopover();
+      }
+    });
+  }
+
+  // Dismiss slash / model popovers when clicking anywhere outside or pressing Escape
   document.addEventListener('pointerdown', (e) => {
-    if (!slashPopoverOpen) return;
-    const popover = document.getElementById('chatSlashPopover');
-    const triggerBtn = document.getElementById('chatSlashTriggerBtn');
-    if (popover && !popover.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
-      updateSlashPopover(null);
+    if (slashPopoverOpen) {
+      const popover = document.getElementById('chatSlashPopover');
+      const triggerBtn = document.getElementById('chatSlashTriggerBtn');
+      if (popover && !popover.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
+        updateSlashPopover(null);
+      }
+    }
+    if (modelPopoverOpen) {
+      const mPopover = document.getElementById('chatModelPopover');
+      const mBtn = document.getElementById('chatModelSelectorBtn');
+      if (mPopover && !mPopover.contains(e.target) && (!mBtn || !mBtn.contains(e.target))) {
+        closeChatModelPopover();
+      }
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modelPopoverOpen) {
+      closeChatModelPopover();
     }
   });
 
@@ -1524,13 +1941,31 @@ export function sendChatMessage(overrideText) {
 
   const sessMode = sessionModeCache.get(currentSess) || 'hybrid';
 
-  // Intercept /compact in OAR Pure Chat Mode to invoke native OAR session.compact()
+  // Intercept /compact and /model in OAR Pure Chat Mode
   if (sessMode === 'chat_only' && text.toLowerCase() === '/compact') {
     if (textarea) {
       textarea.value = '';
       textarea.style.height = 'auto';
     }
     triggerOarCompact(currentSess);
+    return;
+  }
+
+  if (sessMode === 'chat_only' && text.toLowerCase() === '/model') {
+    if (textarea) {
+      textarea.value = '';
+      textarea.style.height = 'auto';
+    }
+    openChatModelPopover();
+    return;
+  }
+
+  if (sessMode !== 'chat_only' && text.toLowerCase() === '/model') {
+    if (textarea) {
+      textarea.value = '';
+      textarea.style.height = 'auto';
+    }
+    toast.info('Tmux 会话请在「终端」视图使用 /model 切换模型');
     return;
   }
 
@@ -1761,6 +2196,7 @@ export async function loadAndRenderChatHistory(sessionName, isSessionSwitch = fa
     const activePending = pendingTurnMap.get(sessionName);
 
     if (data && data.notModified) {
+      syncChatModelPill(sessionName, data);
       if (activePending && now >= activePending.graceUntil) {
         clearPendingTurn(sessionName);
         if (previousCache) {
@@ -1904,6 +2340,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
     agentNameEl.setAttribute('title', `会话 ID: ${rawSessionName}`);
   }
   syncChatQuickClearButton(sessionName || currentSess);
+  syncChatModelPill(sessionName || currentSess, data);
 
   const messages = (data && data.messages) ? data.messages : [];
   renderedChatState.sessionName = sessionName || currentSess || null;
@@ -1935,19 +2372,21 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
 
   destroyChatEmptyOrb();
 
+  const isOarMode = Boolean(data && data.sessionMode === 'chat_only');
   let html = '';
   let hasRenderedActiveQuestion = false;
 
   messages.forEach((msg, msgIdx) => {
     const isUser = msg.role === 'user';
     const isLastMsg = msgIdx === messages.length - 1;
+    const isLiveMessage = isLastMsg && (!isOarMode || Boolean(data.isGenerating));
     let bodyHtml = '';
 
     // 1. CSS Grid 0fr -> 1fr Thinking Accordion
     if (msg.thinking) {
       const accKey = `${displaySession}::${msg.id || msgIdx}::thinking`;
       const isExpanded = expandedAccordions.has(accKey);
-      const isActivelyThinking = isLastMsg && !msg.content && (!msg.tools || msg.tools.length === 0);
+      const isActivelyThinking = isLiveMessage && !msg.content && (!msg.tools || msg.tools.length === 0);
 
       bodyHtml += `
         <div class="cds-accordion ${isExpanded || isActivelyThinking ? 'expanded' : ''}" data-acc-key="${escapeHtml(accKey)}">
@@ -2011,12 +2450,15 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
                 ? `<div class="cds-tool-item-args"><span class="chat-file-link" data-file-path="${escapeHtml(parsedToolFile.path)}" role="button" tabindex="0" title="点击打开预览: ${escapeHtml(parsedToolFile.path)}">${escapeHtml(String(inputSummary))}</span></div>`
                 : `<div class="cds-tool-item-args">${escapeHtml(String(inputSummary))}</div>`)
             : '';
-          const isRunningTool = t.status === 'running';
+          const isRunningTool = isLiveMessage && t.status === 'running';
+          const isInterruptedTool = t.status === 'interrupted' || t.status === 'aborted' || (!isLiveMessage && t.status === 'running');
           const statusTag = isRunningTool
             ? '<span class="cds-tool-running-tag">执行中...</span>'
-            : (t.exitCode !== undefined && t.exitCode !== null
-              ? `<span style="margin-left:auto;font-size:10px;opacity:0.7;font-variant-numeric:tabular-nums;">exit ${escapeHtml(String(t.exitCode))}</span>`
-              : '');
+            : (isInterruptedTool
+              ? `<span class="cds-tool-interrupted-tag">${t.status === 'aborted' ? '已中止' : '已中断'}</span>`
+              : (t.exitCode !== undefined && t.exitCode !== null
+                ? `<span style="margin-left:auto;font-size:10px;opacity:0.7;font-variant-numeric:tabular-nums;">exit ${escapeHtml(String(t.exitCode))}</span>`
+                : ''));
           return `
             <div class="cds-tool-item${isRunningTool ? ' is-running' : ''}">
               <div class="cds-tool-item-head">
@@ -2029,7 +2471,7 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
           `;
         }).join('');
 
-        const runningTool = otherTools.find(t => t.status === 'running');
+        const runningTool = isLiveMessage ? otherTools.find(t => t.status === 'running') : null;
         bodyHtml += `
           <div class="cds-accordion ${isExpanded ? 'expanded' : ''}" data-acc-key="${escapeHtml(accKey)}">
             <div class="cds-accordion-header">
@@ -2136,12 +2578,13 @@ function renderMessages(sessionName, data, forceScrollBottom = false) {
   // Pending action card (ask_question / permission / yn) + Live Inline AI Status
   const pending = pendingTurnMap.get(rawSessionName);
   const now = Date.now();
-  const isOarMode = Boolean(data && data.sessionMode === 'chat_only');
   const lastMessage = messages[messages.length - 1];
-  const lastRunningTool = lastMessage && lastMessage.role !== 'user' && Array.isArray(lastMessage.tools)
+  const isLastMsgLive = !isOarMode || Boolean(data && data.isGenerating);
+  const lastRunningTool = isLastMsgLive && lastMessage && lastMessage.role !== 'user' && Array.isArray(lastMessage.tools)
     ? lastMessage.tools.find(t => t.status === 'running')
     : null;
   const lastActivelyThinking = Boolean(
+    isLastMsgLive &&
     lastMessage &&
     lastMessage.role !== 'user' &&
     lastMessage.thinking &&

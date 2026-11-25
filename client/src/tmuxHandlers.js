@@ -18,6 +18,14 @@ function cleanupAllTerminals() {
   activeTerminals.clear();
 }
 
+function sanitizeCliToken(val) {
+  if (typeof val !== 'string') return '';
+  const trimmed = val.trim();
+  if (!trimmed || trimmed === 'default') return '';
+  if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return '';
+  return trimmed;
+}
+
 function readTmuxSessionMeta(sessionName) {
   // 1. Check tmux-free Pure Chat OAR registry first
   const pureChat = sessionRegistry.getPureChatSession(sessionName);
@@ -28,7 +36,8 @@ function readTmuxSessionMeta(sessionName) {
         : (process.env.CCNOW_DEFAULT_WORKSPACE || process.cwd()),
       agentType: pureChat.agentType || 'claude',
       sessionMode: 'chat_only',
-      model: pureChat.modelName || pureChat.agentModel || ''
+      model: sanitizeCliToken(pureChat.modelName || ''),
+      effort: sanitizeCliToken(pureChat.modelEffort || '')
     };
   }
 
@@ -51,7 +60,7 @@ function readTmuxSessionMeta(sessionName) {
       if (parts[3] && parts[3].trim()) model = parts[3].trim();
     } catch (_) {}
   }
-  return { workspacePath, agentType, sessionMode, model };
+  return { workspacePath, agentType, sessionMode, model, effort: '' };
 }
 
 function detectPaneLiveStatus(paneOutput) {
@@ -155,13 +164,16 @@ async function handleListSessions(send, reqId, getDeviceOarManager, msg = {}) {
           const snap = oarMgr.getHistorySnapshot(s.name, {
             agentType: s.agentType || 'claude',
             workspacePath: s.path || s.workspacePath || process.cwd(),
-            model: s.agentModel || s.modelName || ''
+            model: sanitizeCliToken(s.modelName || ''),
+            effort: sanitizeCliToken(s.modelEffort || '')
           });
           if (snap) {
             s.isGenerating = Boolean(snap.isGenerating);
             s.hasPendingAction = Boolean(snap.pendingAction);
             s.liveStatus = snap.pendingAction ? 'waiting' : (snap.isGenerating ? 'busy' : 'idle');
             s.statusText = snap.statusText || '';
+            if (snap.activeModel) s.activeModel = snap.activeModel;
+            if (snap.activeEffort) s.activeEffort = snap.activeEffort;
             if (snap.lastUpdated) {
               s.lastActiveAt = Math.max(s.lastActiveAt || 0, Number(snap.lastUpdated) || 0);
             }
@@ -205,7 +217,9 @@ async function handleListSessions(send, reqId, getDeviceOarManager, msg = {}) {
 }
 
 function handleNewSession(send, reqId, msg, getDeviceOarManager) {
-  const { sessionName, seqId, workspace, workspaceName, sessionMode, agentModel, modelName } = msg;
+  const { sessionName, seqId, workspace, workspaceName, sessionMode, agentModel, modelName, modelEffort } = msg;
+  const safeModel = sanitizeCliToken(modelName || '');
+  const safeEffort = sanitizeCliToken(modelEffort || '');
   const agent = msg.agent || msg.agentType || 'default';
   const targetMode = sessionMode || (agent === 'default' ? 'terminal_only' : 'hybrid');
   const hasTmux = hasCommand('tmux');
@@ -246,8 +260,9 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
         workspacePath: targetDir,
         workspaceName: workspaceName ? String(workspaceName) : '',
         agentType: effectiveAgent,
-        agentModel: agentModel ? String(agentModel) : '',
-        modelName: modelName ? String(modelName) : '',
+        agentModel: agentModel ? String(agentModel) : safeModel,
+        modelName: safeModel,
+        modelEffort: safeEffort,
         created: Date.now()
       });
 
@@ -257,7 +272,9 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
         oarMgr.getOrCreateSession(finalName, {
           agentType: effectiveAgent,
           workspacePath: targetDir,
-          model: modelName || agentModel || ''
+          model: safeModel,
+          effort: safeEffort,
+          forceModelUpdate: true
         });
       }
 
@@ -299,17 +316,25 @@ function handleNewSession(send, reqId, msg, getDeviceOarManager) {
       if (agent && agent !== 'default' && agent !== 'terminal') {
         let agentCmd = String(agent).replace(/"/g, '');
         if (agent === 'agy') {
-          agentCmd = 'agy --dangerously-skip-permissions';
+          const parts = ['agy', '--dangerously-skip-permissions'];
+          if (safeModel) parts.push('--model', safeModel);
+          if (safeEffort) parts.push('--effort', safeEffort);
+          agentCmd = parts.join(' ');
         } else if (agent === 'claude') {
           const parts = [
             'CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1',
             'claude', '--session-id', agentSessionId, '--permission-mode', 'auto'
           ];
-          if (modelName) parts.push('--model', String(modelName));
+          if (safeModel) parts.push('--model', safeModel);
+          if (safeEffort) parts.push('--effort', safeEffort);
           agentCmd = parts.join(' ');
         } else if (agent === 'codex') {
           const parts = ['codex', '-c', 'check_for_update=false', '-c', 'update_on_startup=false'];
-          if (modelName) parts.push('--model', String(modelName));
+          if (safeModel) parts.push('--model', safeModel);
+          agentCmd = parts.join(' ');
+        } else if (agent === 'kimi') {
+          const parts = ['kimi'];
+          if (safeModel) parts.push('--model', safeModel);
           agentCmd = parts.join(' ');
         }
         try {

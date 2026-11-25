@@ -8,6 +8,7 @@
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { morphInlineConfirm } from './inlineConfirm.js';
+import { syncOnboardingView, isCurrentDeviceOnline } from './deviceOnboarding.js';
 
 let currentSocket = null;
 let currentPairCommand = '';
@@ -123,6 +124,7 @@ export function switchToDevice(deviceId, options = {}) {
 
   if (window.lucide) window.lucide.createIcons();
   updateSwitcherDropdownItems();
+  syncOnboardingView();
 
   if (options.silent) return;
 
@@ -549,7 +551,15 @@ export async function loadSandboxPanel() {
           updateSwitcherDropdownItems();
           await loadDeviceList();
           await loadSandboxPanel();
-          toast.success('云电脑已启动');
+          const sandboxId = j.deviceId || state.remoteDevices.find(d => d.deviceKind === 'docker-sandbox')?.deviceId;
+          if (sandboxId && !isCurrentDeviceOnline()) {
+            closeDeviceModal();
+            switchToDevice(sandboxId);
+            toast.success('云电脑已启动并自动切入工作台');
+          } else {
+            syncOnboardingView({ forceRefresh: true });
+            toast.success('云电脑已启动');
+          }
         } catch (err) {
           toast.error(`启动云电脑失败: ${err.message}`);
           await loadSandboxPanel();
@@ -639,6 +649,15 @@ function escapeHtml(str) {
  */
 export async function initDeviceManager(socket) {
   currentSocket = socket;
+
+  // Expose core device actions for onboarding & sidebar empty-state callbacks
+  window.deckDeviceActions = {
+    fetchDevices,
+    switchToDevice,
+    updateSwitcherDropdownItems,
+    openDeviceModal,
+    closeDeviceModal
+  };
 
   // 1. Initial Device Fetch & auto-select unified device (retiring legacy 'cloud' default)
   const devices = await fetchDevices();
@@ -772,15 +791,27 @@ export async function initDeviceManager(socket) {
   if (socket) {
     socket.on('device:status_change', async (payload) => {
       console.log('📡 [DeviceManager] Status change received:', payload);
+      const wasOnline = isCurrentDeviceOnline();
       await fetchDevices();
       updateSwitcherDropdownItems();
 
-      // If viewing modal, refresh list
+      // If viewing modal, refresh list & sandbox panel
       if (modal && !modal.classList.contains('hidden')) {
         loadDeviceList();
+        loadSandboxPanel();
       }
 
-      // If currently operating the changed device, update active indicators
+      // Auto-enter workspace seamlessly when the user had no online device and a device comes online
+      if (payload.isOnline && payload.deviceId && !wasOnline) {
+        const newlyOnline = state.remoteDevices.find(d => d.deviceId === payload.deviceId);
+        const label = newlyOnline?.name || newlyOnline?.hostname || '新设备';
+        closeDeviceModal();
+        switchToDevice(payload.deviceId);
+        toast.success(`设备「${label}」已上线`, { description: '已自动进入工作台' });
+        return;
+      }
+
+      // If currently operating the changed device, update active indicators & onboarding state
       if (state.currentDeviceId === payload.deviceId) {
         const dot = document.getElementById('deviceCurrentStatusDot');
         if (dot) {
@@ -788,6 +819,7 @@ export async function initDeviceManager(socket) {
           dot.title = payload.isOnline ? '在线' : '离线';
         }
       }
+      syncOnboardingView({ forceRefresh: true });
     });
   }
 }

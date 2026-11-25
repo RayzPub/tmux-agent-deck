@@ -118,7 +118,7 @@ body.light-minimalist .project-panel {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
   overscroll-behavior-y: contain;
   padding: 24px;
   display: flex;
@@ -144,7 +144,7 @@ body.light-minimalist .project-panel {
     padding: 14px;
     gap: 14px;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
+    touch-action: pan-x pan-y;
   }
 }
 

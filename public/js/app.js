@@ -1,6 +1,6 @@
 import { state } from './modules/state.js';
 import { initTheme, toggleTheme } from './modules/theme.js';
-import { restoreTabsState, renderTabs, activateTab, closeTab } from './modules/tabs.js';
+import { restoreTabsState, renderTabs, activateTab, closeTab, switchMainPanel } from './modules/tabs.js';
 import { saveEditorFile, updateMarkdownPreview, updatePreviewUI, buildHtmlPreviewUrl } from './modules/editor.js';
 import { refreshFileTree, loadDirectory, openDirectoryPicker, loadDirPickerPath, triggerUpload, uploadFiles, initFileTreeDropZone } from './modules/explorer.js';
 import { attachSession, detachSession, fitTerminal, clearSessionCache, copySelection, pasteFromClipboard, reportFocusStatus, removeSessionFromCache, initMobileKeyboard, showTipToast } from './modules/terminal.js';
@@ -10,12 +10,14 @@ import { initVoiceInput, stopVoiceInput } from './modules/voice.js';
 import { initQrCode } from './modules/qrcode.js';
 import { initImBot } from './modules/imBot.js';
 import { initChatMode, applySessionViewMode, setSessionViewMode, clearSessionChatCache } from './modules/chatMode.js';
+import { renderSessionModelPicker, getSelectedSessionModelPayload } from './modules/modelSelector.js';
 import { initHelpDocEvents, openHelpDocTab } from './modules/helpDoc.js';
 import { initProjectOverviewEvents, openProjectTab, renderProjectOverview } from './modules/projectOverview.js';
 import { loadAppIcons, initAppIconAdminPanel, applyAppIcon } from './modules/appIcon.js';
 import { initLlmGatewayAdminPanel } from './modules/llmGatewayConfig.js';
 import { initMobileInput, initPreventZoom, syncTerminalAgentQuickButtons } from './modules/mobileInput.js';
 import { initDeviceManager } from './modules/deviceManager.js';
+import { initDeviceOnboarding, syncOnboardingView, isCurrentDeviceOnline } from './modules/deviceOnboarding.js';
 import { toast } from './modules/toast.js';
 import { morphInlineConfirm, popoverInlineConfirm } from './modules/inlineConfirm.js';
 import { createMatrixOrb } from './modules/matrixOrb.js';
@@ -321,6 +323,26 @@ export function renderSessions(sessions) {
   const welcomeSloganDesc = document.getElementById('welcomeSloganDesc');
 
   if (filteredSessions.length === 0) {
+    if (!isCurrentDeviceOnline()) {
+      sessionList.innerHTML = `
+        <div class="loading-placeholder sidebar-no-device-hint">
+          <i data-lucide="unplug" style="width: 18px; height: 18px; opacity: 0.7;"></i>
+          <span>暂未连接在线设备</span>
+          <button type="button" class="sidebar-connect-device-btn" id="sidebarConnectDeviceBtn">接入设备</button>
+        </div>
+      `;
+      if (window.lucide) window.lucide.createIcons();
+      const connectBtn = document.getElementById('sidebarConnectDeviceBtn');
+      if (connectBtn) {
+        connectBtn.addEventListener('click', () => {
+          closeSidebarOnMobile();
+          switchMainPanel('welcome');
+          syncOnboardingView({ forceRefresh: true });
+        });
+      }
+      return;
+    }
+
     if (welcomeSloganDesc) {
       welcomeSloganDesc.textContent = '当前没有活跃的智能体会话，请新建会话开始协作，或打开左侧任务看板查看全局进度。';
     }
@@ -716,13 +738,16 @@ if (sidebar && sidebarOverlay) {
   // Swipe to open/close sidebar on mobile
   let touchStartX = 0;
   let touchStartY = 0;
+  let touchStartIgnoreSwipe = false;
 
   document.addEventListener('touchstart', (e) => {
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
+    touchStartIgnoreSwipe = Boolean(e.target && e.target.closest && e.target.closest('.tb-ws-pills, .workspace-tabs'));
   }, { passive: true });
 
   document.addEventListener('touchend', (e) => {
+    if (touchStartIgnoreSwipe) return;
     const isTouch = window.innerWidth <= 768 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
     if (!isTouch && window.innerWidth > 1024) return;
 
@@ -1167,47 +1192,14 @@ export async function loadLlmModels() {
 }
 
 function renderSessionFlatModels(agent, options = {}) {
-  const modelGroup = document.getElementById('sessionModelGroup');
-  const container = document.getElementById('sessionModelCardsContainer');
-  if (!modelGroup || !container) return;
-
-  if (!state.availableModels || (agent !== 'claude' && agent !== 'codex')) {
-    modelGroup.classList.add('hidden');
-    container.innerHTML = '';
-    return;
-  }
-
-  const items = state.availableModels[agent] || [];
-  if (items.length === 0) {
-    modelGroup.classList.add('hidden');
-    container.innerHTML = '';
-    return;
-  }
-
-  modelGroup.classList.remove('hidden');
-  container.innerHTML = items.map((item, idx) => `
-    <label class="model-card-option">
-      <input type="radio" name="sessionFlatModel" value="${item.provider}" data-model="${item.model}" data-provider-name="${item.providerName}" data-model-name="${item.modelName}" data-display-name="${item.displayName}" ${idx === 0 ? 'checked' : ''}>
-      <div class="model-card-inner">
-        <div class="model-provider-tag">${item.providerName}</div>
-        <div class="model-card-title">
-          <i data-lucide="${item.provider === 'kimi' ? 'sparkles' : (item.provider === 'tencent' ? 'cloud' : (item.provider === 'oauth' ? 'shield-check' : 'cpu'))}" style="width: 13px; height: 13px;"></i>
-          <span>${item.modelName}</span>
-        </div>
-        <div class="model-card-desc" title="${item.desc}">${item.desc}</div>
-      </div>
-    </label>
-  `).join('');
-
-  if (window.lucide) {
-    window.lucide.createIcons();
-  }
-
-  if (options.scrollIntoView) {
-    requestAnimationFrame(() => {
-      modelGroup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
+  const modeRadio = document.querySelector('input[name="sessionMode"]:checked');
+  const sessionMode = modeRadio ? modeRadio.value : 'hybrid';
+  renderSessionModelPicker({
+    agent,
+    sessionMode,
+    scrollIntoView: Boolean(options.scrollIntoView),
+    refresh: Boolean(options.refresh)
+  });
 }
 
 function syncSessionModeAndAgentUI(trigger = '') {
@@ -1254,6 +1246,12 @@ function syncSessionModeAndAgentUI(trigger = '') {
 
 newSessionBtn.addEventListener('click', () => {
   closeSidebarOnMobile();
+  if (!isCurrentDeviceOnline()) {
+    switchMainPanel('welcome');
+    syncOnboardingView({ forceRefresh: true });
+    toast.info('请先接入在线设备', { description: '启动云电脑或运行配对命令连接你的电脑后即可新建会话' });
+    return;
+  }
   sessionModal.classList.remove('hidden');
 
   const modalBody = document.getElementById('sessionModalBody');
@@ -1290,8 +1288,23 @@ document.querySelectorAll('input[name="sessionMode"]').forEach(radio => {
   radio.addEventListener('change', () => {
     syncSessionModeAndAgentUI('mode');
     syncSessionNameFieldUI();
+    const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
+    if (selectedAgentRadio) {
+      renderSessionFlatModels(selectedAgentRadio.value);
+    }
   });
 });
+
+const refreshSessionModelsBtn = document.getElementById('refreshSessionModelsBtn');
+if (refreshSessionModelsBtn) {
+  refreshSessionModelsBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const selectedAgentRadio = document.querySelector('input[name="sessionAgent"]:checked');
+    if (selectedAgentRadio) {
+      renderSessionFlatModels(selectedAgentRadio.value, { refresh: true });
+    }
+  });
+}
 
 if (newSessionNameInput) {
   newSessionNameInput.addEventListener('input', syncSessionNameFieldUI);
@@ -1359,11 +1372,7 @@ createSessionForm.addEventListener('submit', async (e) => {
   const activeWs = state.workspacesList.find(w => w.path === workspacePath);
   const workspaceName = activeWs ? activeWs.name : '';
 
-  const selectedModelRadio = document.querySelector('input[name="sessionFlatModel"]:checked');
-
-  const modelProvider = selectedModelRadio ? selectedModelRadio.value : 'default';
-  const modelName = selectedModelRadio ? (selectedModelRadio.dataset.model || '') : '';
-  const modelLabel = selectedModelRadio ? (selectedModelRadio.dataset.displayName || '') : '';
+  const { modelProvider, modelName, modelLabel, modelEffort } = getSelectedSessionModelPayload();
 
   const selectedModeRadio = document.querySelector('input[name="sessionMode"]:checked');
   const rawSessionMode = selectedModeRadio ? selectedModeRadio.value : 'hybrid';
@@ -1385,6 +1394,7 @@ createSessionForm.addEventListener('submit', async (e) => {
         modelProvider,
         modelName,
         modelLabel,
+        modelEffort,
         sessionMode,
         deviceId: state.currentDeviceId || 'cloud'
       })
@@ -1819,7 +1829,9 @@ convertSelectToCustom(document.getElementById('qrCodeUrlSelect'));
 const isFirstLogin = !localStorage.getItem('lastWorkspacePath');
 const controlSocket = typeof io !== 'undefined' ? io() : null;
 
+initDeviceOnboarding();
 initDeviceManager(controlSocket).then(() => loadWorkspaces()).then(async () => {
+  syncOnboardingView();
   await loadLlmModels();
   await loadSessions();
   

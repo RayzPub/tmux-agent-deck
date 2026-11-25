@@ -48,13 +48,62 @@ const RUNTIME_EXPORT_NAME = {
 };
 
 const OAR_RETAINED_BYTES = 8 * 1024 * 1024;
+const MODEL_LIST_TTL_MS = 12 * 60 * 60 * 1000; // 12h persistent disk+memory cache; click refresh to force re-probe
 const SUPPORTED_IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+
+function resolveLaunchModel(rawModel) {
+  if (typeof rawModel !== 'string') return null;
+  const trimmed = rawModel.trim();
+  if (!trimmed || trimmed === 'default') return null;
+  // Allow real provider/model IDs (e.g. "kimi-code/k3", "gemini-4-neon", "glm-5.3-flash"),
+  // while ignoring UI display labels that contain spaces or non-ASCII text.
+  if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function resolveLaunchEffort(rawEffort) {
+  if (typeof rawEffort !== 'string') return null;
+  const trimmed = rawEffort.trim();
+  if (!trimmed || trimmed === 'default') return null;
+  if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function settleRunningToolsInMessage(msg, targetStatus = 'interrupted') {
+  if (!msg || !Array.isArray(msg.tools)) return false;
+  let changed = false;
+  for (const t of msg.tools) {
+    if (!t || typeof t !== 'object') continue;
+    if ('_rawInputBuffer' in t) {
+      delete t._rawInputBuffer;
+      changed = true;
+    }
+    if (t.status === 'running') {
+      t.status = targetStatus;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function settleRunningToolsInMessages(messages, targetStatus = 'interrupted') {
+  if (!Array.isArray(messages)) return false;
+  let changed = false;
+  for (const m of messages) {
+    if (settleRunningToolsInMessage(m, targetStatus)) {
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 function createDeviceOarManager(options = {}) {
   const storageDir = options.storageDir || path.join(os.homedir(), '.ccnow', 'oar_sessions');
   const resolveEsmUrl = typeof options.resolveEsmUrl === 'function' ? options.resolveEsmUrl : null;
   const activeSessions = new Map();
   const runtimeCache = new Map();
+  const modelListCache = new Map();
+  const inFlightModelLists = new Map();
   let rootOarPromise = null;
   let capsModulePromise = null;
 
@@ -179,7 +228,9 @@ function createDeviceOarManager(options = {}) {
         agentType: sess.agentType,
         workspacePath: sess.workspacePath,
         model: sess.model || '',
+        effort: sess.effort || '',
         activeModel: sess.activeModel || null,
+        activeEffort: sess.activeEffort || null,
         oarSessionId: sess.oarSessionId || null,
         usage: sess.usage || null,
         contextUsage: sess.contextUsage || null,
@@ -398,6 +449,13 @@ function createDeviceOarManager(options = {}) {
           }
           break;
 
+        case 'effort':
+          if (isRoot && event.effort) {
+            sess.activeEffort = event.effort;
+            touchSession(sess);
+          }
+          break;
+
         case 'compaction_started':
           if (isRoot) {
             sess.statusText = '正在压缩上下文...';
@@ -464,8 +522,11 @@ function createDeviceOarManager(options = {}) {
             if (sess.isGenerating) {
               sess.isGenerating = false;
               sess.statusText = '就绪';
-              if (sess.activeAssistantMsg && !sess.activeAssistantMsg.content) {
-                sess.activeAssistantMsg.content = '*(底层运行时进程已退出，下次发送消息将自动恢复会话)*';
+              if (sess.activeAssistantMsg) {
+                settleRunningToolsInMessage(sess.activeAssistantMsg, 'interrupted');
+                if (!sess.activeAssistantMsg.content) {
+                  sess.activeAssistantMsg.content = '*(底层运行时进程已退出，下次发送消息将自动恢复会话)*';
+                }
               }
               sess.activeAssistantMsg = null;
               touchSession(sess);
@@ -489,6 +550,8 @@ function createDeviceOarManager(options = {}) {
     const live = sess.liveSession;
     sess.liveSession = null;
     sess.liveRuntimeId = null;
+    sess.liveModel = '';
+    sess.liveEffort = '';
     if (live && typeof live.dispose === 'function') {
       try { await live.dispose(); } catch (_) {}
     }
@@ -498,7 +561,15 @@ function createDeviceOarManager(options = {}) {
     const runtimeId = resolveRuntimeId(sess.agentType);
     if (!runtimeId) return { session: null, error: `不支持的 OAR 运行时类型: ${sess.agentType}` };
 
-    if (sess.liveSession && sess.liveRuntimeId === runtimeId) {
+    const resolvedModel = resolveLaunchModel(sess.model);
+    const resolvedEffort = resolveLaunchEffort(sess.effort);
+
+    if (
+      sess.liveSession &&
+      sess.liveRuntimeId === runtimeId &&
+      (sess.liveModel || '') === (resolvedModel || '') &&
+      (sess.liveEffort || '') === (resolvedEffort || '')
+    ) {
       return { session: sess.liveSession, error: null };
     }
     if (sess.liveSession) {
@@ -534,18 +605,7 @@ function createDeviceOarManager(options = {}) {
     const refused = preCaps?.refusedSessionOptions || runtime.refusedSessionOptions || {};
     const cwd = (sess.workspacePath && fs.existsSync(sess.workspacePath)) ? sess.workspacePath : process.cwd();
 
-    const resolveLaunchModel = (rawModel) => {
-      if (typeof rawModel !== 'string') return null;
-      const trimmed = rawModel.trim();
-      if (!trimmed || trimmed === 'default') return null;
-      // Allow real provider/model IDs (e.g. "deepseek/deepseek-flash", "glm-5.3-flash"),
-      // while ignoring UI display labels that contain spaces or non-ASCII text.
-      if (!/^[a-zA-Z0-9._:@/-]+$/.test(trimmed)) return null;
-      return trimmed;
-    };
-
-    const resolvedModel = resolveLaunchModel(sess.model);
-    const buildOpts = ({ includeResume = true, includeModel = true } = {}) => {
+    const buildOpts = ({ includeResume = true, includeModel = true, includeEffort = true } = {}) => {
       const opts = { cwd, retainedBytes: OAR_RETAINED_BYTES };
       const sessionEnv = { ...env };
       if (includeModel && resolvedModel) {
@@ -557,6 +617,9 @@ function createDeviceOarManager(options = {}) {
           sessionEnv.CODEX_MODEL = resolvedModel;
         }
       }
+      if (includeEffort && resolvedEffort) {
+        opts.effort = resolvedEffort;
+      }
       if (!refused.env) opts.env = sessionEnv;
       if (includeResume && sess.oarSessionId) opts.resume = sess.oarSessionId;
       return opts;
@@ -564,17 +627,20 @@ function createDeviceOarManager(options = {}) {
 
     let liveSession = null;
     try {
-      liveSession = await runtime.session(installation, buildOpts({ includeResume: true, includeModel: true }));
+      liveSession = await runtime.session(installation, buildOpts({ includeResume: true, includeModel: true, includeEffort: true }));
     } catch (err) {
       const errName = err?.name || '';
+      const errMsg = String(err?.message || '');
       const isResumeErr = errName === 'SessionNotFoundError' || errName === 'SessionUnavailableError' || errName === 'ResumeCwdError' || (errName === 'UnsupportedOptionError' && err?.option === 'cwd');
       const isModelErr = errName === 'ModelConfirmationError' || (errName === 'UnsupportedOptionError' && err?.option === 'model');
-      if (isResumeErr || isModelErr) {
+      const isEffortErr = (errName === 'UnsupportedOptionError' && err?.option === 'effort') || /\beffort\b/i.test(errMsg);
+      if (isResumeErr || isModelErr || isEffortErr) {
         if (isResumeErr) sess.oarSessionId = null;
         try {
           liveSession = await runtime.session(installation, buildOpts({
             includeResume: !isResumeErr,
-            includeModel: !isModelErr
+            includeModel: !isModelErr,
+            includeEffort: !isEffortErr && !isModelErr
           }));
         } catch (retryErr) {
           return { session: null, error: `启动 "${runtimeId}" 会话失败: ${retryErr.message}` };
@@ -586,6 +652,8 @@ function createDeviceOarManager(options = {}) {
 
     sess.liveSession = liveSession;
     sess.liveRuntimeId = runtimeId;
+    sess.liveModel = resolvedModel || '';
+    sess.liveEffort = resolvedEffort || '';
     sess.oarSessionId = liveSession.id || sess.oarSessionId;
     sess.oarCapabilities = {
       runtimeId,
@@ -599,6 +667,8 @@ function createDeviceOarManager(options = {}) {
     };
     const reportedModel = liveSession.model?.()?.value;
     if (reportedModel) sess.activeModel = reportedModel;
+    const reportedEffort = liveSession.effort?.()?.value;
+    if (reportedEffort) sess.activeEffort = reportedEffort;
 
     attachEvents(sess, liveSession);
     touchSession(sess);
@@ -611,38 +681,64 @@ function createDeviceOarManager(options = {}) {
       const existing = activeSessions.get(sessionName);
       if (opts.workspacePath) existing.workspacePath = opts.workspacePath;
       if (opts.agentType) existing.agentType = opts.agentType;
-      if (opts.model) existing.model = opts.model;
+      if (opts.forceModelUpdate) {
+        if (opts.model !== undefined) existing.model = resolveLaunchModel(opts.model) || '';
+        if (opts.effort !== undefined) existing.effort = resolveLaunchEffort(opts.effort) || '';
+      } else {
+        if (!existing.model && opts.model) {
+          const cleanM = resolveLaunchModel(opts.model);
+          if (cleanM) existing.model = cleanM;
+        }
+        if (!existing.effort && opts.effort) {
+          const cleanE = resolveLaunchEffort(opts.effort);
+          if (cleanE) existing.effort = cleanE;
+        }
+      }
       return existing;
     }
 
     const persisted = loadPersisted(sessionName);
     const agentType = opts.agentType || (persisted && persisted.agentType) || 'claude';
     const workspacePath = opts.workspacePath || (persisted && persisted.workspacePath) || process.cwd();
+    const initialModel = resolveLaunchModel(opts.model) || resolveLaunchModel(persisted && persisted.model) || '';
+    const initialEffort = resolveLaunchEffort(opts.effort) || resolveLaunchEffort(persisted && persisted.effort) || '';
+
+    const loadedMessages = (persisted && Array.isArray(persisted.messages))
+      ? persisted.messages.filter(m => m && m.id !== 'msg-welcome')
+      : [];
+    // Any tool still marked 'running' on disk came from a prior dead process; self-heal on load
+    const healedStaleTools = settleRunningToolsInMessages(loadedMessages, 'interrupted');
 
     const sess = {
       sessionName,
       agentType,
       workspacePath,
-      model: opts.model || (persisted && persisted.model) || '',
-      activeModel: (persisted && persisted.activeModel) || null,
+      model: initialModel,
+      effort: initialEffort,
+      activeModel: (persisted && persisted.activeModel) || initialModel || null,
+      activeEffort: (persisted && persisted.activeEffort) || initialEffort || null,
       oarSessionId: (persisted && persisted.oarSessionId) || null,
       usage: (persisted && persisted.usage) || null,
       contextUsage: (persisted && persisted.contextUsage) || null,
       createdAt: (persisted && persisted.createdAt) || Date.now(),
       lastUpdated: (persisted && persisted.lastUpdated) || Date.now(),
-      messages: (persisted && Array.isArray(persisted.messages))
-        ? persisted.messages.filter(m => m && m.id !== 'msg-welcome')
-        : [],
+      messages: loadedMessages,
       isGenerating: false,
       statusText: '就绪',
       liveSession: null,
       liveRuntimeId: null,
+      liveModel: '',
+      liveEffort: '',
       unsubscribeEvents: null,
       activeAssistantMsg: null,
       oarCapabilities: null
     };
 
     activeSessions.set(sessionName, sess);
+    if (healedStaleTools) {
+      touchSession(sess);
+      persistSession(sess);
+    }
     return sess;
   }
 
@@ -659,7 +755,10 @@ function createDeviceOarManager(options = {}) {
       pendingAction: null,
       isGenerating: Boolean(sess.isGenerating),
       statusText: sess.statusText || (sess.isGenerating ? 'OAR 智能体思考中...' : '就绪'),
+      model: sess.model || '',
+      effort: sess.effort || '',
       activeModel: sess.activeModel || sess.model || null,
+      activeEffort: sess.activeEffort || sess.effort || null,
       usage: sess.usage || null,
       contextUsage: sess.contextUsage || null,
       oarCapabilities: sess.oarCapabilities || null,
@@ -679,6 +778,10 @@ function createDeviceOarManager(options = {}) {
 
     if (!trimmedText && nativeImages.length === 0) {
       throw new Error('Message content or images required');
+    }
+
+    if (!sess.isGenerating) {
+      settleRunningToolsInMessages(sess.messages, 'interrupted');
     }
 
     const userMsg = {
@@ -756,6 +859,8 @@ function createDeviceOarManager(options = {}) {
 
         const latestModel = liveSession.model?.()?.value;
         if (latestModel) sess.activeModel = latestModel;
+        const latestEffort = liveSession.effort?.()?.value;
+        if (latestEffort) sess.activeEffort = latestEffort;
         const latestUsage = liveSession.usage?.()?.value?.total;
         if (latestUsage) {
           sess.usage = latestUsage;
@@ -772,6 +877,7 @@ function createDeviceOarManager(options = {}) {
           assistantMsg.content = `❌ [OAR 运行时异常]: ${err.message}`;
         }
       } finally {
+        settleRunningToolsInMessage(assistantMsg, 'ok');
         sess.isGenerating = false;
         sess.statusText = '就绪';
         sess.activeAssistantMsg = null;
@@ -794,12 +900,36 @@ function createDeviceOarManager(options = {}) {
       } catch (_) {}
     }
     if (aborted) {
+      settleRunningToolsInMessage(sess.activeAssistantMsg, 'aborted');
       sess.isGenerating = false;
       sess.statusText = '已中止';
       touchSession(sess);
       persistSession(sess);
     }
     return aborted;
+  }
+
+  function shutdownAll() {
+    for (const sess of activeSessions.values()) {
+      const settledTools = settleRunningToolsInMessages(sess.messages, 'interrupted');
+      const hadActive = Boolean(sess.isGenerating) || settledTools;
+      if (hadActive) {
+        if (sess.activeAssistantMsg && !sess.activeAssistantMsg.content) {
+          sess.activeAssistantMsg.content = '*(服务重启导致本轮执行中断，可继续对话恢复上下文)*';
+        }
+        sess.isGenerating = false;
+        sess.statusText = '就绪';
+        sess.activeAssistantMsg = null;
+        touchSession(sess);
+        persistSession(sess);
+      }
+      if (typeof sess.unsubscribeEvents === 'function') {
+        try { sess.unsubscribeEvents(); } catch (_) {}
+        sess.unsubscribeEvents = null;
+      }
+      sess.liveSession = null;
+      sess.liveRuntimeId = null;
+    }
   }
 
   async function compactSession(sessionName, opts = {}) {
@@ -917,14 +1047,166 @@ function createDeviceOarManager(options = {}) {
     return results;
   }
 
+  async function setSessionModel(sessionName, opts = {}) {
+    const sess = getOrCreateSession(sessionName, {
+      agentType: opts.agentType,
+      workspacePath: opts.workspacePath
+    });
+    if (sess.isGenerating) {
+      return {
+        ok: false,
+        busy: true,
+        error: '智能体正在生成中，请等待当前轮次完成或中止后再切换模型。'
+      };
+    }
+
+    const nextModel = resolveLaunchModel(opts.model) || '';
+    const nextEffort = resolveLaunchEffort(opts.effort) || '';
+    const changed = (sess.model || '') !== nextModel || (sess.effort || '') !== nextEffort;
+
+    sess.model = nextModel;
+    sess.effort = nextEffort;
+    sess.activeModel = nextModel || null;
+    sess.activeEffort = nextEffort || null;
+
+    if (changed && sess.liveSession) {
+      // OAR contract: model & effort are applied at open/resume; dispose live process while keeping oarSessionId & history
+      await disposeLive(sess);
+    }
+
+    touchSession(sess);
+    persistSession(sess);
+
+    return {
+      ok: true,
+      sessionName: sess.sessionName,
+      model: sess.model,
+      effort: sess.effort,
+      activeModel: sess.activeModel,
+      activeEffort: sess.activeEffort,
+      willResume: Boolean(sess.oarSessionId),
+      lastUpdated: sess.lastUpdated
+    };
+  }
+
+  function getModelCacheFile() {
+    return path.join(ensureStorageDir(), '_models_cache.json');
+  }
+
+  function loadDiskModelCache() {
+    try {
+      const file = getModelCacheFile();
+      if (!fs.existsSync(file)) return {};
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveDiskModelCacheEntry(cacheKey, entry) {
+    try {
+      const all = loadDiskModelCache();
+      all[cacheKey] = entry;
+      fs.writeFileSync(getModelCacheFile(), JSON.stringify(all, null, 2), 'utf8');
+    } catch (_) {}
+  }
+
+  async function listRuntimeModels(agentType, opts = {}) {
+    const runtimeId = resolveRuntimeId(agentType);
+    if (!runtimeId) {
+      return { runtimeId: null, kind: 'unsupported', models: [], reason: `不支持的运行时类型: ${agentType}` };
+    }
+
+    const cwd = (opts.workspacePath && fs.existsSync(opts.workspacePath)) ? opts.workspacePath : process.cwd();
+    const cacheKey = `${runtimeId}::${cwd}`;
+    const forceRefresh = Boolean(opts.refresh);
+
+    if (!forceRefresh) {
+      const memCached = modelListCache.get(cacheKey);
+      if (memCached && (Date.now() - memCached.fetchedAt) < MODEL_LIST_TTL_MS) {
+        return memCached.data;
+      }
+      // Check disk cache (persists across ccnow-agent restarts)
+      const diskAll = loadDiskModelCache();
+      const diskEntry = diskAll[cacheKey] || Object.values(diskAll).find(
+        e => e && e.data && e.data.runtimeId === runtimeId && (Date.now() - (e.fetchedAt || 0)) < MODEL_LIST_TTL_MS
+      );
+      if (diskEntry && diskEntry.data && (Date.now() - (diskEntry.fetchedAt || 0)) < MODEL_LIST_TTL_MS) {
+        modelListCache.set(cacheKey, diskEntry);
+        return diskEntry.data;
+      }
+    }
+
+    if (inFlightModelLists.has(cacheKey)) {
+      return inFlightModelLists.get(cacheKey);
+    }
+
+    const task = (async () => {
+      try {
+        const runtime = await loadBuiltinRuntime(runtimeId);
+        if (!runtime) {
+          return { runtimeId, kind: 'unavailable', models: [], reason: `当前设备未加载 "${runtimeId}" 运行时` };
+        }
+        const env = buildDeviceEnv();
+        const installation = await runtime.installation?.();
+        if (!installation || installation.kind !== 'available') {
+          return { runtimeId, kind: 'unavailable', models: [], reason: `未检测到可用的 "${runtimeId}" CLI` };
+        }
+        if (typeof runtime.listModels !== 'function') {
+          return { runtimeId, kind: 'unsupported', models: [], reason: `运行时 "${runtimeId}" 未提供模型枚举接口` };
+        }
+        const res = await runtime.listModels(installation, {
+          cwd,
+          env,
+          timeoutMs: 12000
+        });
+        if (!res || res.kind !== 'ok') {
+          const out = {
+            runtimeId,
+            kind: res?.kind || 'error',
+            models: [],
+            detail: res?.detail || res?.reason || undefined
+          };
+          return out;
+        }
+        const models = (Array.isArray(res.models) ? res.models : []).map(m => ({
+          id: m.id,
+          resolvedId: m.resolvedId || undefined,
+          displayName: m.displayName || m.id,
+          default: Boolean(m.default),
+          effortLevels: Array.isArray(m.effortLevels) ? [...m.effortLevels] : [],
+          defaultEffort: m.defaultEffort || undefined,
+          disabled: m.disabled || undefined,
+          provider: m.provider || undefined
+        }));
+        const out = { runtimeId, kind: 'ok', models };
+        const cacheEntry = { fetchedAt: Date.now(), data: out };
+        modelListCache.set(cacheKey, cacheEntry);
+        saveDiskModelCacheEntry(cacheKey, cacheEntry);
+        return out;
+      } catch (err) {
+        return { runtimeId, kind: 'error', models: [], error: err.message };
+      } finally {
+        inFlightModelLists.delete(cacheKey);
+      }
+    })();
+
+    inFlightModelLists.set(cacheKey, task);
+    return task;
+  }
+
   return {
     getOrCreateSession,
     getHistorySnapshot,
     sendMessage,
+    setSessionModel,
+    listRuntimeModels,
     abortSession,
     compactSession,
     clearSession,
     deleteSession,
+    shutdownAll,
     listAvailableRuntimes
   };
 }

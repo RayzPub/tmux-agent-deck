@@ -6,6 +6,7 @@
 .tb-root {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 14px;
   width: 100%;
   min-height: 100%;
@@ -22,6 +23,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  flex-shrink: 0;
   padding: 2px 2px 4px;
 }
 
@@ -212,8 +214,15 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
+  max-width: 100%;
   overflow-x: auto;
-  padding: 1px 0;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
+  padding: 2px 0;
+  box-sizing: border-box;
   scrollbar-width: none;
 }
 
@@ -226,7 +235,10 @@
   align-items: center;
   gap: 5px;
   height: 27px;
+  max-width: 100%;
+  min-width: 0;
   padding: 0 10px;
+  box-sizing: border-box;
   border-radius: var(--radius-pill, 999px);
   border: 0.5px solid transparent;
   background: transparent;
@@ -237,6 +249,11 @@
   white-space: nowrap;
   flex-shrink: 0;
   transition: all 0.15s ease;
+}
+
+.tb-ws-pill > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tb-ws-pill:hover {
@@ -928,12 +945,27 @@
     min-width: 120px;
   }
 
+  .tb-ws-pills {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 6px;
+  }
+
   .tb-form-row {
     grid-template-columns: 1fr;
   }
 
   .tb-btn-label-hide-sm {
     display: none;
+  }
+}
+
+/* Viewport fallback for narrow outer screens (e.g. iPhone Duo outer display ~382px) */
+@media (max-width: 600px) {
+  .tb-ws-pills {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 6px;
   }
 }
 

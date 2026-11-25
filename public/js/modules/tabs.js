@@ -55,6 +55,11 @@ export function switchMainPanel(panelType) {
     }
   }
 
+  // Keep no-device onboarding state in sync whenever returning to welcome canvas
+  if (targetKey === 'welcome' && typeof window.syncDeviceOnboarding === 'function') {
+    window.syncDeviceOnboarding();
+  }
+
   // Double safeguard: if leaving terminal panel, ensure chat container is marked hidden
   if (targetKey !== 'terminal') {
     const chatContainer = document.getElementById('agentChatContainer');
