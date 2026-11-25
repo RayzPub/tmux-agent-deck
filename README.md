@@ -254,6 +254,7 @@ tmux-agent-deck/
 ## 📚 相关文档索引
 
 - 🚀 **应用内新手指南**：[docs/guide.md](docs/guide.md)
+- ⬆️ **架构升级与迁移指南**：[docs/upgrade.md](docs/upgrade.md)
 - 🏗️ **四层架构与统一算力规范**：[docs/architecture.md](docs/architecture.md)
 - 🔌 **多设备互联与远程控制协议**：[docs/multi_device_agent_spec.md](docs/multi_device_agent_spec.md)
 - 🧠 **OAR 智能体运行时与三模会话规范**：[docs/oar_integration_requirements.md](docs/oar_integration_requirements.md)
